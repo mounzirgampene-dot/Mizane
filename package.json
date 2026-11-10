@@ -1,0 +1,12 @@
+{
+  "name": "mizane",
+  "version": "1.0.0",
+  "description": "MIZANE — Application de comptabilité générale multi-pays (SYSCOHADA, PCG, NCT, CGNC) avec assistant IA Mistral. PWA installable sur Android et Windows.",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "start": "npx --yes serve -l 8080 .",
+    "icons": "python3 make_icons.py"
+  },
+  "license": "MIT"
+}

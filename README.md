@@ -20,15 +20,21 @@ Application de comptabilité générale en **partie double**, internationale (ch
 - **Plans comptables personnalisables** : ajoutez vos propres comptes
 
 ### International 🌍
-- **21 pays** préconfigurés : sélection du pays dans les paramètres → plan comptable, devise, taux de TVA et format monétaire adaptés automatiquement
+- **21 pays** préconfigurés : sélection du pays dans les paramètres → **plan comptable, devise, taux de TVA et format monétaire choisis automatiquement**
 - Plans inclus : **SYSCOHADA (OHADA)** — 17 pays d'Afrique de l'Ouest et Centrale, **PCG (France)**, **NCT (Tunisie)**, **CGNC (Maroc)**, plus un mode personnalisé
 
 ### Assistant IA (Mistral) 🤖
 - **Saisie intelligente** : décrivez une opération en langage naturel (« achat de fournitures 35 000 payé en espèces, TVA 18 % ») → l'IA propose l'écriture complète, à vérifier puis valider
+- **📷 Lecture de photos** : joignez la photo d'une facture, d'un reçu ou d'un ticket → l'IA (modèle vision Pixtral) lit les montants et propose l'écriture ; la photo fonctionne aussi dans la conversation
+- **📥 Remplissage automatique depuis un texte** : collez un relevé bancaire, des factures ou vos notes → l'IA crée toutes les écritures d'un coup ; grand livre, balance, bilan et compte de résultat se remplissent automatiquement
 - **Conversation comptable** : posez vos questions sur vos comptes, la TVA, le résultat…
 - **Audit intelligent** : analyse des écritures, signalement des erreurs, TVA oubliée, comptes suspects, recommandations
-- **Assistant local de secours** (sans clé API) : résultat, balance, contrôle d'anomalies, aide TVA
+- **Assistant local de secours** (sans clé API) : résultat, balance, contrôle d'anomalies, aide TVA, import de texte ligne par ligne
 - Le moteur local détecte en permanence : déséquilibres, comptes inconnus, doublons
+
+### Impression 🖨
+- **Facture imprimable** générée depuis chaque écriture de vente (bouton 🧾 dans Écritures) : en-tête société, client, total HT / TVA / TTC
+- Boutons **Imprimer** sur la balance, le compte de résultat, le bilan, le grand livre et le journal des écritures
 
 ## 🚀 Installation
 
@@ -55,7 +61,7 @@ npx serve .        # ou : python3 -m http.server 8080
 
 ## ✅ Tests
 ```bash
-npm test        # 23 tests du moteur comptable (validation, balance, bilan, anomalies…)
+npm test        # 25 tests du moteur comptable (validation, balance, bilan, anomalies, facture, import de texte…)
 ```
 
 ## 🗂 Structure
@@ -64,9 +70,11 @@ index.html            Point d'entrée
 js/accounting.js      Moteur comptable (partie double, balance, bilan, anomalies)
 js/plans.js           Plans comptables SYSCOHADA / PCG / NCT / CGNC
 js/countries.js       Référentiels pays (devise, TVA, plan)
-js/ai.js              Assistant IA Mistral + assistant local
+js/ai.js              Assistant IA Mistral (texte, photo, import) + assistant local
 js/db.js              Persistance locale, import/export, démo
-js/app.js             Interface et écrans
+js/views/             Écrans (tableau de bord, saisie, états, assistant IA, paramètres)
+js/invoice.js         Génération de facture imprimable
+js/print.js           Impression des états
 tests/run.mjs         Tests automatisés
 sw.js + manifest      Application progressive (PWA, hors-ligne)
 ```

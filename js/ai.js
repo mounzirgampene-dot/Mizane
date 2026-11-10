@@ -2,18 +2,20 @@
 import { trialBalance, incomeStatement, checkAnomalies, entryTotals } from "./accounting.js";
 import { formatMoney } from "./countries.js";
 
+export const VISION_MODEL = "pixtral-12b-2409";
+
 export function aiConfigured(store) {
   return Boolean(store.settings.aiKey);
 }
 
-async function mistralChat(store, messages, { json = false, temperature = 0.2 } = {}) {
+async function mistralChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
   const { aiEndpoint, aiKey, aiModel } = store.settings;
   if (!aiKey) throw new Error("Clé API Mistral manquante (Paramètres > Assistant IA).");
   const res = await fetch(aiEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + aiKey },
     body: JSON.stringify({
-      model: aiModel || "mistral-small-latest",
+      model: model || aiModel || "mistral-small-latest",
       temperature,
       messages,
       ...(json ? { response_format: { type: "json_object" } } : {}),
@@ -38,18 +40,44 @@ export function systemPrompt(store) {
     `Société : ${store.settings.companyName}. Pays : ${store.settings.country}. Devise : ${store.settings.currency}.`,
     `Plan comptable : ${store.settings.plan}. Exercice : ${store.settings.exerciceStart} au ${store.settings.exerciceEnd}.`,
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
-    'Quand on te demande une écriture, propose-la au format JSON : {"date":"AAAA-MM-JJ","journal":"ACH|VTE|BAN|CAI|OD","reference":"...","lines":[{"account":"...","label":"...","debit":0,"credit":0}]}.',
-    "Les comptes doivent exister dans le plan fourni. L'écriture doit être équilibrée (somme débits = somme crédits).",
-    "Comptes disponibles (extraits) :\n" + planDigest(store),
+    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}.",
+    "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
+    "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
+    "Comptes disponibles (extrait) :\n" + planDigest(store),
   ].join("\n");
 }
 
-// Texte libre -> écriture proposée (JSON) revue par l'utilisateur avant validation.
-export async function suggestEntry(store, text) {
+// Photo -> dataURL JPEG compressé (pour l'IA vision).
+export function imageFileToDataUrl(file, maxDim = 1280) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    const img = new Image();
+    reader.onload = () => { img.src = reader.result; };
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    reader.onerror = img.onerror = () => reject(new Error("Image illisible."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// Texte libre (+ photo optionnelle) -> écriture proposée (JSON) revue par l'utilisateur avant validation.
+export async function suggestEntry(store, text, imageDataUrl = null) {
+  const userContent = imageDataUrl
+    ? [
+        { type: "text", text: "Voici un justificatif photographié (facture, reçu, ticket). Lis-le" + (text ? " en tenant compte de ces précisions" : "") + " et propose l'écriture comptable, uniquement le JSON :\n" + text },
+        { type: "image_url", image_url: imageDataUrl },
+      ]
+    : "Propose l'écriture comptable pour cette opération, uniquement le JSON :\n" + text;
   const content = await mistralChat(store, [
     { role: "system", content: systemPrompt(store) },
-    { role: "user", content: "Propose l'écriture comptable pour cette opération, uniquement le JSON :\n" + text },
-  ], { json: true });
+    { role: "user", content: userContent },
+  ], { json: true, model: imageDataUrl ? VISION_MODEL : undefined });
   try {
     const parsed = JSON.parse(content);
     if (parsed.lines) return parsed;
@@ -65,6 +93,32 @@ export async function chat(store, history, userMessage) {
     { role: "user", content: userMessage },
   ];
   return mistralChat(store, messages, { temperature: 0.3 });
+}
+
+// Conversation avec photo (modèle vision Pixtral).
+export async function chatWithImage(store, history, text, imageDataUrl) {
+  return mistralChat(store, [
+    { role: "system", content: systemPrompt(store) },
+    ...history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: imageDataUrl }] },
+  ], { temperature: 0.3, model: VISION_MODEL });
+}
+
+// Texte (relevé, factures, notes…) -> tableau d'écritures proposées par l'IA.
+export async function importEntriesFromText(store, text) {
+  const today = new Date().toISOString().slice(0, 10);
+  const content = await mistralChat(store, [
+    { role: "system", content: systemPrompt(store) },
+    { role: "user", content:
+      "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
+      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}]}. " +
+      "Chaque écriture doit être équilibrée, avec des comptes du plan fourni. Utilise " + today + " si la date est inconnue.\n\nTEXTE :\n" + text },
+  ], { json: true });
+  let parsed;
+  try { parsed = JSON.parse(content); } catch (e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
+  const arr = parsed.entries || parsed.ecritures || [];
+  if (!Array.isArray(arr) || arr.length === 0) throw new Error("Aucune écriture trouvée dans la réponse IA.");
+  return arr;
 }
 
 export async function aiAudit(store) {
@@ -140,6 +194,41 @@ export function parseEntryFromTextLocal(store, text) {
         { account: isCash ? "571" : isBank ? "521" : "401", label: text.slice(0, 60), debit: 0, credit: amount },
       ];
   return { date: new Date().toISOString().slice(0, 10), journal: isSale ? "VTE" : "ACH", reference: "IA locale", lines };
+}
+
+// Repli local de l'import de texte : une ligne par écriture, format
+// « AAAA-MM-JJ compteDébit compteCrédit montant libellé » (date optionnelle).
+function guessJournalLocal(debit, credit) {
+  const d = String(debit), c = String(credit);
+  if (d.startsWith("7") || c.startsWith("7")) return "VTE";
+  if (d.startsWith("52") || c.startsWith("52")) return "BAN";
+  if (d.startsWith("57") || c.startsWith("57")) return "CAI";
+  if (d.startsWith("6") || d.startsWith("2")) return "ACH";
+  return "OD";
+}
+
+export function parseEntriesFromTextLocal(store, text) {
+  const today = new Date().toISOString().slice(0, 10);
+  const out = [];
+  for (const raw of String(text || "").split(/\n+/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2,6})\s+(\d{2,6})\s+([\d\s.,]+?)\s*(.*)$/);
+    if (!m) continue;
+    const amount = Number(m[4].replace(/[\s,]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
+    if (!amount || amount <= 0) continue;
+    const label = (m[5] || line).slice(0, 60);
+    out.push({
+      date: m[1] || today,
+      journal: guessJournalLocal(m[2], m[3]),
+      reference: "Import local",
+      lines: [
+        { account: m[2], label, debit: amount, credit: 0 },
+        { account: m[3], label, debit: 0, credit: amount },
+      ],
+    });
+  }
+  return out;
 }
 
 export { entryTotals };

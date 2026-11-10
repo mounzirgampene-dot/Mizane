@@ -1,9 +1,10 @@
 // MIZANE — Contrôleur principal : navigation, routage, démarrage PWA.
 import { allAccounts } from "./plans.js";
 import { loadStore, demoData } from "./db.js";
-import { store, $nav, router, setRoute, currentRoute, initStore, saveNow } from "./state.js";
+import { store, $nav, $app, router, setRoute, currentRoute, initStore, saveNow } from "./state.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
-import { viewBalance, viewIncome, viewSheet, viewThirds, viewAssistant, viewSettings } from "./views/reports.js";
+import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
+import { viewAssistant, viewSettings } from "./views/assistant.js";
 
 const NAV = [
   ["dashboard", "Tableau de bord"],

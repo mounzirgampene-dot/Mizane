@@ -1,0 +1,16 @@
+{
+  "name": "MIZANE — Comptabilité générale",
+  "short_name": "MIZANE",
+  "description": "Application de comptabilité générale en partie double : journaux, grand livre, balance, bilan, multi-pays (SYSCOHADA, PCG, NCT, CGNC) et assistant IA Mistral.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f6f8",
+  "theme_color": "#0f766e",
+  "lang": "fr",
+  "categories": ["finance", "business", "productivity"],
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

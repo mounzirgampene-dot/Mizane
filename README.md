@@ -1,5 +1,7 @@
 # MIZANE — Comptabilité générale multi-pays avec IA
 
+**🌐 Application en ligne : https://mounzirgampene-dot.github.io/Mizane/**
+
 Application de comptabilité générale en **partie double**, internationale (choix du pays), installable comme application sur **Android** et **Windows**, avec un **assistant IA Mistral** intégré.
 
 ## ✨ Fonctionnalités

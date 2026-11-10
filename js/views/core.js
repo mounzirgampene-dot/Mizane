@@ -1,6 +1,7 @@
 // MIZANE — Écrans : tableau de bord, saisie, écritures, grand livre.
 import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, accountType } from "../accounting.js";
-import { aiConfigured, suggestEntry, parseEntryFromTextLocal } from "../ai.js";
+import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
+import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob } from "../db.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
@@ -92,7 +93,7 @@ export function viewEntry() {
     </div>
     <div class="card muted">
       Astuce : tapez un numéro de compte (ex. 411) ou un mot-clé (ex. « client ») pour l'autocomplétion.
-      L'IA peut rédiger l'écriture à partir d'une phrase : cliquez sur « Proposer avec l'IA ».
+      L'IA peut rédiger l'écriture à partir d'une phrase ou d'une photo : cliquez sur « Proposer avec l'IA ».
     </div>
   `;
 
@@ -145,18 +146,34 @@ function aiSuggestModal() {
   }
   openModal(`
     <h2>🤖 Saisie intelligente</h2>
-    <p class="muted">Décrivez l'opération en langage naturel. L'IA proposera une écriture à vérifier avant validation.</p>
+    <p class="muted">Décrivez l'opération en langage naturel, ou joignez la photo d'une facture/reçu : l'IA proposera une écriture à vérifier avant validation.</p>
     <textarea id="ai-text" rows="4" placeholder="Ex. : Achat de fournitures de bureau 35 000 FCFA payé en espèces, TVA 18%"></textarea>
+    <div class="row">
+      <div class="nogrow"><button class="secondary" id="ai-photo-btn">📷 Joindre une photo</button></div>
+      <input type="file" id="ai-photo-file" accept="image/*" class="hidden">
+      <span class="muted" id="ai-photo-name">Aucune photo (optionnel)</span>
+    </div>
     <div class="actions"><button id="ai-go">Proposer l'écriture</button><button class="secondary" data-close>Annuler</button></div>
     <div id="ai-result" style="margin-top:10px"></div>
   `);
+  let photoData = null;
+  document.getElementById("ai-photo-btn").addEventListener("click", () => document.getElementById("ai-photo-file").click());
+  document.getElementById("ai-photo-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      photoData = await imageFileToDataUrl(file);
+      document.getElementById("ai-photo-name").textContent = "✓ " + file.name;
+    } catch (err) { toast(err.message); }
+  });
   document.getElementById("ai-go").addEventListener("click", async () => {
     const text = document.getElementById("ai-text").value.trim();
-    if (!text) return;
+    if (!text && !photoData) return;
+    if (photoData && !aiConfigured(store)) { toast("La lecture de photo nécessite une clé Mistral (Paramètres)."); return; }
     const out = document.getElementById("ai-result");
     out.innerHTML = `<p class="muted">⏳ Interrogation de Mistral…</p>`;
     try {
-      const suggestion = await suggestEntry(store, text);
+      const suggestion = await suggestEntry(store, text || "Lis ce justificatif et propose l'écriture.", photoData);
       out.innerHTML = `<p class="ok-msg">✓ Proposition reçue. Fermez cette fenêtre pour la charger dans le formulaire.</p>
         <div class="actions"><button id="ai-load">Charger dans le formulaire</button></div>`;
       document.getElementById("ai-load").addEventListener("click", () => {
@@ -197,7 +214,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="danger small" data-reverse="${e.id}">Contrepasser</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="danger small" data-reverse="${e.id}">Contrepasser</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -205,6 +222,7 @@ export function viewEntries() {
     </div>
     <div class="actions">
       <button class="secondary" id="export-entries">⬇ Exporter CSV</button>
+      <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
   $app.querySelectorAll("[data-reverse]").forEach((b) => {
@@ -213,6 +231,25 @@ export function viewEntries() {
       if (res.ok) { saveStore(store); toast("✓ Écriture contrepassée."); router.render(); }
       else toast(res.errors.join(" "));
     });
+  });
+  $app.querySelectorAll("[data-invoice]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const entry = store.entries.find((e) => e.id === Number(b.dataset.invoice));
+      if (!entry) return;
+      openModal(`
+        <h2>Aperçu — ${entry.lines.some((l) => (Number(l.credit) || 0) > 0 && String(l.account).startsWith("7")) ? "facture" : "pièce comptable"} #${entry.id}</h2>
+        ${invoiceHTML(store, entry)}
+        <div class="actions"><button id="inv-print">🖨 Imprimer</button><button class="secondary" data-close>Fermer</button></div>
+      `);
+      document.getElementById("inv-print").addEventListener("click", () =>
+        printHTML(`${entry.reference || "Pièce #" + entry.id} — ${store.settings.companyName}`, invoiceHTML(store, entry)));
+    });
+  });
+  const pj = document.getElementById("print-entries");
+  if (pj) pj.addEventListener("click", () => {
+    const card = $app.querySelector(".card.table-wrap");
+    if (!card) return toast("Aucune écriture à imprimer.");
+    printHTML(`Journal des écritures — ${store.settings.companyName}`, card.innerHTML);
   });
   const ex = document.getElementById("export-entries");
   if (ex) ex.addEventListener("click", () => {
@@ -236,6 +273,7 @@ export function viewLedger() {
         <div><label>Au</label><input type="date" id="gl-end" value="${exerciceEnd}"></div>
         <div class="nogrow"><button id="gl-run">Afficher</button></div>
         <div class="nogrow"><button class="secondary" id="gl-csv">⬇ CSV</button></div>
+        <div class="nogrow"><button class="secondary" id="gl-print">🖨 Imprimer</button></div>
       </div>
       <div id="gl-result"></div>
     </div>
@@ -258,6 +296,12 @@ export function viewLedger() {
     box.dataset.code = code;
   };
   document.getElementById("gl-run").addEventListener("click", run);
+  document.getElementById("gl-print").addEventListener("click", () => {
+    const box = document.getElementById("gl-result");
+    const code = document.getElementById("gl-account").value.trim();
+    if (!code || !box.innerHTML.trim()) return toast("Affichez d'abord un compte.");
+    printHTML(`Grand livre ${code} — ${store.settings.companyName}`, box.innerHTML);
+  });
   document.getElementById("gl-csv").addEventListener("click", () => {
     const code = document.getElementById("gl-account").value.trim();
     if (!code) return toast("Saisissez d'abord un compte.");

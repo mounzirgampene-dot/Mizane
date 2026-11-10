@@ -220,6 +220,38 @@ test("arrondi monétaire à 2 décimales", () => {
   assert.equal(res.entry.lines[0].debit, 10.01);
 });
 
+test("import local de texte : une écriture par ligne", async () => {
+  const { parseEntriesFromTextLocal } = await import("../js/ai.js");
+  const s = freshStore();
+  const arr = parseEntriesFromTextLocal(s, "2025-03-01 601 401 25000 Achat marchandises\n521 701 10000 Vente au comptant\nligne incompréhensible");
+  assert.equal(arr.length, 2);
+  assert.equal(arr[0].date, "2025-03-01");
+  assert.equal(arr[0].lines[0].debit, 25000);
+  assert.equal(arr[0].lines[1].credit, 25000);
+  assert.equal(arr[1].journal, "VTE");
+  const res = postEntry(s, arr[0]);
+  assert.equal(res.ok, true, res.errors.join(","));
+});
+
+test("facture : HTML avec en-tête et total TTC", async () => {
+  const { invoiceHTML } = await import("../js/invoice.js");
+  const s = freshStore();
+  const e = postEntry(s, {
+    date: "2025-02-01", journal: "VTE", reference: "FCT-001",
+    lines: [
+      { account: "411", label: "Client Karim", third: "Karim", debit: 118000, credit: 0 },
+      { account: "701", label: "Ventes", debit: 0, credit: 100000 },
+      { account: "4431", label: "TVA facturée", debit: 0, credit: 18000 },
+    ],
+  }).entry;
+  const html = invoiceHTML(s, e);
+  assert.ok(html.includes("FACTURE"));
+  assert.ok(html.includes("FCT-001"));
+  assert.ok(html.includes("Karim"));
+  assert.ok(html.includes("Total TTC"));
+  assert.ok(html.includes("Total HT"));
+});
+
 test("export CSV", () => {
   const csv = toCSV([{ a: 1, b: "x;y" }]);
   assert.ok(csv.includes('"x;y"'));

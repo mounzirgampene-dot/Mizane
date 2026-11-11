@@ -32,7 +32,7 @@ export function getCountry(code) {
 export function formatMoney(amount, currency, locale = "fr") {
   try {
     return new Intl.NumberFormat(locale, { style: "currency", currency, maximumFractionDigits: 2 }).format(amount || 0);
-  } catch (e) {
+  } catch (_e) {
     return new Intl.NumberFormat("fr", { maximumFractionDigits: 2 }).format(amount || 0) + " " + currency;
   }
 }

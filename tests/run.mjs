@@ -5,7 +5,7 @@ import {
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
-import { COUNTRIES, getCountry, formatMoney } from "../js/countries.js";
+import { COUNTRIES, formatMoney } from "../js/countries.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -264,6 +264,124 @@ test("données de démonstration équilibrées", async () => {
   const tb = trialBalance(s);
   assert.equal(tb.totals.debit, tb.totals.credit);
   assert.ok(s.entries.length >= 8);
+});
+
+console.log("— Amortissements (finance.js) —");
+test("amortissement linéaire : annuité constante, VNC nulle à la fin", async () => {
+  const { amortizationSchedule } = await import("../js/finance.js");
+  const sched = amortizationSchedule(10000, 5, "lineaire");
+  assert.equal(sched.length, 5);
+  for (const r of sched) assert.equal(r.annuite, 2000);
+  assert.equal(sched[4].cumul, 10000);
+  assert.equal(sched[4].vnc, 0);
+});
+
+test("amortissement dégressif : cumul final = valeur, VNC nulle", async () => {
+  const { amortizationSchedule, amortRate } = await import("../js/finance.js");
+  const rate = amortRate(5, "degressif");
+  assert.equal(rate, 0.35);
+  const sched = amortizationSchedule(10000, 5, "degressif");
+  assert.equal(sched.length, 5);
+  assert.equal(sched[4].cumul, 10000);
+  assert.equal(sched[4].vnc, 0);
+  assert.ok(sched[0].annuite === 3500, "1re annuité dégressive = 3500");
+});
+
+test("nextAnnuity : reprend après cumul déjà amorti, 0 si terminé", async () => {
+  const { nextAnnuity } = await import("../js/finance.js");
+  assert.equal(nextAnnuity({ amount: 10000, years: 5, method: "lineaire", amortized: 2000 }), 2000);
+  assert.equal(nextAnnuity({ amount: 10000, years: 5, method: "lineaire", amortized: 10000 }), 0);
+});
+
+test("dotationLines : 681 débit / 28x crédit, équilibrées", async () => {
+  const { dotationLines } = await import("../js/finance.js");
+  const lines = dotationLines([
+    { name: "Moto", account: "2455", amount: 1500000, years: 5, method: "lineaire", amortized: 0 },
+  ]);
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].account, "681");
+  assert.equal(lines[1].account, "2455".replace(/^2/, "28"));
+  assert.equal(lines[0].debit, lines[1].credit);
+});
+
+console.log("— Clôture & à-nouveaux —");
+test("closingProposal : clôture équilibrée, résultat au compte 12, à-nouveaux équilibrés", async () => {
+  const { closingProposal } = await import("../js/finance.js");
+  const s = freshStore();
+  postEntry(s, { date: "2025-01-05", journal: "BAN", reference: "Capital", lines: [
+    { account: "521", label: "Banque", debit: 1000000, credit: 0 },
+    { account: "101", label: "Capital", debit: 0, credit: 1000000 },
+  ] });
+  postEntry(s, { date: "2025-03-01", journal: "VTE", reference: "V1", lines: [
+    { account: "521", label: "Banque", debit: 500000, credit: 0 },
+    { account: "701", label: "Ventes", debit: 0, credit: 500000 },
+  ] });
+  postEntry(s, { date: "2025-04-01", journal: "OD", reference: "Loyer", lines: [
+    { account: "6221", label: "Loyer", debit: 200000, credit: 0 },
+    { account: "521", label: "Banque", debit: 0, credit: 200000 },
+  ] });
+  const { closing, anew, resultat } = closingProposal(s, "2025-01-01", "2025-12-31", "2026-01-01");
+  assert.ok(closing, "écriture de clôture attendue");
+  assert.ok(anew, "écriture d'à-nouveaux attendue");
+  assert.equal(resultat, 300000);
+  const totC = closing.lines.reduce((a, l) => a + l.debit, 0);
+  assert.equal(totC, closing.lines.reduce((a, l) => a + l.credit, 0), "clôture équilibrée");
+  const c12 = closing.lines.find((l) => l.account === "12");
+  assert.ok(c12 && c12.credit === 300000, "compte 12 créditeur du bénéfice");
+  const totA = anew.lines.reduce((a, l) => a + l.debit, 0);
+  assert.equal(totA, anew.lines.reduce((a, l) => a + l.credit, 0), "à-nouveaux équilibrés");
+  const codes = anew.lines.map((l) => l.account);
+  for (const c of ["521", "101", "12"]) assert.ok(codes.includes(c), "compte " + c + " reporté");
+});
+
+console.log("— Rapprochement bancaire —");
+test("parseBankCSV : JJ/MM/AAAA, AAAA-MM-JJ, en-tête ignoré", async () => {
+  const { parseBankCSV } = await import("../js/finance.js");
+  const txt = "Date;Libellé;Montant\n10/01/2025;Virement client;1 000 000\n2025-01-12;Fournisseur;-500,5\nligne invalide\n";
+  const rows = parseBankCSV(txt);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].date, "2025-01-10");
+  assert.equal(rows[0].amount, 1000000);
+  assert.equal(rows[1].date, "2025-01-12");
+  assert.equal(rows[1].amount, -500.5);
+});
+
+test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", async () => {
+  const { parseBankCSV, matchBankLines } = await import("../js/finance.js");
+  const s = freshStore();
+  postEntry(s, { date: "2025-01-08", journal: "BAN", reference: "V1", lines: [
+    { account: "521", label: "Dépôt client", debit: 1000000, credit: 0 },
+    { account: "411", label: "Client", debit: 0, credit: 1000000 },
+  ] });
+  const rows = parseBankCSV("10/01/2025;Virement client;1000000\n20/01/2025;Inconnu;999");
+  const matched = matchBankLines(s, rows);
+  assert.equal(matched[0].match, 1);
+  assert.equal(matched[1].match, null);
+});
+
+console.log("— Cas limites —");
+test("validateEntry refuse les montants négatifs", () => {
+  const s = freshStore();
+  const v = validateEntry(s, { date: "2025-01-01", journal: "OD", lines: [
+    { account: "521", label: "A", debit: -100, credit: 0 },
+    { account: "101", label: "B", debit: 0, credit: -100 },
+  ] });
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some((e) => e.includes("négatifs")));
+});
+
+test("exercice à cheval : entriesInRange filtre 2025 vs 2024", () => {
+  const s = freshStore();
+  postEntry(s, { date: "2024-12-31", journal: "OD", reference: "N-1", lines: [
+    { account: "521", label: "A", debit: 100, credit: 0 },
+    { account: "101", label: "B", debit: 0, credit: 100 },
+  ] });
+  postEntry(s, { date: "2025-01-02", journal: "OD", reference: "N", lines: [
+    { account: "521", label: "A", debit: 50, credit: 0 },
+    { account: "101", label: "B", debit: 0, credit: 50 },
+  ] });
+  assert.equal(trialBalance(s, "2025-01-01", "2025-12-31").totals.debit, 50);
+  assert.equal(trialBalance(s, "2024-01-01", "2024-12-31").totals.debit, 100);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

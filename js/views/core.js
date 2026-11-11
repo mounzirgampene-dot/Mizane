@@ -2,7 +2,7 @@
 import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, accountType } from "../accounting.js";
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
-import { saveStore, downloadBlob } from "../db.js";
+import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, openModal, closeModal,
@@ -91,10 +91,12 @@ export function viewEntry() {
       </div>
       <div id="entry-errors"></div>
     </div>
-    <div class="card muted">
-      Astuce : tapez un numéro de compte (ex. 411) ou un mot-clé (ex. « client ») pour l'autocomplétion.
-      L'IA peut rédiger l'écriture à partir d'une phrase ou d'une photo : cliquez sur « Proposer avec l'IA ».
-    </div>
+    <details class="help card">
+      <summary>❓ Aide — journaux et comptes</summary>
+      <p class="muted"><strong>Journaux :</strong> ACH (achats/fournisseurs), VTE (ventes/clients), BAN (banque), CAI (caisse), OD (opérations diverses : salaires, loyers, à-nouveaux…).</p>
+      <p class="muted"><strong>Comptes :</strong> tapez un numéro (ex. 411) ou un mot-clé (ex. « client ») pour l'autocomplétion. Classes usuelles : 1 capitaux, 2 immobilisations, 3 stocks, 4 tiers, 5 trésorerie, 6 charges, 7 produits.</p>
+      <p class="muted"><strong>Équilibre :</strong> une écriture n'est validable que si total débit = total crédit. Utilisez « Proposer avec l'IA » avec une phrase ou une photo de facture pour préremplir les lignes.</p>
+    </details>
   `;
 
   $app.querySelectorAll("[data-i]").forEach((inp) => {
@@ -222,6 +224,7 @@ export function viewEntries() {
     </div>
     <div class="actions">
       <button class="secondary" id="export-entries">⬇ Exporter CSV</button>
+      <button class="secondary" id="xls-entries">⬇ Excel</button>
       <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
@@ -258,6 +261,12 @@ export function viewEntries() {
       compte: l.account, libelle: l.label, tiers: l.third, debit: l.debit, credit: l.credit,
     })));
     downloadBlob(new Blob(["\ufeff" + toCSV(rowsCSV)], { type: "text/csv;charset=utf-8" }), "mizane-ecritures.csv");
+  });
+  const xl = document.getElementById("xls-entries");
+  if (xl) xl.addEventListener("click", () => {
+    const table = $app.querySelector(".card.table-wrap table");
+    if (!table) return toast("Aucune écriture à exporter.");
+    exportXLS(`Journal des écritures — ${store.settings.companyName}`, table.outerHTML, "mizane-ecritures.xls");
   });
 }
 

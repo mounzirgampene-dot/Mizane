@@ -139,7 +139,7 @@ export function viewEntry() {
 
 function aiSuggestModal() {
   if (!aiConfigured(store)) {
-    const local = prompt("Aucune clé Mistral configurée.\nAssistant local : décrivez l'opération (ex. « achat matériel 50000 en espèces ») :");
+    const local = prompt("Aucune clé IA configurée.\nAssistant local : décrivez l'opération (ex. « achat matériel 50000 en espèces ») :");
     if (!local) return;
     const e = parseEntryFromTextLocal(store, local);
     if (!e) { toast("Opération non comprise par l'assistant local."); return; }
@@ -171,16 +171,16 @@ function aiSuggestModal() {
   document.getElementById("ai-go").addEventListener("click", async () => {
     const text = document.getElementById("ai-text").value.trim();
     if (!text && !photoData) return;
-    if (photoData && !aiConfigured(store)) { toast("La lecture de photo nécessite une clé Mistral (Paramètres)."); return; }
+    if (photoData && !aiConfigured(store)) { toast("La lecture de photo nécessite une clé IA (Paramètres)."); return; }
     const out = document.getElementById("ai-result");
-    out.innerHTML = `<p class="muted">⏳ Interrogation de Mistral…</p>`;
+    out.innerHTML = `<p class="muted">⏳ Interrogation de l'IA…</p>`;
     try {
       const suggestion = await suggestEntry(store, text || "Lis ce justificatif et propose l'écriture.", photoData);
       out.innerHTML = `<p class="ok-msg">✓ Proposition reçue. Fermez cette fenêtre pour la charger dans le formulaire.</p>
         <div class="actions"><button id="ai-load">Charger dans le formulaire</button></div>`;
       document.getElementById("ai-load").addEventListener("click", () => {
         closeModal();
-        loadDraftFromSuggestion(suggestion, "Proposée par Mistral AI — à vérifier");
+        loadDraftFromSuggestion(suggestion, "Proposée par l'IA — à vérifier");
       });
     } catch (err) {
       out.innerHTML = `<p class="errors">${esc(err.message)}</p>`;

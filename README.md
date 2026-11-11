@@ -1,6 +1,6 @@
 # MIZANE — Comptabilité générale multi-pays avec IA
 
-Application de comptabilité générale en **partie double**, internationale (choix du pays), installable comme application sur **Android** et **Windows**, avec un **assistant IA Mistral** intégré.
+Application de comptabilité générale en **partie double**, internationale (choix du pays), installable comme application sur **Android** et **Windows**, avec un **assistant IA intégré** (Mistral, Groq ou Google Gemini — clés gratuites).
 
 ## ✨ Fonctionnalités
 
@@ -24,9 +24,9 @@ Application de comptabilité générale en **partie double**, internationale (ch
 - **21 pays** préconfigurés : sélection du pays dans les paramètres → **plan comptable, devise, taux de TVA et format monétaire choisis automatiquement**
 - Plans inclus : **SYSCOHADA (OHADA)** — 17 pays d'Afrique de l'Ouest et Centrale, **PCG (France)**, **NCT (Tunisie)**, **CGNC (Maroc)**, plus un mode personnalisé
 
-### Assistant IA (Mistral) 🤖
+### Assistant IA (Mistral, Groq ou Gemini) 🤖
 - **Saisie intelligente** : décrivez une opération en langage naturel (« achat de fournitures 35 000 payé en espèces, TVA 18 % ») → l'IA propose l'écriture complète, à vérifier puis valider
-- **📷 Lecture de photos** : joignez la photo d'une facture, d'un reçu ou d'un ticket → l'IA (modèle vision Pixtral) lit les montants et propose l'écriture ; la photo fonctionne aussi dans la conversation
+- **📷 Lecture de photos** : joignez la photo d'une facture, d'un reçu ou d'un ticket → l'IA (modèle vision du fournisseur) lit les montants et propose l'écriture ; la photo fonctionne aussi dans la conversation
 - **📥 Remplissage automatique depuis un texte** : collez un relevé bancaire, des factures ou vos notes → l'IA crée toutes les écritures d'un coup ; grand livre, balance, bilan et compte de résultat se remplissent automatiquement
 - **Conversation comptable** : posez vos questions sur vos comptes, la TVA, le résultat…
 - **Audit intelligent** : analyse des écritures, signalement des erreurs, TVA oubliée, comptes suspects, recommandations
@@ -60,20 +60,29 @@ npx serve .        # ou : python3 -m http.server 8080
 # puis ouvrir http://localhost:8080
 ```
 
-## 🤖 Brancher l'IA Mistral
-1. Créez une clé API sur [console.mistral.ai](https://console.mistral.ai) (offre gratuite disponible)
-2. Dans MIZANE : **Paramètres → Assistant IA** → collez la clé, choisissez le modèle
-3. La clé reste stockée **uniquement sur votre appareil**, **chiffrée localement** (AES-GCM, Web Crypto) ; les requêtes vont directement à api.mistral.ai
+## 🤖 Brancher l'IA (clé gratuite)
+Trois fournisseurs sont intégrés, tous avec **offre gratuite sans carte bancaire** :
+
+| Fournisseur | Créer la clé | Particularité |
+|---|---|---|
+| **Google Gemini** (par défaut) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Connexion avec un compte Google, clé immédiate, lecture de photos incluse |
+| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Très rapide, clé immédiate, lecture de photos incluse (Llama 4 Scout) |
+| **Mistral AI** | [console.mistral.ai/api-keys](https://console.mistral.ai/api-keys) | Lecture de photos (Pixtral) |
+
+1. Créez une clé sur le site du fournisseur (quelques clics, aucune carte demandée)
+2. Dans MIZANE : **Paramètres → Assistant IA** → choisissez le **Fournisseur**, collez la **Clé API**, choisissez le modèle
+3. La clé reste stockée **uniquement sur votre appareil**, **chiffrée localement** (AES-GCM, Web Crypto) ; les requêtes vont directement au fournisseur choisi
+4. Un fournisseur **Personnalisé** (compatible OpenAI) est aussi disponible pour brancher n'importe quel autre service
 
 ## ✅ Tests & qualité
 ```bash
-npm test        # 34 tests : moteur comptable, amortissements, clôture/à-nouveaux, rapprochement, cas limites
+npm test        # 37 tests : moteur comptable, amortissements, clôture/à-nouveaux, rapprochement, cas limites, fournisseurs IA (mock)
 npm run lint    # ESLint (exécuté aussi en CI)
 ```
 
 ## 🔐 Confidentialité
-- Toutes les données comptables restent **sur votre appareil** (localStorage). Rien n'est envoyé sur Internet, sauf les textes/photos que vous soumettez à l'assistant IA (api.mistral.ai) et les sauvegardes que vous exportez vous-même.
-- La clé API Mistral est **chiffrée avant stockage** (AES-GCM via Web Crypto, clé générée sur l'appareil). Ce chiffrement protège d'une lecture directe du stockage ; il ne remplace pas le verrouillage de votre appareil. Une page « Confidentialité » dans les Paramètres détaille tout cela.
+- Toutes les données comptables restent **sur votre appareil** (localStorage). Rien n'est envoyé sur Internet, sauf les textes/photos que vous soumettez à l'assistant IA (envoyés au fournisseur choisi : Mistral, Groq ou Google) et les sauvegardes que vous exportez vous-même.
+- La clé API du fournisseur IA est **chiffrée avant stockage** (AES-GCM via Web Crypto, clé générée sur l'appareil). Ce chiffrement protège d'une lecture directe du stockage ; il ne remplace pas le verrouillage de votre appareil. Une page « Confidentialité » dans les Paramètres détaille tout cela.
 
 ## 🗂 Structure
 ```
@@ -81,7 +90,7 @@ index.html            Point d'entrée
 js/accounting.js      Moteur comptable (partie double, balance, bilan, anomalies)
 js/plans.js           Plans comptables SYSCOHADA / PCG / NCT / CGNC
 js/countries.js       Référentiels pays (devise, TVA, plan)
-js/ai.js              Assistant IA Mistral + assistant local
+js/ai.js              Assistant IA multi-fournisseurs (Mistral, Groq, Gemini) + assistant local
 js/db.js              Persistance locale, import/export, démo, export Excel
 js/finance.js         Amortissements, rapprochement bancaire, clôture d'exercice
 js/crypto.js          Chiffrement local des secrets (AES-GCM)
@@ -93,7 +102,7 @@ sw.js + manifest      Application progressive (PWA, hors-ligne)
 ```
 
 ## 🔒 Données
-Toutes les données restent **sur votre appareil** (localStorage), clé API incluse (chiffrée). Exportez régulièrement une sauvegarde JSON depuis Paramètres.
+Toutes les données restent **sur votre appareil** (localStorage), clé IA incluse (chiffrée). Exportez régulièrement une sauvegarde JSON depuis Paramètres.
 
 ## 🗺 Feuille de route
 Pistes prévues pour les prochaines itérations : IndexedDB (stockage plus robuste), interface en anglais (i18n), rôles multi-utilisateurs, sauvegarde cloud chiffrée, import OFX, prévisions de trésorerie assistées par IA.

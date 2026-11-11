@@ -22,8 +22,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Installation des dépendances de dev
+        run: npm ci || npm install
+      - name: Lint (ESLint)
+        run: npm run lint
       - name: Tests du moteur comptable
-        run: node tests/run.mjs
+        run: npm test
 
   deploy:
     needs: test

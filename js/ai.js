@@ -1,31 +1,98 @@
-// MIZANE — Assistant IA (Mistral AI) + assistant local de secours.
+// MIZANE — Assistant IA multi-fournisseurs (Mistral, Groq, Gemini) + assistant local de secours.
 import { trialBalance, incomeStatement, checkAnomalies, entryTotals } from "./accounting.js";
 import { formatMoney } from "./countries.js";
 import { decryptSecret } from "./crypto.js";
 
-export const VISION_MODEL = "pixtral-12b-2409";
+export const PROVIDERS = {
+  mistral: {
+    label: "Mistral AI",
+    endpoint: "https://api.mistral.ai/v1/chat/completions",
+    models: ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest", "open-mistral-nemo", "ministral-8b-latest", "pixtral-12b-2409"],
+    vision: "pixtral-12b-2409",
+    keyUrl: "console.mistral.ai/api-keys",
+  },
+  groq: {
+    label: "Groq",
+    endpoint: "https://api.groq.com/openai/v1/chat/completions",
+    models: ["llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct", "openai/gpt-oss-120b", "llama-3.1-8b-instant"],
+    vision: "meta-llama/llama-4-scout-17b-16e-instruct",
+    keyUrl: "console.groq.com/keys",
+  },
+  gemini: {
+    label: "Google Gemini",
+    endpoint: "https://generativelanguage.googleapis.com/v1beta",
+    models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+    vision: "gemini-2.0-flash",
+    keyUrl: "aistudio.google.com/apikey",
+  },
+};
+
+export function providerOf(store) {
+  const ep = store.settings.aiEndpoint || "";
+  for (const [id, p] of Object.entries(PROVIDERS)) if (p.endpoint === ep) return id;
+  return "custom";
+}
+
+export function visionModel(store) {
+  const p = PROVIDERS[providerOf(store)];
+  return p ? p.vision : store.settings.aiModel || "";
+}
 
 export function aiConfigured(store) {
   return Boolean(store.settings.aiKey || store.settings.aiKeyEnc);
 }
 
-async function mistralChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
+// Messages (format OpenAI) -> corps d'appel Gemini (format generateContent).
+export function toGeminiBody(messages, { json = false, temperature = 0.2 } = {}) {
+  const system = [];
+  const contents = [];
+  for (const m of messages) {
+    if (m.role === "system") { system.push(typeof m.content === "string" ? m.content : ""); continue; }
+    const parts = [];
+    if (typeof m.content === "string") parts.push({ text: m.content });
+    else for (const p of m.content) {
+      if (p.type === "text") parts.push({ text: p.text });
+      else if (p.type === "image_url") {
+        const src = typeof p.image_url === "string" ? p.image_url : p.image_url.url;
+        const head = src.slice(0, src.indexOf(","));
+        parts.push({ inline_data: { mime_type: head.slice(head.indexOf(":") + 1, head.indexOf(";")), data: src.slice(src.indexOf(",") + 1) } });
+      }
+    }
+    contents.push({ role: m.role === "assistant" ? "model" : "user", parts });
+  }
+  return { systemInstruction: { parts: [{ text: system.join("\n") }] }, contents, generationConfig: { temperature, ...(json ? { response_mime_type: "application/json" } : {}) } };
+}
+
+async function aiChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
   const { aiEndpoint, aiKey, aiKeyEnc, aiModel } = store.settings;
   const key = aiKeyEnc ? await decryptSecret(aiKeyEnc) : aiKey;
-  if (!key) throw new Error("Clé API Mistral manquante (Paramètres > Assistant IA).");
+  if (!key) throw new Error("Clé API manquante (Paramètres > Assistant IA).");
+  const pid = providerOf(store);
+  if (pid === "gemini") {
+    const url = `${aiEndpoint.replace(/\/+$/, "")}/models/${model || aiModel || "gemini-2.0-flash"}:generateContent?key=${encodeURIComponent(key)}`;
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toGeminiBody(messages, { json, temperature })) });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Erreur Gemini ${res.status} : ${txt.slice(0, 300)}`);
+    }
+    const data = await res.json();
+    return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
+  }
+  const mistral = pid === "mistral";
+  const messages2 = mistral ? messages : messages.map((m) => typeof m.content !== "object" || !m.content ? m : { ...m, content: m.content.map((p) => p.type === "image_url" && typeof p.image_url === "string" ? { ...p, image_url: { url: p.image_url } } : p) });
   const res = await fetch(aiEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
     body: JSON.stringify({
       model: model || aiModel || "mistral-small-latest",
       temperature,
-      messages,
+      messages: messages2,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`Erreur Mistral ${res.status} : ${txt.slice(0, 300)}`);
+    throw new Error(`Erreur IA ${res.status} : ${txt.slice(0, 300)}`);
   }
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
@@ -42,7 +109,7 @@ export function systemPrompt(store) {
     `Société : ${store.settings.companyName}. Pays : ${store.settings.country}. Devise : ${store.settings.currency}.`,
     `Plan comptable : ${store.settings.plan}. Exercice : ${store.settings.exerciceStart} au ${store.settings.exerciceEnd}.`,
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
-    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}",
+    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}.",
     "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
     "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
     "Comptes disponibles (extrait) :\n" + planDigest(store),
@@ -76,10 +143,10 @@ export async function suggestEntry(store, text, imageDataUrl = null) {
         { type: "image_url", image_url: imageDataUrl },
       ]
     : "Propose l'écriture comptable pour cette opération, uniquement le JSON :\n" + text;
-  const content = await mistralChat(store, [
+  const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content: userContent },
-  ], { json: true, model: imageDataUrl ? VISION_MODEL : undefined });
+  ], { json: true, model: imageDataUrl ? visionModel(store) : undefined });
   try {
     const parsed = JSON.parse(content);
     if (parsed.lines) return parsed;
@@ -94,22 +161,22 @@ export async function chat(store, history, userMessage) {
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: userMessage },
   ];
-  return mistralChat(store, messages, { temperature: 0.3 });
+  return aiChat(store, messages, { temperature: 0.3 });
 }
 
-// Conversation avec photo (modèle vision Pixtral).
+// Conversation avec photo (modèle vision du fournisseur).
 export async function chatWithImage(store, history, text, imageDataUrl) {
-  return mistralChat(store, [
+  return aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     ...history.map((m) => ({ role: m.role, content: m.content })),
     { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: imageDataUrl }] },
-  ], { temperature: 0.3, model: VISION_MODEL });
+  ], { temperature: 0.3, model: visionModel(store) });
 }
 
 // Texte (relevé, factures, notes…) -> tableau d'écritures proposées par l'IA.
 export async function importEntriesFromText(store, text) {
   const today = new Date().toISOString().slice(0, 10);
-  const content = await mistralChat(store, [
+  const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content:
       "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
@@ -133,7 +200,7 @@ export async function aiAudit(store) {
     `Produits ${is.totProduits} - Charges ${is.totCharges} = Résultat ${is.resultat}.`,
     anomalies.slice(0, 20).map((a) => "- " + a.message).join("\n"),
   ].join("\n");
-  return mistralChat(store, [
+  return aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content: "Voici l'état de ma comptabilité. Analyse-la, signale les erreurs, les comptes suspects, les oublis probables (TVA, charges à payer…) et donne des recommandations concrètes :\n" + resume },
   ], { temperature: 0.3 });
@@ -162,7 +229,7 @@ export function localAssist(store, question) {
     lines.push("À l'achat : débiterez la charge ou l'immobilisation HT + TVA récupérable (4452/4456), créditez le fournisseur TTC.");
   } else {
     lines.push("Assistant local actif (sans IA). Questions utiles : « résultat », « balance », « erreurs », « TVA ».");
-    lines.push("Pour l'assistant complet (rédaction d'écritures en langage naturel, audit, explications), ajoutez votre clé API Mistral dans Paramètres.");
+    lines.push("Pour l'assistant complet (rédaction d'écritures en langage naturel, audit, explications), ajoutez votre clé IA (Groq, Gemini ou Mistral) dans Paramètres.");
   }
   return lines.join("\n");
 }

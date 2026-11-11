@@ -4,7 +4,7 @@ import { PLANS, getPlan, ACCOUNT_TYPES } from "../plans.js";
 import { COUNTRIES, getCountry } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
-  imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, VISION_MODEL,
+  imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
 import { encryptSecret } from "../crypto.js";
@@ -16,8 +16,8 @@ export function viewAssistant() {
   $app.innerHTML = `
     <h1>Assistant IA</h1>
     ${configured
-      ? `<p class="ok-msg">✓ Mistral AI connecté (modèle ${esc(store.settings.aiModel)}).</p>`
-      : `<p class="warn">⚠ Aucune clé API Mistral. L'assistant local basique est actif. Ajoutez votre clé dans <a href="#settings">Paramètres</a>.</p>`}
+      ? `<p class="ok-msg">✓ IA connectée (${esc(PROVIDERS[providerOf(store)]?.label || "fournisseur personnalisé")}, modèle ${esc(store.settings.aiModel)}).</p>`
+      : `<p class="warn">⚠ Aucune clé API configurée. L'assistant local basique est actif. Ajoutez votre clé dans <a href="#settings">Paramètres</a> (Groq, Gemini ou Mistral — gratuit).</p>`}
     <div class="grid cols-3">
       <div class="card kpi"><div class="value">${audit.total}</div><div class="label">Anomalies (moteur local)</div></div>
       <div class="card kpi"><div class="value">${audit.desequilibres}</div><div class="label">Déséquilibres</div></div>
@@ -33,7 +33,7 @@ export function viewAssistant() {
     <div class="card">
       <h2>💬 Conversation</h2>
       <div class="chat-box" id="chat-box">
-        <div class="chat-msg ai">Bonjour ! Je suis l'assistant comptable MIZANE${configured ? " (Mistral AI)" : " (mode local)"}. Posez vos questions, ou joignez la photo d'une facture ou d'un reçu pour que je la lise.</div>
+        <div class="chat-msg ai">Bonjour ! Je suis l'assistant comptable MIZANE${configured ? " (IA connectée)" : " (mode local)"}. Posez vos questions, ou joignez la photo d'une facture ou d'un reçu pour que je la lise.</div>
         ${aiHistory.map((m) => `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}</div>`).join("")}
       </div>
       <div class="img-preview hidden" id="chat-img-preview"><img id="chat-img-thumb" alt="aperçu"><span class="muted" id="chat-img-name"></span><button class="danger small" id="chat-img-remove">✕</button></div>
@@ -109,7 +109,7 @@ export function viewAssistant() {
     const input = document.getElementById("chat-input");
     const msg = input.value.trim();
     if (!msg && !photoData) return;
-    if (photoData && !aiConfigured(store)) { toast("La lecture de photo nécessite une clé Mistral (Paramètres)."); return; }
+    if (photoData && !aiConfigured(store)) { toast("La lecture de photo nécessite une clé IA (Paramètres)."); return; }
     const shown = msg || "(photo jointe)";
     aiHistory.push({ role: "user", content: shown });
     input.value = "";
@@ -149,6 +149,7 @@ export function viewAssistant() {
 export function viewSettings() {
   const s = store.settings;
   const plan = getPlan(s.plan);
+  const pid = providerOf(store);
   $app.innerHTML = `
     <h1>Paramètres</h1>
     <div class="card">
@@ -174,26 +175,37 @@ export function viewSettings() {
     </div>
 
     <div class="card">
-      <h2>🤖 Assistant IA (Mistral)</h2>
+      <h2>🤖 Assistant IA</h2>
       <div class="row">
-        <div><label>Clé API Mistral</label><input id="s-aikey" type="password" placeholder="Collez votre clé API Mistral" value="" ${s.aiKeyEnc ? "data-enc=\"1\"" : ""}></div>
-        <div><label>Modèle</label>
-          <select id="s-aimodel">
-            ${["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest", "open-mistral-nemo", "ministral-8b-latest", VISION_MODEL].map((m) => `<option ${m === s.aiModel ? "selected" : ""}>${m}</option>`).join("")}
+        <div><label>Fournisseur</label>
+          <select id="s-aiprovider">
+            ${Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}" ${pid === id ? "selected" : ""}>${p.label} — gratuit</option>`).join("")}
+            <option value="custom" ${pid === "custom" ? "selected" : ""}>Personnalisé (compatible OpenAI)</option>
           </select>
         </div>
+        <div><label>Clé API</label><input id="s-aikey" type="password" placeholder="Collez votre clé API" value="" ${s.aiKeyEnc ? "data-enc=\"1\"" : ""}></div>
+        ${pid === "custom"
+          ? `<div><label>Modèle</label><input id="s-aimodel-text" value="${esc(s.aiModel || "")}" placeholder="nom-du-modèle"></div>`
+          : `<div><label>Modèle</label>
+          <select id="s-aimodel">
+            ${(PROVIDERS[pid].models.includes(s.aiModel) ? PROVIDERS[pid].models : [s.aiModel, ...PROVIDERS[pid].models]).map((m) => `<option ${m === s.aiModel ? "selected" : ""}>${m}</option>`).join("")}
+          </select>
+        </div>`}
       </div>
-      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} Obtenez une clé gratuite sur console.mistral.ai. Les photos sont analysées par le modèle vision ${VISION_MODEL}, quel que soit le modèle choisi ici.</p>
+      <div class="row" ${pid === "custom" ? "" : "hidden"}>
+        <div><label>Endpoint (compatible OpenAI)</label><input id="s-aiendpoint" placeholder="https://…/v1/chat/completions" value="${esc(s.aiEndpoint || "")}"></div>
+      </div>
+      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} ${pid === "custom" ? "" : `Clé gratuite sur ${PROVIDERS[pid].keyUrl}.`} Les photos sont analysées par le modèle vision ${pid === "custom" ? "du fournisseur choisi" : PROVIDERS[pid].vision}.</p>
     </div>
 
     <div class="card">
       <h2>🔐 Confidentialité</h2>
-      <p class="muted">Toutes vos données comptables restent sur votre appareil (stockage local). Rien n'est envoyé sur Internet, sauf : les textes/photos que vous soumettez à l'assistant IA (envoyés à api.mistral.ai), et les sauvegardes que vous exportez vous-même.</p>
-      <p class="muted">La clé API Mistral est chiffrée localement (AES-GCM, Web Crypto) avant d'être stockée. Attention : ce chiffrement protège contre une lecture directe du stockage, mais si votre appareil est compromis (logiciel malveillant, accès physique non verrouillé), la clé pourrait être récupérée. Utilisez le verrouillage de l'appareil et ne le partagez pas.</p>
+      <p class="muted">Toutes vos données comptables restent sur votre appareil (stockage local). Rien n'est envoyé sur Internet, sauf : les textes/photos que vous soumettez à l'assistant IA (envoyés au fournisseur choisi dans les Paramètres : Mistral, Groq ou Google), et les sauvegardes que vous exportez vous-même.</p>
+      <p class="muted">La clé API est chiffrée localement (AES-GCM, Web Crypto) avant d'être stockée. Attention : ce chiffrement protège contre une lecture directe du stockage, mais si votre appareil est compromis (logiciel malveillant, accès physique non verrouillé), la clé pourrait être récupérée. Utilisez le verrouillage de l'appareil et ne le partagez pas.</p>
     </div>
 
     <div class="card">
-      <h2>📘 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
+      <h2>📗 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
       <div class="row">
         <div><label>Nouveau compte (numéro)</label><input id="ca-code" placeholder="Ex. 7085"></div>
         <div><label>Libellé</label><input id="ca-label" placeholder="Ex. Ventes de services divers"></div>
@@ -252,7 +264,7 @@ export function viewSettings() {
       try {
         s.aiKeyEnc = await encryptSecret(v);
         s.aiKey = "";
-        toast("✓ Clé Mistral chiffrée et enregistrée.");
+        toast("✓ Clé chiffrée et enregistrée.");
         document.getElementById("s-aikey-status").textContent = "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM).";
       } catch (_err) {
         s.aiKey = v;
@@ -268,7 +280,19 @@ export function viewSettings() {
     saveStore(store);
     e.target.value = "";
   });
-  document.getElementById("s-aimodel").addEventListener("change", (e) => { s.aiModel = e.target.value; saveStore(store); });
+  document.getElementById("s-aiprovider").addEventListener("change", (e) => {
+    const id = e.target.value;
+    if (id !== "custom") {
+      s.aiEndpoint = PROVIDERS[id].endpoint;
+      s.aiModel = PROVIDERS[id].models.includes(s.aiModel) ? s.aiModel : PROVIDERS[id].models[0];
+    }
+    saveStore(store);
+    toast(id === "custom" ? "Fournisseur personnalisé : saisissez l'endpoint." : "Fournisseur : " + PROVIDERS[id].label + ".");
+    router.render();
+  });
+  document.getElementById("s-aimodel")?.addEventListener("change", (e) => { s.aiModel = e.target.value; saveStore(store); });
+  document.getElementById("s-aimodel-text")?.addEventListener("change", (e) => { s.aiModel = e.target.value.trim(); saveStore(store); });
+  document.getElementById("s-aiendpoint")?.addEventListener("change", (e) => { s.aiEndpoint = e.target.value.trim(); saveStore(store); toast("✓ Endpoint enregistré."); });
 
   document.getElementById("ca-add").addEventListener("click", () => {
     const code = document.getElementById("ca-code").value.trim();

@@ -1,7 +1,5 @@
 # MIZANE — Comptabilité générale multi-pays avec IA
 
-**🌐 Application en ligne : https://mounzirgampene-dot.github.io/Mizane/**
-
 Application de comptabilité générale en **partie double**, internationale (choix du pays), installable comme application sur **Android** et **Windows**, avec un **assistant IA Mistral** intégré.
 
 ## ✨ Fonctionnalités
@@ -16,7 +14,10 @@ Application de comptabilité générale en **partie double**, internationale (ch
 - **Bilan** (actif / passif) avec contrôle d'équilibre automatique et intégration du résultat
 - **Tiers** (clients, fournisseurs) avec calcul des soldes
 - **Exercice comptable** paramétrable, filtres de période partout
-- **Export / import** de sauvegarde JSON, export CSV, données de démonstration
+- **Clôture d'exercice & à-nouveaux** : le module **Outils** génère l'écriture de clôture (classes 6/7 → compte 12 « résultat ») puis les à-nouveaux (report des soldes classes 1 à 5) à l'ouverture du nouvel exercice, avec contrôle d'équilibre avant validation
+- **Immobilisations & amortissements** : suivi des immobilisations, plans d'amortissement **linéaire et dégressif** (coefficients 1,25 à 2,25), visualisation du plan (annuités, cumul, VNC) et génération automatique de l'écriture de dotations (681 / 28x)
+- **Rapprochement bancaire** : collez un relevé (CSV : `date;libellé;montant`, dates JJ/MM/AAAA ou AAAA-MM-JJ) → rapprochement automatique avec les écritures de trésorerie (classe 5) à ±4 jours, export du rapport CSV
+- **Export / import** de sauvegarde JSON, export CSV, **export Excel** (balance et journal), données de démonstration
 - **Plans comptables personnalisables** : ajoutez vos propres comptes
 
 ### International 🌍
@@ -35,6 +36,11 @@ Application de comptabilité générale en **partie double**, internationale (ch
 ### Impression 🖨
 - **Facture imprimable** générée depuis chaque écriture de vente (bouton 🧾 dans Écritures) : en-tête société, client, total HT / TVA / TTC
 - Boutons **Imprimer** sur la balance, le compte de résultat, le bilan, le grand livre et le journal des écritures
+
+### Confort d'utilisation
+- **Mode sombre / clair** (bouton 🌙, préférence mémorisée, suit le thème du système par défaut)
+- **Notifications toast** pour chaque action, **aide contextuelle** sur la saisie (journaux, classes de comptes, équilibre)
+- **Accessibilité** : labels sur tous les champs, navigation clavier, contrastes conformes WCAG 2.1 AA, `aria-live` sur le contenu principal
 
 ## 🚀 Installation
 
@@ -57,12 +63,17 @@ npx serve .        # ou : python3 -m http.server 8080
 ## 🤖 Brancher l'IA Mistral
 1. Créez une clé API sur [console.mistral.ai](https://console.mistral.ai) (offre gratuite disponible)
 2. Dans MIZANE : **Paramètres → Assistant IA** → collez la clé, choisissez le modèle
-3. La clé reste stockée **uniquement sur votre appareil** ; les requêtes vont directement à api.mistral.ai
+3. La clé reste stockée **uniquement sur votre appareil**, **chiffrée localement** (AES-GCM, Web Crypto) ; les requêtes vont directement à api.mistral.ai
 
-## ✅ Tests
+## ✅ Tests & qualité
 ```bash
-npm test        # 25 tests du moteur comptable (validation, balance, bilan, anomalies, facture, import de texte…)
+npm test        # 34 tests : moteur comptable, amortissements, clôture/à-nouveaux, rapprochement, cas limites
+npm run lint    # ESLint (exécuté aussi en CI)
 ```
+
+## 🔐 Confidentialité
+- Toutes les données comptables restent **sur votre appareil** (localStorage). Rien n'est envoyé sur Internet, sauf les textes/photos que vous soumettez à l'assistant IA (api.mistral.ai) et les sauvegardes que vous exportez vous-même.
+- La clé API Mistral est **chiffrée avant stockage** (AES-GCM via Web Crypto, clé générée sur l'appareil). Ce chiffrement protège d'une lecture directe du stockage ; il ne remplace pas le verrouillage de votre appareil. Une page « Confidentialité » dans les Paramètres détaille tout cela.
 
 ## 🗂 Structure
 ```
@@ -70,17 +81,22 @@ index.html            Point d'entrée
 js/accounting.js      Moteur comptable (partie double, balance, bilan, anomalies)
 js/plans.js           Plans comptables SYSCOHADA / PCG / NCT / CGNC
 js/countries.js       Référentiels pays (devise, TVA, plan)
-js/ai.js              Assistant IA Mistral (texte, photo, import) + assistant local
-js/db.js              Persistance locale, import/export, démo
-js/views/             Écrans (tableau de bord, saisie, états, assistant IA, paramètres)
+js/ai.js              Assistant IA Mistral + assistant local
+js/db.js              Persistance locale, import/export, démo, export Excel
+js/finance.js         Amortissements, rapprochement bancaire, clôture d'exercice
+js/crypto.js          Chiffrement local des secrets (AES-GCM)
+js/views/             Écrans (tableau de bord, saisie, états, outils, assistant IA, paramètres)
 js/invoice.js         Génération de facture imprimable
 js/print.js           Impression des états
 tests/run.mjs         Tests automatisés
 sw.js + manifest      Application progressive (PWA, hors-ligne)
 ```
 
-## 🔐 Données
-Toutes les données restent **sur votre appareil** (localStorage). Exportez régulièrement une sauvegarde JSON depuis Paramètres.
+## 🔒 Données
+Toutes les données restent **sur votre appareil** (localStorage), clé API incluse (chiffrée). Exportez régulièrement une sauvegarde JSON depuis Paramètres.
+
+## 🗺 Feuille de route
+Pistes prévues pour les prochaines itérations : IndexedDB (stockage plus robuste), interface en anglais (i18n), rôles multi-utilisateurs, sauvegarde cloud chiffrée, import OFX, prévisions de trésorerie assistées par IA.
 
 ## 📄 Licence
 MIT

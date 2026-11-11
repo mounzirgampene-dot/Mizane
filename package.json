@@ -5,8 +5,16 @@
   "type": "module",
   "scripts": {
     "test": "node tests/run.mjs",
+    "lint": "eslint js tests sw.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "start": "npx --yes serve -l 8080 .",
     "icons": "python3 make_icons.py"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.0"
+  }
 }

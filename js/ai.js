@@ -1,19 +1,21 @@
 // MIZANE — Assistant IA (Mistral AI) + assistant local de secours.
 import { trialBalance, incomeStatement, checkAnomalies, entryTotals } from "./accounting.js";
 import { formatMoney } from "./countries.js";
+import { decryptSecret } from "./crypto.js";
 
 export const VISION_MODEL = "pixtral-12b-2409";
 
 export function aiConfigured(store) {
-  return Boolean(store.settings.aiKey);
+  return Boolean(store.settings.aiKey || store.settings.aiKeyEnc);
 }
 
 async function mistralChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
-  const { aiEndpoint, aiKey, aiModel } = store.settings;
-  if (!aiKey) throw new Error("Clé API Mistral manquante (Paramètres > Assistant IA).");
+  const { aiEndpoint, aiKey, aiKeyEnc, aiModel } = store.settings;
+  const key = aiKeyEnc ? await decryptSecret(aiKeyEnc) : aiKey;
+  if (!key) throw new Error("Clé API Mistral manquante (Paramètres > Assistant IA).");
   const res = await fetch(aiEndpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + aiKey },
+    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + key },
     body: JSON.stringify({
       model: model || aiModel || "mistral-small-latest",
       temperature,
@@ -40,7 +42,7 @@ export function systemPrompt(store) {
     `Société : ${store.settings.companyName}. Pays : ${store.settings.country}. Devise : ${store.settings.currency}.`,
     `Plan comptable : ${store.settings.plan}. Exercice : ${store.settings.exerciceStart} au ${store.settings.exerciceEnd}.`,
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
-    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}.",
+    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}",
     "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
     "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
     "Comptes disponibles (extrait) :\n" + planDigest(store),
@@ -82,7 +84,7 @@ export async function suggestEntry(store, text, imageDataUrl = null) {
     const parsed = JSON.parse(content);
     if (parsed.lines) return parsed;
     if (parsed.ecriture?.lines) return parsed.ecriture;
-  } catch (e) { /* fallthrough */ }
+  } catch (_e) { /* fallthrough */ }
   throw new Error("Réponse IA inexploitable : " + content.slice(0, 300));
 }
 
@@ -115,7 +117,7 @@ export async function importEntriesFromText(store, text) {
       "Chaque écriture doit être équilibrée, avec des comptes du plan fourni. Utilise " + today + " si la date est inconnue.\n\nTEXTE :\n" + text },
   ], { json: true });
   let parsed;
-  try { parsed = JSON.parse(content); } catch (e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
+  try { parsed = JSON.parse(content); } catch (_e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
   const arr = parsed.entries || parsed.ecritures || [];
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("Aucune écriture trouvée dans la réponse IA.");
   return arr;

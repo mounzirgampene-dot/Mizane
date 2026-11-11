@@ -6,8 +6,9 @@ import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, VISION_MODEL,
 } from "../ai.js";
-import { saveStore, exportJSON, importJSON, downloadBlob, resetStore, demoData } from "../db.js";
-import { store, planAccounts, aiHistory, $app, router, toast, esc, money, refreshPlan, initStore } from "../state.js";
+import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
+import { encryptSecret } from "../crypto.js";
+import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
 export function viewAssistant() {
   const audit = localAuditSummary(store);
@@ -175,18 +176,24 @@ export function viewSettings() {
     <div class="card">
       <h2>🤖 Assistant IA (Mistral)</h2>
       <div class="row">
-        <div><label>Clé API Mistral</label><input id="s-aikey" type="password" placeholder="Collez votre clé API Mistral" value="${esc(s.aiKey)}"></div>
+        <div><label>Clé API Mistral</label><input id="s-aikey" type="password" placeholder="Collez votre clé API Mistral" value="" ${s.aiKeyEnc ? "data-enc=\"1\"" : ""}></div>
         <div><label>Modèle</label>
           <select id="s-aimodel">
             ${["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest", "open-mistral-nemo", "ministral-8b-latest", VISION_MODEL].map((m) => `<option ${m === s.aiModel ? "selected" : ""}>${m}</option>`).join("")}
           </select>
         </div>
       </div>
-      <p class="muted">Obtenez une clé gratuite sur console.mistral.ai. La clé reste stockée uniquement sur votre appareil. Les photos sont analysées par le modèle vision ${VISION_MODEL}, quel que soit le modèle choisi ici.</p>
+      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} Obtenez une clé gratuite sur console.mistral.ai. Les photos sont analysées par le modèle vision ${VISION_MODEL}, quel que soit le modèle choisi ici.</p>
     </div>
 
     <div class="card">
-      <h2>📗 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
+      <h2>🔐 Confidentialité</h2>
+      <p class="muted">Toutes vos données comptables restent sur votre appareil (stockage local). Rien n'est envoyé sur Internet, sauf : les textes/photos que vous soumettez à l'assistant IA (envoyés à api.mistral.ai), et les sauvegardes que vous exportez vous-même.</p>
+      <p class="muted">La clé API Mistral est chiffrée localement (AES-GCM, Web Crypto) avant d'être stockée. Attention : ce chiffrement protège contre une lecture directe du stockage, mais si votre appareil est compromis (logiciel malveillant, accès physique non verrouillé), la clé pourrait être récupérée. Utilisez le verrouillage de l'appareil et ne le partagez pas.</p>
+    </div>
+
+    <div class="card">
+      <h2>📘 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
       <div class="row">
         <div><label>Nouveau compte (numéro)</label><input id="ca-code" placeholder="Ex. 7085"></div>
         <div><label>Libellé</label><input id="ca-label" placeholder="Ex. Ventes de services divers"></div>
@@ -239,7 +246,28 @@ export function viewSettings() {
     router.render();
   });
 
-  document.getElementById("s-aikey").addEventListener("change", (e) => { s.aiKey = e.target.value.trim(); saveStore(store); toast(s.aiKey ? "✓ Clé Mistral enregistrée." : "Clé supprimée."); });
+  document.getElementById("s-aikey").addEventListener("change", async (e) => {
+    const v = e.target.value.trim();
+    if (v) {
+      try {
+        s.aiKeyEnc = await encryptSecret(v);
+        s.aiKey = "";
+        toast("✓ Clé Mistral chiffrée et enregistrée.");
+        document.getElementById("s-aikey-status").textContent = "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM).";
+      } catch (_err) {
+        s.aiKey = v;
+        s.aiKeyEnc = "";
+        toast("Chiffrement indisponible : clé stockée en clair.");
+      }
+    } else {
+      s.aiKey = "";
+      s.aiKeyEnc = "";
+      toast("Clé supprimée.");
+      document.getElementById("s-aikey-status").textContent = "Aucune clé enregistrée.";
+    }
+    saveStore(store);
+    e.target.value = "";
+  });
   document.getElementById("s-aimodel").addEventListener("change", (e) => { s.aiModel = e.target.value; saveStore(store); });
 
   document.getElementById("ca-add").addEventListener("click", () => {

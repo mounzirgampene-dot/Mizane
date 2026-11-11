@@ -8,10 +8,11 @@ export function loadStore(planAccounts) {
   try {
     const raw = localStorage.getItem(KEY);
     store = raw ? JSON.parse(raw) : null;
-  } catch (e) {
+  } catch (_e) {
     store = null;
   }
   if (!store || !store.settings) store = newStore();
+  if (!Array.isArray(store.assets)) store.assets = [];
   store.__planAccounts = planAccounts;
   buildAccountCache(store, planAccounts);
   return store;
@@ -49,6 +50,11 @@ export function downloadBlob(blob, filename) {
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+export function exportXLS(title, tableHTML, filename) {
+  const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"></head><body><h3>${title}</h3>${tableHTML}</body></html>`;
+  downloadBlob(new Blob(["\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8" }), filename);
 }
 
 export function resetStore() {

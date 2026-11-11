@@ -27,6 +27,7 @@ export function newStore() {
     },
     thirds: [],
     entries: [],
+    assets: [],
     nextId: 1,
   };
 }
@@ -42,6 +43,7 @@ export function resolveAccount(store, code) {
   if (!c) return null;
   const custom = store.settings.customAccounts.find((a) => a.code === c);
   if (custom) return custom;
+  // imported lazily by caller? keep local fallback: caller passes plan accounts via cache
   return store.__accountCache ? store.__accountCache[c] || null : null;
 }
 

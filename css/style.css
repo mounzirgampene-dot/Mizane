@@ -9,7 +9,24 @@
   --danger: #dc2626;
   --ok: #16a34a;
   --border: #e5e7eb;
+  --th-bg: #f0fdfa;
+  --ai-bg: #f1f5f9;
   --radius: 10px;
+}
+
+:root[data-theme="dark"] {
+  --teal: #14b8a6;
+  --teal-dark: #0d9488;
+  --teal-light: #134e4a;
+  --bg: #0b1220;
+  --card: #111827;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --danger: #f87171;
+  --ok: #4ade80;
+  --border: #1f2937;
+  --th-bg: #0f2e2c;
+  --ai-bg: #1f2937;
 }
 
 * { box-sizing: border-box; }
@@ -81,9 +98,9 @@ h2 { font-size: 1.05rem; margin: 18px 0 8px; color: var(--teal-dark); }
 
 table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 th, td { padding: 7px 8px; border-bottom: 1px solid var(--border); text-align: left; }
-th { background: #f0fdfa; color: var(--teal-dark); font-weight: 600; }
+th { background: var(--th-bg); color: var(--teal-dark); font-weight: 600; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-tr.total td { font-weight: 700; border-top: 2px solid var(--teal); background: #f0fdfa; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--teal); background: var(--th-bg); }
 .table-wrap { overflow-x: auto; }
 
 button, .btn {
@@ -144,7 +161,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
 .chat-box { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; margin-bottom: 10px; }
 .chat-msg { padding: 9px 12px; border-radius: 10px; max-width: 85%; font-size: .9rem; white-space: pre-wrap; }
 .chat-msg.user { align-self: flex-end; background: var(--teal); color: #fff; }
-.chat-msg.ai { align-self: flex-start; background: #f1f5f9; }
+.chat-msg.ai { align-self: flex-start; background: var(--ai-bg); }
 
 .asset-total { font-weight: 700; }
 .muted { color: var(--muted); font-size: .85rem; }

@@ -384,5 +384,51 @@ test("exercice à cheval : entriesInRange filtre 2025 vs 2024", () => {
   assert.equal(trialBalance(s, "2024-01-01", "2024-12-31").totals.debit, 100);
 });
 
+console.log("— Fournisseurs IA —");
+test("providerOf / visionModel : détection mistral, groq, gemini, custom", async () => {
+  const { providerOf, visionModel } = await import("../js/ai.js");
+  const mk = (ep) => ({ settings: { aiEndpoint: ep, aiModel: "m" } });
+  assert.equal(providerOf(mk("https://api.mistral.ai/v1/chat/completions")), "mistral");
+  assert.equal(providerOf(mk("https://api.groq.com/openai/v1/chat/completions")), "groq");
+  assert.equal(providerOf(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini");
+  assert.equal(providerOf(mk("https://exemple.com/v1/chat/completions")), "custom");
+  assert.equal(visionModel(mk("https://api.groq.com/openai/v1/chat/completions")), "meta-llama/llama-4-scout-17b-16e-instruct");
+  assert.equal(visionModel(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini-2.0-flash");
+});
+
+test("toGeminiBody : conversion messages texte et image", async () => {
+  const { toGeminiBody } = await import("../js/ai.js");
+  const body = toGeminiBody([
+    { role: "system", content: "SYS" },
+    { role: "user", content: "Bonjour" },
+    { role: "assistant", content: "Réponse" },
+    { role: "user", content: [{ type: "text", text: "Lis" }, { type: "image_url", image_url: "data:image/jpeg;base64,QUJD" }] },
+  ], { json: true, temperature: 0.5 });
+  assert.equal(body.systemInstruction.parts[0].text, "SYS");
+  assert.equal(body.contents[0].role, "user");
+  assert.equal(body.contents[1].role, "model");
+  assert.deepEqual(body.contents[2].parts[1].inline_data, { mime_type: "image/jpeg", data: "QUJD" });
+  assert.equal(body.generationConfig.response_mime_type, "application/json");
+  assert.equal(body.generationConfig.temperature, 0.5);
+});
+
+test("chat : image_url encapsulée en {url} hors Mistral (mock fetch)", async () => {
+  const { chat } = await import("../js/ai.js");
+  const calls = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (url, opts) => {
+    calls.push({ url, body: JSON.parse(opts.body) });
+    return { ok: true, json: async () => ({ choices: [{ message: { content: "ok" } }] }) };
+  };
+  try {
+    const s = { settings: { aiEndpoint: "https://api.groq.com/openai/v1/chat/completions", aiKey: "k", aiModel: "llama-3.3-70b-versatile", companyName: "T", country: "SN", currency: "XOF", plan: "syscohada", exerciceStart: "2025-01-01", exerciceEnd: "2025-12-31", customAccounts: [] } };
+    await chat(s, [], [{ type: "text", text: "Lis" }, { type: "image_url", image_url: "data:image/jpeg;base64,QUJD" }]);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, "https://api.groq.com/openai/v1/chat/completions");
+    const img = calls[0].body.messages[1].content.find((p) => p.type === "image_url");
+    assert.deepEqual(img.image_url, { url: "data:image/jpeg;base64,QUJD" });
+  } finally { globalThis.fetch = orig; }
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

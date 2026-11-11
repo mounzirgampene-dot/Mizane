@@ -1,6 +1,6 @@
 // MIZANE — Écrans : balance, résultat, bilan, tiers (avec impression).
 import { trialBalance, incomeStatement, balanceSheet, toCSV } from "../accounting.js";
-import { saveStore, downloadBlob } from "../db.js";
+import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { printHTML } from "../print.js";
 import { store, $app, router, toast, esc, money } from "../state.js";
 
@@ -24,6 +24,7 @@ export function viewBalance() {
       <div class="actions">
         <button class="secondary" id="bal-print">🖨 Imprimer</button>
         <button class="secondary" id="bal-csv">⬇ Exporter CSV</button>
+        <button class="secondary" id="bal-xls">⬇ Excel</button>
       </div>
     </div>
   `;
@@ -31,6 +32,11 @@ export function viewBalance() {
     printHTML(`Balance générale — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, table));
   document.getElementById("bal-csv").addEventListener("click", () => {
     downloadBlob(new Blob(["\ufeff" + toCSV(tb.rows)], { type: "text/csv;charset=utf-8" }), "mizane-balance.csv");
+  });
+  document.getElementById("bal-xls").addEventListener("click", () => {
+    const card = $app.querySelector(".card.table-wrap table");
+    if (!card) return toast("Aucune donnée à exporter.");
+    exportXLS(`Balance générale — ${store.settings.companyName}`, card.outerHTML, "mizane-balance.xls");
   });
 }
 

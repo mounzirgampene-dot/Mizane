@@ -16,7 +16,7 @@ Saisie;Entry;Registro;الإدخال
 Écritures;Entries;Asientos;القيود
 Grand livre;General ledger;Libro mayor;دفتر الأستاذ
 Balance;Trial balance;Balanza;ميزان المراجعة
-Résultat;Income statement;Cuenta de resultados;حساب النتائج
+Résultat;Income statement;Cuenta de résultats;حساب النتائج
 Bilan;Balance sheet;Balance;الميزانية
 Tiers;Third parties;Terceros;الأطراف
 Outils;Tools;Herramientas;الأدوات
@@ -24,7 +24,7 @@ Assistant IA;AI assistant;Asistente IA;المساعد الذكي
 Paramètres;Settings;Ajustes;الإعدادات
 Saisie d'écriture;Journal entry;Registro de asiento;إدخال القيد
 Balance générale;Trial balance;Balanza general;ميزان المراجعة العام
-Compte de résultat;Income statement;Cuenta de resultados;حساب النتائج
+Compte de résultat;Income statement;Cuenta de résultats;حساب النتائج
 Outils comptables;Accounting tools;Herramientas contables;الأدوات المحاسبية
 🤖 Assistant IA;🤖 AI assistant;🤖 Asistente IA;🤖 المساعد الذكي
 🏢 Société & internationalisation;🏢 Company & internationalization;🏢 Empresa e internacionalización;🏢 الشركة والتدويل
@@ -67,7 +67,7 @@ Générer la dotation de l'exercice;Generate yearly depreciation;Generar la dota
 Charger dans le formulaire;Load into form;Cargar en el formulario;تحميل في النموذج
 Charger des données de démonstration;Load demo data;Cargar datos de demostración;تحميل بيانات تجريبية
 Charger la démo;Load demo;Cargar la demo;تحميل العرض التجريبي
-🤖 Ouvrir l'assistant IA;🤖 Open AI assistant;🤖 Open AI assistant;🤖 فتح المساعد الذكي
+🤖 Ouvrir l'assistant IA;🤖 Open AI assistant;🤖 Abrir el asistente IA;🤖 فتح المساعد الذكي
 📷 Joindre une photo;📷 Attach a photo;📷 Adjuntar una foto;📷 إرفاق صورة
 Afficher;Show;Mostrar;عرض
 Contrepasser;Reverse;Revertir;عكس القيد

@@ -72,6 +72,7 @@ async function fetchTimeout(url, opts) {
     return await fetch(url, { ...opts, signal: ctrl.signal });
   } catch (e) {
     if (e && e.name === "AbortError") throw new Error(`Délai dépassé : l'IA n'a pas répondu en ${TIMEOUT_MS / 1000} s. Vérifiez votre connexion Internet puis réessayez.`);
+    if (e instanceof TypeError) throw new Error("Connexion au serveur de l'IA impossible. Vérifiez votre connexion Internet, désactivez l'économiseur de données ou les bloqueurs, puis réessayez.");
     throw e;
   } finally {
     clearTimeout(timer);

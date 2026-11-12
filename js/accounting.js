@@ -21,7 +21,7 @@ export function newStore() {
       exerciceStart: new Date().getFullYear() + "-01-01",
       exerciceEnd: new Date().getFullYear() + "-12-31",
       aiKey: "",
-      aiModel: "gemini-2.0-flash",
+      aiModel: "gemini-3.8-flash",
       aiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
       customAccounts: [],
     },

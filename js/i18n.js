@@ -16,7 +16,7 @@ Saisie;Entry;Registro;الإدخال
 Écritures;Entries;Asientos;القيود
 Grand livre;General ledger;Libro mayor;دفتر الأستاذ
 Balance;Trial balance;Balanza;ميزان المراجعة
-Résultat;Income statement;Cuenta de résultats;حساب النتائج
+Résultat;Income statement;Cuenta de resultados;حساب النتائج
 Bilan;Balance sheet;Balance;الميزانية
 Tiers;Third parties;Terceros;الأطراف
 Outils;Tools;Herramientas;الأدوات
@@ -24,7 +24,7 @@ Assistant IA;AI assistant;Asistente IA;المساعد الذكي
 Paramètres;Settings;Ajustes;الإعدادات
 Saisie d'écriture;Journal entry;Registro de asiento;إدخال القيد
 Balance générale;Trial balance;Balanza general;ميزان المراجعة العام
-Compte de résultat;Income statement;Cuenta de résultats;حساب النتائج
+Compte de résultat;Income statement;Cuenta de resultados;حساب النتائج
 Outils comptables;Accounting tools;Herramientas contables;الأدوات المحاسبية
 🤖 Assistant IA;🤖 AI assistant;🤖 Asistente IA;🤖 المساعد الذكي
 🏢 Société & internationalisation;🏢 Company & internationalization;🏢 Empresa e internacionalización;🏢 الشركة والتدويل

@@ -81,18 +81,30 @@ export function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
+export const MAX_AMOUNT = 999999999999;
+
+// Date réellement calendaire (rejette 2026-99-99, 2025-02-29…).
+export function validDate(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ""))) return false;
+  const d = new Date(s + "T00:00:00");
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
 export function validateEntry(store, entry) {
   const errors = [];
   if (!entry.date) errors.push("La date est obligatoire.");
-  else if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date)) errors.push("Format de date invalide (AAAA-MM-JJ).");
+  else if (!validDate(entry.date)) errors.push("Date invalide (AAAA-MM-JJ, jour ou mois inexistant).");
   if (!entry.journal) errors.push("Le journal est obligatoire.");
   const lines = (entry.lines || []).filter((l) => l.account && (Number(l.debit) || Number(l.credit)));
   if (lines.length < 2) errors.push("Une écriture doit comporter au moins deux lignes comptabilisées.");
   for (const [i, l] of (entry.lines || []).entries()) {
-    const d = Number(l.debit) || 0, c = Number(l.credit) || 0;
+    const num = (v) => (v === "" || v == null ? 0 : Number(v));
+    const d = num(l.debit), c = num(l.credit);
     if (!l.account) errors.push(`Ligne ${i + 1} : compte manquant.`);
     else if (!accountType(store, l.account)) errors.push(`Ligne ${i + 1} : compte « ${l.account} » inconnu dans le plan.`);
+    if (!Number.isFinite(d) || !Number.isFinite(c)) { errors.push(`Ligne ${i + 1} : montant invalide.`); continue; }
     if (d < 0 || c < 0) errors.push(`Ligne ${i + 1} : montants négatifs interdits.`);
+    if (d > MAX_AMOUNT || c > MAX_AMOUNT) errors.push(`Ligne ${i + 1} : montant trop élevé (max 999 999 999 999).`);
     if (d > 0 && c > 0) errors.push(`Ligne ${i + 1} : débit et crédit simultanés interdits.`);
     if (d === 0 && c === 0) errors.push(`Ligne ${i + 1} : montant nul.`);
   }
@@ -129,6 +141,7 @@ export function postEntry(store, entry) {
 export function reverseEntry(store, id) {
   const src = store.entries.find((e) => e.id === id);
   if (!src) return { ok: false, errors: ["Écriture introuvable."] };
+  if (src.reversed) return { ok: false, errors: [`Écriture #${id} déjà contrepassée : opération refusée.`] };
   const rev = {
     date: new Date().toISOString().slice(0, 10),
     journal: src.journal,
@@ -136,7 +149,9 @@ export function reverseEntry(store, id) {
     reverseOf: src.id,
     lines: src.lines.map((l) => ({ account: l.account, label: l.label, third: l.third, debit: l.credit, credit: l.debit })),
   };
-  return postEntry(store, rev);
+  const res = postEntry(store, rev);
+  if (res.ok) src.reversed = true;
+  return res;
 }
 
 export function entriesInRange(store, start, end) {

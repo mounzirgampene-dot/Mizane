@@ -230,17 +230,24 @@ Deno.serve(async (request) => {
       const roleName = role === "accountant" ? "Comptable" : "Lecteur";
       const safeCompany = escapeHtml(company.legal_name);
       const safeUrl = escapeHtml(invitationUrl.toString());
-      const emailResponse = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          from: emailFrom,
-          to: [email],
-          subject: `Invitation à rejoindre ${company.legal_name} sur MIZANE`,
-          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#17202a"><h1>Invitation MIZANE</h1><p>Vous êtes invité(e) à rejoindre l’espace <strong>${safeCompany}</strong> en qualité de <strong>${roleName}</strong>.</p><p><a href="${safeUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:6px">Accepter l’invitation</a></p><p>Ce lien est personnel, valable 7 jours et ne peut être utilisé qu’une seule fois. Connectez-vous ou créez votre compte avec cette adresse e-mail : ${escapeHtml(email)}.</p><p>Si vous n’attendiez pas cette invitation, ignorez ce message.</p></div>`,
-          text: `Vous êtes invité(e) à rejoindre ${company.legal_name} sur MIZANE comme ${roleName}. Ouvrez ce lien : ${invitationUrl.toString()}. Le lien expire dans 7 jours et doit être utilisé avec ${email}.`,
-        }),
-      });
+      let emailResponse: Response;
+      try {
+        emailResponse = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: emailFrom,
+            to: [email],
+            subject: `Invitation à rejoindre ${company.legal_name} sur MIZANE`,
+            html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#17202a"><h1>Invitation MIZANE</h1><p>Vous êtes invité(e) à rejoindre l’espace <strong>${safeCompany}</strong> en qualité de <strong>${roleName}</strong>.</p><p><a href="${safeUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:6px">Accepter l’invitation</a></p><p>Ce lien est personnel, valable 7 jours et ne peut être utilisé qu’une seule fois. Connectez-vous ou créez votre compte avec cette adresse e-mail : ${escapeHtml(email)}.</p><p>Si vous n’attendiez pas cette invitation, ignorez ce message.</p></div>`,
+            text: `Vous êtes invité(e) à rejoindre ${company.legal_name} sur MIZANE comme ${roleName}. Ouvrez ce lien : ${invitationUrl.toString()}. Le lien expire dans 7 jours et doit être utilisé avec ${email}.`,
+          }),
+        });
+      } catch (sendError) {
+        await adminClient.from("company_invitations").delete().eq("id", invitation.id);
+        console.error("Resend invitation request failed:", sendError instanceof Error ? sendError.message : "network error");
+        return fail(502, "Le service d'e-mail est momentanément inaccessible. Aucune invitation active n'a été conservée.");
+      }
 
       if (!emailResponse.ok) {
         await adminClient.from("company_invitations").delete().eq("id", invitation.id);
@@ -248,7 +255,12 @@ Deno.serve(async (request) => {
         return fail(502, "L'e-mail n'a pas pu être envoyé. Vérifiez la configuration du service d'envoi et réessayez.");
       }
 
-      await audit("invitation.created", "company_invitation", invitation.id, { email, role, delivery: "email" });
+      try {
+        await audit("invitation.created", "company_invitation", invitation.id, { email, role, delivery: "email" });
+      } catch (auditError) {
+        // L'e-mail est déjà parti : ne pas annoncer un échec qui inciterait à renvoyer un doublon.
+        console.error("Invitation audit write failed:", auditError instanceof Error ? auditError.message : "unknown error");
+      }
       return json(201, { invitation, email_sent: true });
     }
 

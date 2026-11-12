@@ -393,7 +393,7 @@ test("providerOf / visionModel : détection mistral, groq, gemini, custom", asyn
   assert.equal(providerOf(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini");
   assert.equal(providerOf(mk("https://exemple.com/v1/chat/completions")), "custom");
   assert.equal(visionModel(mk("https://api.groq.com/openai/v1/chat/completions")), "meta-llama/llama-4-scout-17b-16e-instruct");
-  assert.equal(visionModel(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini-2.0-flash");
+  assert.equal(visionModel(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini-3.8-flash");
 });
 
 test("toGeminiBody : conversion messages texte et image", async () => {
@@ -427,6 +427,24 @@ test("chat : image_url encapsulée en {url} hors Mistral (mock fetch)", async ()
     assert.equal(calls[0].url, "https://api.groq.com/openai/v1/chat/completions");
     const img = calls[0].body.messages[1].content.find((p) => p.type === "image_url");
     assert.deepEqual(img.image_url, { url: "data:image/jpeg;base64,QUJD" });
+  } finally { globalThis.fetch = orig; }
+});
+
+test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel (mock fetch)", async () => {
+  const { chat } = await import("../js/ai.js");
+  const urls = [];
+  const orig = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    if (urls.length === 1) return { ok: false, status: 404, text: async () => JSON.stringify({ error: { code: 404, message: "models/gemini-2.0-flash is no longer available" } }) };
+    return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }) };
+  };
+  try {
+    const s = { settings: { aiEndpoint: "https://generativelanguage.googleapis.com/v1beta", aiKey: "k", aiModel: "gemini-2.0-flash", companyName: "T", country: "SN", currency: "XOF", plan: "syscohada", exerciceStart: "2025-01-01", exerciceEnd: "2025-12-31", customAccounts: [] } };
+    const r = await chat(s, [], [{ type: "text", text: "Lis" }]);
+    assert.equal(r, "ok");
+    assert.ok(urls[0].includes("gemini-2.0-flash"));
+    assert.ok(urls[1].includes("gemini-3.8-flash"));
   } finally { globalThis.fetch = orig; }
 });
 

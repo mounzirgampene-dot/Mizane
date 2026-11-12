@@ -6,6 +6,7 @@ import {
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
+import { validateBackup } from "../js/db.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -363,6 +364,39 @@ test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", asy
 });
 
 console.log("— Cas limites —");
+test("validateBackup accepte une sauvegarde équilibrée et nettoie les sections facultatives", () => {
+  const backup = {
+    version: 1,
+    settings: { plan: "syscohada", customAccounts: [] },
+    entries: [{
+      id: 1, date: "2025-01-01", journal: "BAN", reference: "Ouverture",
+      lines: [
+        { account: "521", debit: 1000, credit: 0 },
+        { account: "101", debit: 0, credit: 1000 },
+      ],
+    }],
+    nextId: 2,
+  };
+  const clean = validateBackup(backup);
+  assert.equal(clean.entries.length, 1);
+  assert.deepEqual(clean.thirds, []);
+  assert.deepEqual(clean.assets, []);
+  assert.equal(clean.nextId, 2);
+});
+
+test("validateBackup rejette date impossible, déséquilibre et montants excessifs", () => {
+  const base = {
+    version: 1, settings: { plan: "syscohada", customAccounts: [] }, nextId: 2,
+    entries: [{
+      id: 1, date: "2025-01-01", journal: "BAN",
+      lines: [{ account: "521", debit: 100, credit: 0 }, { account: "101", debit: 0, credit: 100 }],
+    }],
+  };
+  assert.throws(() => validateBackup({ ...base, entries: [{ ...base.entries[0], date: "2026-99-99" }] }), /date invalide/);
+  assert.throws(() => validateBackup({ ...base, entries: [{ ...base.entries[0], lines: [{ account: "521", debit: 100, credit: 0 }, { account: "101", debit: 0, credit: 90 }] }] }), /déséquilibrée/);
+  assert.throws(() => validateBackup({ ...base, entries: [{ ...base.entries[0], lines: [{ account: "521", debit: 1e15, credit: 0 }, { account: "101", debit: 0, credit: 1e15 }] }] }), /montant invalide/);
+});
+
 test("validDate rejette les dates calendaires impossibles", () => {
   assert.equal(validDate("2026-99-99"), false);
   assert.equal(validDate("2025-02-29"), false);

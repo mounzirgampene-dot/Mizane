@@ -202,61 +202,54 @@ Deno.serve(async (request) => {
         return fail(400, "Un administrateur ne peut pas se suspendre ou se retirer lui-même depuis cette fonction.");
       }
 
-      const { data: member, error } = await adminClient
-        .from("company_memberships")
-        .select("role,status")
-        .eq("company_id", companyId)
-        .eq("user_id", memberId)
-        .maybeSingle();
-      if (error) return fail(500, "Impossible de retrouver ce membre.");
-      if (!member) return fail(404, "Membre introuvable.");
+      let rpcAction: string;
+      let rpcRole: string | null = null;
+      let rpcStatus: string | null = null;
+      if (action === "set_member_role") {
+        if (!["admin", "accountant", "reader"].includes(String(body.role))) return fail(400, "Rôle inconnu.");
+        rpcAction = "set_role";
+        rpcRole = String(body.role);
+      } else if (action === "set_member_status") {
+        if (body.status !== "active" && body.status !== "suspended") return fail(400, "Statut inconnu.");
+        rpcAction = "set_status";
+        rpcStatus = String(body.status);
+      } else {
+        rpcAction = "remove";
+      }
 
-      const removesAdmin = member.role === "admin" &&
-        (action === "remove_member" || (action === "set_member_status" && body.status === "suspended") ||
-         (action === "set_member_role" && body.role !== "admin"));
-      if (removesAdmin && member.status === "active") {
-        const { count, error: countError } = await adminClient
-          .from("company_memberships")
-          .select("user_id", { count: "exact", head: true })
-          .eq("company_id", companyId)
-          .eq("role", "admin")
-          .eq("status", "active");
-        if (countError) return fail(500, "Impossible de vérifier les administrateurs actifs.");
-        if ((count ?? 0) <= 1) return fail(409, "Impossible de retirer, suspendre ou rétrograder le dernier administrateur actif.");
+      // La transaction SQL sérialise les changements par entreprise et protège
+      // le dernier administrateur même en cas de requêtes concurrentes.
+      const { data: result, error: rpcError } = await adminClient.rpc("manage_company_member", {
+        p_company_id: companyId,
+        p_user_id: memberId,
+        p_action: rpcAction,
+        p_role: rpcRole,
+        p_status: rpcStatus,
+      });
+      if (rpcError) {
+        if (rpcError.code === "P0002") return fail(404, "Membre introuvable.");
+        if (rpcError.code === "23514") return fail(409, rpcError.message);
+        if (rpcError.code === "22023") return fail(400, rpcError.message);
+        console.error("manage_company_member:", rpcError.message);
+        return fail(500, "Impossible de modifier ce membre.");
       }
 
       if (action === "set_member_role") {
-        if (!["admin", "accountant", "reader"].includes(String(body.role))) {
-          return fail(400, "Rôle inconnu.");
-        }
-        const { error: updateError } = await adminClient.from("company_memberships")
-          .update({ role: body.role, updated_at: new Date().toISOString() })
-          .eq("company_id", companyId).eq("user_id", memberId);
-        if (updateError) return fail(500, "Impossible de modifier le rôle.");
-        await audit("member.role_changed", "company_membership", memberId, { from: member.role, to: body.role });
-        return json(200, { updated: true, role: body.role });
+        await audit("member.role_changed", "company_membership", memberId, {
+          from: result.previous_role, to: rpcRole,
+        });
+        return json(200, { updated: true, role: rpcRole });
       }
-
       if (action === "set_member_status") {
-        if (body.status !== "active" && body.status !== "suspended") {
-          return fail(400, "Statut inconnu.");
-        }
-        const { error: updateError } = await adminClient.from("company_memberships")
-          .update({ status: body.status, updated_at: new Date().toISOString() })
-          .eq("company_id", companyId).eq("user_id", memberId);
-        if (updateError) return fail(500, "Impossible de modifier le statut.");
-        await audit(body.status === "suspended" ? "member.suspended" : "member.reactivated",
-          "company_membership", memberId, { previous_status: member.status });
-        return json(200, { updated: true, status: body.status });
+        await audit(rpcStatus === "suspended" ? "member.suspended" : "member.reactivated",
+          "company_membership", memberId, { previous_status: result.previous_status });
+        return json(200, { updated: true, status: rpcStatus });
       }
-
-      const { error: deleteError } = await adminClient.from("company_memberships")
-        .delete().eq("company_id", companyId).eq("user_id", memberId);
-      if (deleteError) return fail(500, "Impossible de retirer le membre.");
-      await audit("member.removed", "company_membership", memberId, { previous_role: member.role });
+      await audit("member.removed", "company_membership", memberId, {
+        previous_role: result.previous_role,
+      });
       return json(200, { removed: true });
     }
-
     return fail(400, "Action inconnue.");
   } catch (error) {
     console.error("manage-company-members:", error);

@@ -2,6 +2,7 @@
 import { newStore, buildAccountCache } from "./accounting.js";
 import { allAccounts } from "./plans.js";
 import { formatMoney } from "./countries.js";
+import { saveStore } from "./db.js";
 
 export let store = null;
 export let planAccounts = [];
@@ -11,6 +12,7 @@ export let draftLines = [
   { account: "", label: "", debit: "", credit: "" },
   { account: "", label: "", debit: "", credit: "" },
 ];
+export let draftHeader = { date: "", journal: "", reference: "" };
 
 export const $app = document.getElementById("app");
 export const $nav = document.getElementById("main-nav");
@@ -23,6 +25,15 @@ export const router = { go: () => {}, render: () => {} };
 export function setRoute(route) { currentRoute = route; }
 export function getDraftLines() { return draftLines; }
 export function setDraftLines(lines) { draftLines = lines; }
+export function getDraftHeader() { return draftHeader; }
+export function setDraftHeader(h) { draftHeader = { ...draftHeader, ...h }; }
+export function resetDraft() {
+  draftLines = [
+    { account: "", label: "", debit: "", credit: "" },
+    { account: "", label: "", debit: "", credit: "" },
+  ];
+  draftHeader = { date: "", journal: "", reference: "" };
+}
 
 export function toast(msg, ms = 2600) {
   $toast.textContent = msg;
@@ -51,8 +62,7 @@ export function initStore(data) {
 }
 
 export function saveNow() {
-  const { __planAccounts, __accountCache, ...clean } = store;
-  localStorage.setItem("mizane_v1", JSON.stringify(clean));
+  saveStore(store);
 }
 
 export function planLabel(code) {

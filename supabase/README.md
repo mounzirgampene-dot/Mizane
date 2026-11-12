@@ -35,7 +35,19 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 
 Les clients ne disposent volontairement d'aucune politique pour créer directement des appartenances, modifier des rôles ou écrire des événements d'audit. Ces actions doivent passer par des fonctions serveur contrôlées.
 
-## Vérifications à effectuer dans un projet de test
+## Tests automatisés RLS
+
+Un premier jeu de tests pgTAP est disponible dans `supabase/tests/multi_company_rls.test.sql`. Il crée deux identités de test, vérifie la création atomique d'une entreprise, l'attribution du rôle administrateur, la visibilité limitée aux entreprises membres et l'indépendance des rôles.
+
+Après installation de Supabase CLI et démarrage de l'environnement local (`supabase start`), exécuter :
+
+```sh
+supabase test db
+```
+
+Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Le résultat n'est pas encore certifié : les tests n'ont pas pu être exécutés ici faute d'environnement Supabase connecté.
+
+## Vérifications manuelles complémentaires
 
 Créer deux comptes Auth distincts : Alice et Bilal.
 

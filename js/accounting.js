@@ -18,6 +18,7 @@ export function newStore() {
       plan: "syscohada",
       currency: "XOF",
       locale: "fr-SN",
+      language: "fr",
       exerciceStart: new Date().getFullYear() + "-01-01",
       exerciceEnd: new Date().getFullYear() + "-12-31",
       aiKey: "",

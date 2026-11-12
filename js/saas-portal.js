@@ -83,7 +83,7 @@ root.addEventListener("click",async(e)=>{
   if(action==="toggle-member-status"){const next=button.dataset.status==="active"?"suspended":"active";if(!confirm(next==="suspended"?"Suspendre ce collaborateur ?":"Réactiver ce collaborateur ?"))return;await edge("set_member_status",{company_id:activeCompanyId,user_id:button.dataset.userId,status:next});await loadManagement();toast("Statut du collaborateur mis à jour.");}
   if(action==="remove-member"){if(!confirm("Retirer définitivement ce collaborateur de cette entreprise ?"))return;await edge("remove_member",{company_id:activeCompanyId,user_id:button.dataset.userId});await loadManagement();toast("Collaborateur retiré.");}
   if(action==="revoke-invitation"){if(!confirm("Révoquer cette invitation ? Le jeton ne pourra plus être utilisé."))return;await edge("revoke_invitation",{company_id:activeCompanyId,invitation_id:button.dataset.invitationId});await loadManagement();toast("Invitation révoquée.");}
-  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);dashboardView();}
+  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);dashboardView();if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();}
  }catch(error){showError(error)}
 });
 root.addEventListener("change",async(e)=>{

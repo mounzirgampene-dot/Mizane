@@ -48,7 +48,7 @@ Actions disponibles (requêtes POST JSON) :
 - `set_member_status` : suspend ou réactive un membre.
 - `remove_member` : retire un membre de l'entreprise.
 
-La création d'invitation retourne le jeton une seule fois à l'administrateur appelant. **L'envoi automatique par e-mail n'est pas encore intégré** : le jeton doit être transmis par un canal sûr jusqu'à l'ajout d'un fournisseur d'e-mail transactionnel. Ne pas l'inscrire dans des journaux publics.
+La création d'invitation envoie un e-mail via Resend. Le jeton brut n'est jamais retourné au navigateur ni inscrit dans les journaux ; seul son hachage est conservé en base. Le lien est valable 7 jours et son acceptation exige une session authentifiée dont l'adresse correspond à celle du destinataire.
 
 ### Déploiement dans un projet de développement
 

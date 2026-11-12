@@ -448,5 +448,32 @@ test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel
   } finally { globalThis.fetch = orig; }
 });
 
+console.log("— Internationalisation —");
+test("i18n : t() traduit, repli sur français, langue inconnue rejetée", async () => {
+  const { t, setLang, lang, LANGS } = await import("../js/i18n.js");
+  setLang("fr");
+  assert.equal(lang(), "fr");
+  assert.equal(t("Grand livre"), "Grand livre");
+  setLang("en");
+  assert.equal(t("Grand livre"), "General ledger");
+  assert.equal(t("Texte inexistant"), "Texte inexistant");
+  setLang("es");
+  assert.equal(t("Enregistrer"), "Guardar");
+  setLang("ar");
+  assert.notEqual(t("Paramètres"), "Paramètres");
+  setLang("xx");
+  assert.equal(lang(), "fr");
+  setLang("fr");
+  assert.equal(LANGS.length, 4);
+});
+
+test("i18n : mêmes clés pour toutes les langues", async () => {
+  const { DICT } = await import("../js/i18n.js");
+  const counts = Object.values(DICT).map((d) => Object.keys(d).length);
+  assert.ok(counts.length >= 3, "au moins 3 langues");
+  assert.equal(new Set(counts).size, 1, "toutes les langues ont le même nombre de clés");
+  assert.ok(counts[0] > 100, "dictionnaire substantiel");
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

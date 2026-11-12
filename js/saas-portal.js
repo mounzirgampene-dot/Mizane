@@ -94,6 +94,6 @@ async function start(){
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
  if(session)await refresh();else authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
  supabase.auth.onAuthStateChange((_event,next)=>{session=next;if(!session){memberships=[];authView()}});
- const token=new URLSearchParams(location.search).get("invitation");if(token&&session){root.querySelector("#invite-token")?.setAttribute("value",token);toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}
+ const token=new URLSearchParams(location.search).get("invitation");if(token){const field=root.querySelector("#invite-token");if(field){field.value=token;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
 }
 start().catch(showError);

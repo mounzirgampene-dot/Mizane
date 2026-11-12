@@ -1,7 +1,8 @@
 // MIZANE — Contrôleur principal : navigation, routage, démarrage PWA.
 import { allAccounts } from "./plans.js";
 import { loadStore, demoData } from "./db.js";
-import { store, $nav, router, setRoute, currentRoute, initStore, saveNow } from "./state.js";
+import { store, $nav, $app, $modalContent, router, setRoute, currentRoute, initStore, saveNow } from "./state.js";
+import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
@@ -32,9 +33,12 @@ function renderNav() {
 }
 
 function render() {
+  setLang(store.settings.language);
   document.getElementById("company-tag").textContent =
     `${store.settings.companyName} · ${store.settings.country} · ${store.settings.currency}`;
   (VIEWS[currentRoute] || viewDashboard)();
+  applyI18n([$nav, $app, $modalContent]);
+  document.title = t("MIZANE — Comptabilité générale");
 }
 
 function go(route) {

@@ -200,3 +200,31 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
   #main-nav { flex-wrap: wrap; overflow-x: visible; }
   #main-nav button { padding: 7px 10px; font-size: .84rem; border-radius: 8px; }
 }
+
+
+/* Contrastes renforcés en thème sombre. */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: #0b1220;
+  color: var(--text);
+  border-color: #475569;
+  color-scheme: dark;
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder { color: #94a3b8; }
+:root[data-theme="dark"] button.secondary {
+  background: #1f2937;
+  color: #5eead4;
+  border-color: #0d9488;
+}
+:root[data-theme="dark"] button.danger {
+  background: #1f2937;
+  color: #fca5a5;
+  border-color: #f87171;
+}
+:root[data-theme="dark"] .toast {
+  background: #e5e7eb;
+  color: #111827;
+  border: 1px solid #94a3b8;
+}

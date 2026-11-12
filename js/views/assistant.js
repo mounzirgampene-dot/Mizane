@@ -293,6 +293,7 @@ export function viewSettings() {
   });
   document.getElementById("s-aiprovider").addEventListener("change", (e) => {
     const id = e.target.value;
+    s.aiProvider = id;
     if (id !== "custom") {
       s.aiEndpoint = PROVIDERS[id].endpoint;
       s.aiModel = PROVIDERS[id].models.includes(s.aiModel) ? s.aiModel : PROVIDERS[id].models[0];
@@ -324,10 +325,17 @@ export function viewSettings() {
     if (!file) return;
     try {
       const data = await importJSON(file);
+      const ok = confirm("Cette opération remplacera toutes les données comptables de cet appareil. Une sauvegarde JSON de l'état actuel sera téléchargée avant le remplacement. Continuer ?");
+      if (!ok) return;
+      exportJSON(store);
       initStore(data);
-      toast("✓ Sauvegarde importée.");
+      toast("✓ Sauvegarde importée. La sauvegarde précédente a été téléchargée.");
       router.go("dashboard");
-    } catch (err) { toast("Import impossible : " + err.message); }
+    } catch (err) {
+      toast("Import impossible : " + err.message);
+    } finally {
+      e.target.value = "";
+    }
   });
   document.getElementById("d-demo").addEventListener("click", () => {
     if (!confirm("Remplacer les données actuelles par la démonstration ?")) return;

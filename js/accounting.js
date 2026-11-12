@@ -138,12 +138,12 @@ export function postEntry(store, entry) {
   return { ok: true, errors: [], entry: e };
 }
 
-export function reverseEntry(store, id) {
+export function reverseEntry(store, id, reversalDate = new Date().toISOString().slice(0, 10)) {
   const src = store.entries.find((e) => e.id === id);
   if (!src) return { ok: false, errors: ["Écriture introuvable."] };
   if (src.reversed) return { ok: false, errors: [`Écriture #${id} déjà contrepassée : opération refusée.`] };
   const rev = {
-    date: new Date().toISOString().slice(0, 10),
+    date: reversalDate,
     journal: src.journal,
     reference: "Contrepassation #" + src.id,
     reverseOf: src.id,

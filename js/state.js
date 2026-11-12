@@ -45,6 +45,7 @@ export function refreshPlan() {
 export function initStore(data) {
   store = data || newStore();
   if (!store.settings.aiEndpoint) store.settings.aiEndpoint = "https://api.mistral.ai/v1/chat/completions";
+  if (!store.settings.language) store.settings.language = "fr";
   refreshPlan();
   saveNow();
 }

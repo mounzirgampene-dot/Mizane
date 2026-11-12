@@ -26,7 +26,7 @@ Le portail est servi séparément de l'application comptable existante à l'adre
 
 - La migration SQL, les politiques RLS et l'Edge Function doivent être déployées et testées dans un projet Supabase de développement.
 - L'envoi e-mail nécessite une clé Resend et un domaine expéditeur vérifié pour la production.
-- L'interface ne liste pas encore les membres ni ne permet de changer leurs rôles/statuts ou de révoquer une invitation. L'API serveur existe, mais un endpoint de lecture protégé doit être ajouté : la politique RLS actuelle ne permet pas à un administrateur de lire les profils privés des autres utilisateurs.
+- La gestion des collaborateurs est réservée aux administrateurs actifs et passe par les actions serveur protégées ; elle doit être validée par des essais sur le projet Supabase de développement.
 - La sélection de l'entreprise est un état d'interface uniquement. Les écritures comptables locales ne sont pas encore rattachées à un `company_id` et ne sont pas synchronisées.
 - La récupération du mot de passe dépend des modèles d'e-mail et URL de redirection correctement configurés dans Supabase Auth.
 - La confirmation d'inscription et les liens profonds doivent être vérifiés sur le domaine GitHub Pages réel.

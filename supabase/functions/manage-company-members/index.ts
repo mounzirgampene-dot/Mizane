@@ -28,6 +28,8 @@ const hashToken = async (token: string) => {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
+const escapeHtml = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+
 const makeToken = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -198,6 +200,17 @@ Deno.serve(async (request) => {
       const token = makeToken();
       const tokenHash = await hashToken(token);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      const appUrl = Deno.env.get("MIZANE_APP_URL")?.trim();
+      const resendKey = Deno.env.get("RESEND_API_KEY");
+      const emailFrom = Deno.env.get("MIZANE_EMAIL_FROM")?.trim() || "MIZANE <onboarding@resend.dev>";
+      if (!appUrl || !appUrl.startsWith("https://") || !resendKey) {
+        return fail(503, "L'envoi des invitations n'est pas configuré sur le serveur.");
+      }
+
+      const { data: company, error: companyError } = await adminClient
+        .from("companies").select("legal_name").eq("id", companyId).single();
+      if (companyError || !company) return fail(500, "Impossible de retrouver l'entreprise.");
+
       const { data: invitation, error } = await adminClient
         .from("company_invitations")
         .insert({
@@ -212,10 +225,31 @@ Deno.serve(async (request) => {
         .single();
       if (error || !invitation) return fail(500, "Impossible de créer l'invitation.");
 
-      await audit("invitation.created", "company_invitation", invitation.id, { email, role });
-      // Le jeton est remis une seule fois à l'administrateur appelant.
-      // L'envoi par e-mail sera branché sur un fournisseur transactionnel séparé.
-      return json(201, { invitation, invitation_token: token });
+      const invitationUrl = new URL("espace.html", appUrl.endsWith("/") ? appUrl : appUrl + "/");
+      invitationUrl.hash = new URLSearchParams({ invitation: token }).toString();
+      const roleName = role === "accountant" ? "Comptable" : "Lecteur";
+      const safeCompany = escapeHtml(company.legal_name);
+      const safeUrl = escapeHtml(invitationUrl.toString());
+      const emailResponse = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: emailFrom,
+          to: [email],
+          subject: `Invitation à rejoindre ${company.legal_name} sur MIZANE`,
+          html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;color:#17202a"><h1>Invitation MIZANE</h1><p>Vous êtes invité(e) à rejoindre l’espace <strong>${safeCompany}</strong> en qualité de <strong>${roleName}</strong>.</p><p><a href="${safeUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:6px">Accepter l’invitation</a></p><p>Ce lien est personnel, valable 7 jours et ne peut être utilisé qu’une seule fois. Connectez-vous ou créez votre compte avec cette adresse e-mail : ${escapeHtml(email)}.</p><p>Si vous n’attendiez pas cette invitation, ignorez ce message.</p></div>`,
+          text: `Vous êtes invité(e) à rejoindre ${company.legal_name} sur MIZANE comme ${roleName}. Ouvrez ce lien : ${invitationUrl.toString()}. Le lien expire dans 7 jours et doit être utilisé avec ${email}.`,
+        }),
+      });
+
+      if (!emailResponse.ok) {
+        await adminClient.from("company_invitations").delete().eq("id", invitation.id);
+        console.error("Resend invitation delivery failed:", emailResponse.status);
+        return fail(502, "L'e-mail n'a pas pu être envoyé. Vérifiez la configuration du service d'envoi et réessayez.");
+      }
+
+      await audit("invitation.created", "company_invitation", invitation.id, { email, role, delivery: "email" });
+      return json(201, { invitation, email_sent: true });
     }
 
 

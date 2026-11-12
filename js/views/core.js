@@ -241,11 +241,11 @@ export function viewEntries() {
           ${rows.map((e) => {
             const t = e.lines.reduce((a, l) => ({ d: a.d + (Number(l.debit) || 0), c: a.c + (Number(l.credit) || 0) }), { d: 0, c: 0 });
             return `<tr>
-              <td>${e.id}${e.reverseOf ? ' <span class="tag amber">contrepassation</span>' : ""}</td>
+              <td>${e.id}${e.reverseOf ? ' <span class="tag amber">contrepassation</span>' : e.reversed ? ' <span class="tag amber">contrepassée</span>' : ""}</td>
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="danger small" data-reverse="${e.id}">Contrepasser</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -259,7 +259,11 @@ export function viewEntries() {
   `;
   $app.querySelectorAll("[data-reverse]").forEach((b) => {
     b.addEventListener("click", () => {
-      const res = reverseEntry(store, Number(b.dataset.reverse));
+      const id = Number(b.dataset.reverse);
+      const defaultDate = new Date().toISOString().slice(0, 10);
+      const date = prompt("Date de la contrepassation (AAAA-MM-JJ) :", defaultDate);
+      if (date === null) return;
+      const res = reverseEntry(store, id, date.trim());
       if (res.ok) { saveStore(store); toast("✓ Écriture contrepassée."); router.render(); }
       else toast(res.errors.join(" "));
     });

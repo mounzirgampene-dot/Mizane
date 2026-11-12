@@ -21,8 +21,8 @@ export const PROVIDERS = {
   gemini: {
     label: "Google Gemini",
     endpoint: "https://generativelanguage.googleapis.com/v1beta",
-    models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
-    vision: "gemini-2.0-flash",
+    models: ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash"],
+    vision: "gemini-3.8-flash",
     keyUrl: "aistudio.google.com/apikey",
   },
 };
@@ -69,12 +69,19 @@ async function aiChat(store, messages, { json = false, temperature = 0.2, model 
   if (!key) throw new Error("Clé API manquante (Paramètres > Assistant IA).");
   const pid = providerOf(store);
   if (pid === "gemini") {
-    const url = `${aiEndpoint.replace(/\/+$/, "")}/models/${model || aiModel || "gemini-2.0-flash"}:generateContent?key=${encodeURIComponent(key)}`;
-    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toGeminiBody(messages, { json, temperature })) });
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Erreur Gemini ${res.status} : ${txt.slice(0, 300)}`);
+    const base = aiEndpoint.replace(/\/+$/, "");
+    const call = async (m) => {
+      const res = await fetch(`${base}/models/${m}:generateContent?key=${encodeURIComponent(key)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(toGeminiBody(messages, { json, temperature })) });
+      const txt = res.ok ? "" : await res.text().catch(() => "");
+      return { res, txt };
+    };
+    let m = model || aiModel || PROVIDERS.gemini.models[0];
+    let { res, txt } = await call(m);
+    if (res.status === 404 && /no longer available|is not found/i.test(txt) && m !== PROVIDERS.gemini.models[0]) {
+      m = PROVIDERS.gemini.models[0];
+      ({ res, txt } = await call(m));
     }
+    if (!res.ok) throw new Error(`Erreur Gemini ${res.status} : ${txt.slice(0, 300)}`);
     const data = await res.json();
     return (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("");
   }
@@ -109,7 +116,7 @@ export function systemPrompt(store) {
     `Société : ${store.settings.companyName}. Pays : ${store.settings.country}. Devise : ${store.settings.currency}.`,
     `Plan comptable : ${store.settings.plan}. Exercice : ${store.settings.exerciceStart} au ${store.settings.exerciceEnd}.`,
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
-    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}.",
+    "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}",
     "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
     "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
     "Comptes disponibles (extrait) :\n" + planDigest(store),

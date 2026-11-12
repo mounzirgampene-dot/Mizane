@@ -9,6 +9,7 @@ let session = null;
 let memberships = [];
 let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 let pendingInvitationToken = new URLSearchParams(location.hash.slice(1)).get("invitation") || "";
+let passwordRecoveryMode = false;
 if (pendingInvitationToken) history.replaceState(null, "", location.pathname + location.search);
 
 const esc = (value = "") => String(value).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -104,7 +105,7 @@ root.addEventListener("submit",async(e)=>{
    if(password.length<8)throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
    if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
    const {error}=await supabase.auth.updateUser({password});if(error)throw error;
-   toast("Mot de passe mis à jour.");await refresh();
+   passwordRecoveryMode=false;toast("Mot de passe mis à jour.");await refresh();
   }
   if(form.id==="auth-form"){
    const email=form.querySelector("#email").value.trim();const password=form.querySelector("#password").value;const signup=!!form.querySelector("#display-name")&&!form.querySelector("#name-field").classList.contains("hidden");
@@ -130,12 +131,12 @@ async function start(){
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
  supabase.auth.onAuthStateChange((event,next)=>{
   session=next;
-  if(event==="PASSWORD_RECOVERY"){recoveryView();return}
-  if(!session){memberships=[];authView()}
+  if(event==="PASSWORD_RECOVERY"){passwordRecoveryMode=true;recoveryView();return}
+  if(!session){passwordRecoveryMode=false;memberships=[];authView()}
  });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
  const hashParams=new URLSearchParams(location.hash.slice(1));
- if(hashParams.get("type")==="recovery"&&session){recoveryView();return}
+ if(passwordRecoveryMode||(hashParams.get("type")==="recovery"&&session)){passwordRecoveryMode=true;recoveryView();return}
  if(session)await refresh();else authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
  if(pendingInvitationToken){const field=root.querySelector("#invite-token");if(field){field.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
 }

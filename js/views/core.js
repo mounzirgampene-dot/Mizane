@@ -159,7 +159,7 @@ function updateEntryTotals() {
   const balanced = Math.abs(diff) < 0.001 && debit > 0;
   const debitEl = document.getElementById("tot-debit");
   const creditEl = document.getElementById("tot-credit");
-  const statusEl = document.querySelector("#post-entry")?.closest(".row")?.querySelector(".kpi:nth-of-type(3) .value");
+  const statusEl = document.querySelectorAll("#app .kpi .value")[2];
   if (debitEl) debitEl.textContent = money(debit);
   if (creditEl) creditEl.textContent = money(credit);
   if (statusEl) {

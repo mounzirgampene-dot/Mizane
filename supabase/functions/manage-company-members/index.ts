@@ -206,6 +206,13 @@ Deno.serve(async (request) => {
       if (!appUrl || !appUrl.startsWith("https://") || !resendKey) {
         return fail(503, "L'envoi des invitations n'est pas configuré sur le serveur.");
       }
+      let appBaseUrl: URL;
+      try {
+        appBaseUrl = new URL(appUrl.endsWith("/") ? appUrl : appUrl + "/");
+        if (appBaseUrl.protocol !== "https:") throw new Error("HTTPS requis");
+      } catch {
+        return fail(500, "L'URL de l'application configurée sur le serveur est invalide.");
+      }
 
       const { data: company, error: companyError } = await adminClient
         .from("companies").select("legal_name").eq("id", companyId).single();
@@ -225,7 +232,7 @@ Deno.serve(async (request) => {
         .single();
       if (error || !invitation) return fail(500, "Impossible de créer l'invitation.");
 
-      const invitationUrl = new URL("espace.html", appUrl.endsWith("/") ? appUrl : appUrl + "/");
+      const invitationUrl = new URL("espace.html", appBaseUrl);
       invitationUrl.hash = new URLSearchParams({ invitation: token }).toString();
       const roleName = role === "accountant" ? "Comptable" : "Lecteur";
       const safeCompany = escapeHtml(company.legal_name);

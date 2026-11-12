@@ -1,7 +1,21 @@
 // MIZANE — Persistance (localStorage) + import/export JSON.
-import { newStore, buildAccountCache } from "./accounting.js";
+import { newStore, buildAccountCache, validDate, round2 } from "./accounting.js";
 
 const KEY = "mizane_v1";
+const JOURNALS_OK = ["ACH", "VTE", "BAN", "CAI", "OD"];
+const QUOTA_WARN_BYTES = 4500000;
+
+function storageWarn(msg) {
+  if (typeof document === "undefined") return;
+  try {
+    const t = document.getElementById("toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.remove("hidden");
+    clearTimeout(storageWarn._t);
+    storageWarn._t = setTimeout(() => t.classList.add("hidden"), 6000);
+  } catch (_e) { /* hors navigateur */ }
+}
 
 export function loadStore(planAccounts) {
   let store;
@@ -20,7 +34,15 @@ export function loadStore(planAccounts) {
 
 export function saveStore(store) {
   const { __planAccounts, __accountCache, ...clean } = store;
-  localStorage.setItem(KEY, JSON.stringify(clean));
+  const json = JSON.stringify(clean);
+  try {
+    localStorage.setItem(KEY, json);
+  } catch (_e) {
+    storageWarn("⚠ Sauvegarde locale impossible : stockage plein ou indisponible. Exportez une sauvegarde (JSON) puis libérez de l'espace.");
+    return false;
+  }
+  if (json.length > QUOTA_WARN_BYTES) storageWarn("⚠ Stockage local presque plein : pensez à exporter une sauvegarde (JSON).");
+  return true;
 }
 
 export function exportJSON(store) {
@@ -29,14 +51,48 @@ export function exportJSON(store) {
   downloadBlob(blob, `mizane-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`);
 }
 
+const num = (v) => (v === "" || v == null ? 0 : Number(v));
+
+// Valide et nettoie une sauvegarde : structure, version, dates, journaux, montants.
+export function validateBackup(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Fichier de sauvegarde invalide.");
+  if (!data.settings || typeof data.settings !== "object" || Array.isArray(data.settings) || !Array.isArray(data.entries)) {
+    throw new Error("Fichier de sauvegarde invalide : sections settings et entries requises.");
+  }
+  if (data.version && Number(data.version) > 1) throw new Error(`Version de sauvegarde non prise en charge (${data.version}).`);
+  const entries = [];
+  for (const e of data.entries) {
+    if (!e || !validDate(e.date) || !JOURNALS_OK.includes(e.journal) || !Array.isArray(e.lines)) continue;
+    const lines = e.lines
+      .map((l) => ({
+        account: String(l?.account || "").trim(),
+        label: String(l?.label || ""),
+        third: String(l?.third || ""),
+        debit: round2(num(l?.debit)),
+        credit: round2(num(l?.credit)),
+      }))
+      .filter((l) => l.account && (l.debit || l.credit) && Number.isFinite(l.debit) && Number.isFinite(l.credit) && l.debit >= 0 && l.credit >= 0);
+    if (lines.length < 2) continue;
+    entries.push({
+      id: Number(e.id) || 0,
+      date: e.date,
+      journal: e.journal,
+      reference: String(e.reference || ""),
+      lines,
+      reversed: Boolean(e.reversed),
+      reverseOf: e.reverseOf == null ? null : Number(e.reverseOf),
+      createdAt: String(e.createdAt || ""),
+    });
+  }
+  return { ...data, entries };
+}
+
 export function importJSON(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const data = JSON.parse(reader.result);
-        if (!data.settings || !Array.isArray(data.entries)) throw new Error("Fichier de sauvegarde invalide.");
-        resolve(data);
+        resolve(validateBackup(JSON.parse(reader.result)));
       } catch (e) { reject(e); }
     };
     reader.onerror = () => reject(new Error("Lecture du fichier impossible."));

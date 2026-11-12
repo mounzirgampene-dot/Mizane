@@ -116,3 +116,13 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Règle de livraison
 
 Ne pas activer le mode multi-entreprises en production avant que les tests RLS positifs et négatifs, les Edge Functions, les tests d'invitation, la migration des données et le parcours de retour arrière aient été validés.
+
+
+## API de consultation de la gestion des membres
+
+Deux actions supplémentaires sont disponibles dans `manage-company-members` et exigent un JWT valide ainsi qu’un rôle `admin` actif dans l’entreprise demandée :
+
+- `list_company_members` : renvoie les identifiants, e-mails, noms affichés, rôles et statuts des membres (maximum 200 résultats).
+- `list_company_invitations` : renvoie les invitations encore valides et non révoquées (maximum 100 résultats). Les jetons et empreintes ne sont jamais renvoyés.
+
+Le navigateur ne lit pas directement les profils privés des autres utilisateurs : ces données sont récupérées côté serveur après le contrôle d’administration. Les opérations de changement de rôle, suspension/réactivation, retrait et révocation utilisent les actions déjà protégées par la même vérification serveur.

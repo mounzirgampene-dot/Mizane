@@ -44,3 +44,10 @@ Le portail est servi séparément de l'application comptable existante à l'adre
 8. Vérifier que `index.html`, les saisies, les écritures et les sauvegardes locales fonctionnent toujours comme avant.
 
 Aucun de ces essais navigateur/Supabase n'a été exécuté pendant la création de cette PR faute de configuration de projet.
+
+
+## Gestion des collaborateurs
+
+Pour un administrateur actif, le tableau de bord affiche la liste des collaborateurs de l’entreprise sélectionnée et les invitations encore valides. L’interface permet de modifier un rôle, suspendre ou réactiver un membre, retirer un membre et révoquer une invitation. Les actions sensibles demandent une confirmation dans l’interface et sont toujours revalidées côté serveur.
+
+Les listes sont obtenues par les actions `list_company_members` et `list_company_invitations` de l’Edge Function. Elles sont réservées aux administrateurs actifs et ne divulguent jamais les jetons d’invitation. La liste des membres est plafonnée à 200 entrées et celle des invitations à 100.

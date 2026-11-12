@@ -34,7 +34,8 @@ function dashboardView(){
  <div class="field"><label for="standard">Référentiel comptable</label><select id="standard"><option value="CGNC">CGNC — Maroc</option><option value="SYSCOHADA">SYSCOHADA</option><option value="PCG">PCG — France</option></select></div>
  <div class="field"><label for="timezone">Fuseau horaire</label><input id="timezone" value="Africa/Casablanca" required></div>
  <div class="field full actions"><button type="submit">Créer l'espace</button><button type="button" class="secondary" data-action="hide-create">Annuler</button></div><p class="notice hidden" data-error></p></form></section>
- <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">L'envoi automatique par e-mail n'est pas encore activé. Un jeton à transmettre par un canal sûr sera affiché.</p><div id="invite-result" class="notice hidden"></div></form></section>`;
+ <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">L'envoi automatique par e-mail n'est pas encore activé. Un jeton à transmettre par un canal sûr sera affiché.</p><div id="invite-result" class="notice hidden"></div></form></section>
+ ${active&&active.role==="admin"?"<section class=\"panel\"><div class=\"topline\"><div><p class=\"eyebrow\">Administration</p><h2>Collaborateurs</h2></div><button class=\"secondary\" data-action=\"reload-management\">Actualiser</button></div><p class=\"muted\">Les changements de rôle et de statut s’appliquent uniquement à cette entreprise. Le dernier administrateur actif ne peut pas être retiré ni rétrogradé.</p><div id=\"members-list\" class=\"empty\">Chargement des membres…</div><h2 style=\"margin-top:24px\">Invitations en attente</h2><div id=\"invitations-list\" class=\"empty\">Chargement des invitations…</div></section>":""}`;
 }
 async function refresh(){
  const {data: rows,error}=await supabase.from("company_memberships").select("company_id,role,status").eq("user_id",session.user.id).eq("status","active");
@@ -47,12 +48,26 @@ async function refresh(){
  if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
  dashboardView();
+ if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();
  const pendingToken=new URLSearchParams(location.search).get("invitation");
  if(pendingToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingToken;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
 }
 async function edge(action,payload={}){
  const {data,error}=await supabase.functions.invoke("manage-company-members",{body:{action,...payload}});
  if(error)throw error;if(data?.error)throw new Error(data.error);return data;
+}
+async function loadManagement(){
+ const active=memberships.find(m=>m.company.id===activeCompanyId);
+ if(!active||active.role!=="admin")return;
+ const membersNode=root.querySelector("#members-list"), invitesNode=root.querySelector("#invitations-list");
+ if(!membersNode||!invitesNode)return;
+ membersNode.textContent="Chargement…";invitesNode.textContent="Chargement…";
+ try{
+  const results=await Promise.all([edge("list_company_members",{company_id:activeCompanyId}),edge("list_company_invitations",{company_id:activeCompanyId})]);
+  const memberData=results[0],inviteData=results[1];
+  membersNode.innerHTML=memberData.members.length?memberData.members.map(m=>'<article class="company"><div class="topline"><div><strong>'+esc(m.display_name||m.email||"Compte utilisateur")+'</strong><div class="company-meta">'+esc(m.email||"Adresse non disponible")+'</div></div><span class="role">'+esc(m.status==="active"?"Actif":"Suspendu")+'</span></div><div class="form-grid"><div class="field"><label>Rôle dans cette entreprise</label><select data-action="change-role" data-user-id="'+esc(m.user_id)+'" '+(m.user_id===session.user.id?"disabled":"")+'><option value="admin" '+(m.role==="admin"?"selected":"")+'>Administrateur</option><option value="accountant" '+(m.role==="accountant"?"selected":"")+'>Comptable</option><option value="reader" '+(m.role==="reader"?"selected":"")+'>Lecteur</option></select></div><div class="field"><label>Statut</label><button class="secondary" data-action="toggle-member-status" data-user-id="'+esc(m.user_id)+'" data-status="'+esc(m.status)+'" '+(m.user_id===session.user.id?"disabled":"")+'>'+(m.status==="active"?"Suspendre":"Réactiver")+'</button></div></div><div class="actions"><button class="danger" data-action="remove-member" data-user-id="'+esc(m.user_id)+'" '+(m.user_id===session.user.id?"disabled":"")+'>Retirer de l’entreprise</button></div></article>').join(""):"<div class=\"empty\">Aucun membre trouvé.</div>";
+  invitesNode.innerHTML=inviteData.invitations.length?inviteData.invitations.map(i=>'<article class="company"><div class="topline"><strong>'+esc(i.email)+'</strong><span class="role">'+esc(roleLabel(i.role))+'</span></div><p class="company-meta">Expire le '+esc(new Date(i.expires_at).toLocaleString("fr-FR"))+'</p><button class="danger" data-action="revoke-invitation" data-invitation-id="'+esc(i.id)+'">Révoquer l’invitation</button></article>').join(""):"<div class=\"empty\">Aucune invitation en attente.</div>";
+ }catch(error){membersNode.textContent=error.message;invitesNode.textContent="Impossible de charger les invitations."}
 }
 root.addEventListener("click",async(e)=>{
  const mode=e.target.closest("[data-mode]");if(mode){authView(mode.dataset.mode);return}
@@ -64,8 +79,17 @@ root.addEventListener("click",async(e)=>{
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
-  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);dashboardView();}
+  if(action==="reload-management")await loadManagement();
+  if(action==="toggle-member-status"){const next=button.dataset.status==="active"?"suspended":"active";if(!confirm(next==="suspended"?"Suspendre ce collaborateur ?":"Réactiver ce collaborateur ?"))return;await edge("set_member_status",{company_id:activeCompanyId,user_id:button.dataset.userId,status:next});await loadManagement();toast("Statut du collaborateur mis à jour.");}
+  if(action==="remove-member"){if(!confirm("Retirer définitivement ce collaborateur de cette entreprise ?"))return;await edge("remove_member",{company_id:activeCompanyId,user_id:button.dataset.userId});await loadManagement();toast("Collaborateur retiré.");}
+  if(action==="revoke-invitation"){if(!confirm("Révoquer cette invitation ? Le jeton ne pourra plus être utilisé."))return;await edge("revoke_invitation",{company_id:activeCompanyId,invitation_id:button.dataset.invitationId});await loadManagement();toast("Invitation révoquée.");}
+  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);dashboardView();if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();}
  }catch(error){showError(error)}
+});
+root.addEventListener("change",async(e)=>{
+ const select=e.target.closest('[data-action="change-role"]');if(!select)return;
+ const nextRole=select.value;if(!confirm("Confirmer le changement de rôle pour cette entreprise ?")){await loadManagement();return}
+ try{await edge("set_member_role",{company_id:activeCompanyId,user_id:select.dataset.userId,role:nextRole});await loadManagement();toast("Rôle du collaborateur mis à jour.")}catch(error){showError(error);await loadManagement()}
 });
 root.addEventListener("submit",async(e)=>{
  e.preventDefault();const form=e.target;const submit=form.querySelector('button[type="submit"]');busy(submit,true);

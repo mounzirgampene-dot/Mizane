@@ -59,32 +59,72 @@ export function validateBackup(data) {
   if (!data.settings || typeof data.settings !== "object" || Array.isArray(data.settings) || !Array.isArray(data.entries)) {
     throw new Error("Fichier de sauvegarde invalide : sections settings et entries requises.");
   }
-  if (data.version && Number(data.version) > 1) throw new Error(`Version de sauvegarde non prise en charge (${data.version}).`);
-  const entries = [];
-  for (const e of data.entries) {
-    if (!e || !validDate(e.date) || !JOURNALS_OK.includes(e.journal) || !Array.isArray(e.lines)) continue;
-    const lines = e.lines
-      .map((l) => ({
-        account: String(l?.account || "").trim(),
-        label: String(l?.label || ""),
-        third: String(l?.third || ""),
-        debit: round2(num(l?.debit)),
-        credit: round2(num(l?.credit)),
-      }))
-      .filter((l) => l.account && (l.debit || l.credit) && Number.isFinite(l.debit) && Number.isFinite(l.credit) && l.debit >= 0 && l.credit >= 0);
-    if (lines.length < 2) continue;
-    entries.push({
-      id: Number(e.id) || 0,
-      date: e.date,
-      journal: e.journal,
-      reference: String(e.reference || ""),
-      lines,
-      reversed: Boolean(e.reversed),
-      reverseOf: e.reverseOf == null ? null : Number(e.reverseOf),
-      createdAt: String(e.createdAt || ""),
-    });
+  if (data.version != null && (!Number.isInteger(Number(data.version)) || Number(data.version) > 1 || Number(data.version) < 1)) {
+    throw new Error(`Version de sauvegarde non prise en charge (${data.version}).`);
   }
-  return { ...data, entries };
+  for (const key of ["thirds", "assets"]) {
+    if (data[key] != null && !Array.isArray(data[key])) throw new Error(`Section « ${key} » invalide.`);
+  }
+  if (data.settings.customAccounts != null && !Array.isArray(data.settings.customAccounts)) {
+    throw new Error("La liste des comptes personnalisés est invalide.");
+  }
+
+  const ids = new Set();
+  const entries = data.entries.map((e, index) => {
+    const label = `Écriture ${index + 1}`;
+    if (!e || typeof e !== "object" || Array.isArray(e)) throw new Error(`${label} : structure invalide.`);
+    if (!validDate(e.date)) throw new Error(`${label} : date invalide.`);
+    if (!JOURNALS_OK.includes(e.journal)) throw new Error(`${label} : journal inconnu.`);
+    if (!Array.isArray(e.lines) || e.lines.length < 2) throw new Error(`${label} : au moins deux lignes sont requises.`);
+    const id = Number(e.id);
+    if (!Number.isSafeInteger(id) || id < 1 || ids.has(id)) throw new Error(`${label} : identifiant absent, invalide ou dupliqué.`);
+    ids.add(id);
+
+    const lines = e.lines.map((l, lineIndex) => {
+      if (!l || typeof l !== "object" || Array.isArray(l)) throw new Error(`${label}, ligne ${lineIndex + 1} : structure invalide.`);
+      const account = String(l.account || "").trim();
+      const debitRaw = num(l.debit);
+      const creditRaw = num(l.credit);
+      if (!account) throw new Error(`${label}, ligne ${lineIndex + 1} : compte obligatoire.`);
+      if (!Number.isFinite(debitRaw) || !Number.isFinite(creditRaw) || debitRaw < 0 || creditRaw < 0 ||
+          debitRaw > 999999999999 || creditRaw > 999999999999) {
+        throw new Error(`${label}, ligne ${lineIndex + 1} : montant invalide ou excessif.`);
+      }
+      const debit = round2(debitRaw), credit = round2(creditRaw);
+      if ((debit > 0) === (credit > 0)) throw new Error(`${label}, ligne ${lineIndex + 1} : renseignez un seul côté, débit ou crédit.`);
+      return { account, label: String(l.label || ""), third: String(l.third || ""), debit, credit };
+    });
+    const debitTotal = round2(lines.reduce((sum, l) => sum + l.debit, 0));
+    const creditTotal = round2(lines.reduce((sum, l) => sum + l.credit, 0));
+    if (debitTotal <= 0 || Math.abs(debitTotal - creditTotal) > 0.001) {
+      throw new Error(`${label} : écriture déséquilibrée (${debitTotal} / ${creditTotal}).`);
+    }
+    const reverseOf = e.reverseOf == null ? null : Number(e.reverseOf);
+    if (reverseOf != null && (!Number.isSafeInteger(reverseOf) || reverseOf < 1 || reverseOf === id)) {
+      throw new Error(`${label} : lien de contrepassation invalide.`);
+    }
+    return {
+      id, date: e.date, journal: e.journal, reference: String(e.reference || ""),
+      lines, reversed: Boolean(e.reversed), reverseOf,
+      createdAt: String(e.createdAt || ""),
+    };
+  });
+
+  const entryIds = new Set(entries.map((e) => e.id));
+  for (const e of entries) {
+    if (e.reverseOf != null && !entryIds.has(e.reverseOf)) throw new Error(`Écriture #${e.id} : écriture d'origine de la contrepassation introuvable.`);
+  }
+  const nextId = data.nextId == null ? Math.max(0, ...ids) + 1 : Number(data.nextId);
+  if (!Number.isSafeInteger(nextId) || nextId <= Math.max(0, ...ids)) throw new Error("Le prochain identifiant d'écriture est invalide.");
+
+  return {
+    ...data,
+    version: 1,
+    thirds: Array.isArray(data.thirds) ? data.thirds : [],
+    assets: Array.isArray(data.assets) ? data.assets : [],
+    entries,
+    nextId,
+  };
 }
 
 export function importJSON(file) {

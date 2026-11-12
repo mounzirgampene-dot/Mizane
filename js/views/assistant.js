@@ -7,6 +7,7 @@ import {
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
+import { LANGS } from "../i18n.js";
 import { encryptSecret } from "../crypto.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -165,6 +166,9 @@ export function viewSettings() {
           <select id="s-plan">${Object.values(PLANS).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
         </div>
         <div><label>Devise</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"></div>
+        <div><label>Langue</label>
+          <select id="s-language">${LANGS.map(([id, label]) => `<option value="${id}" ${(s.language || "fr") === id ? "selected" : ""}>${label}</option>`).join("")}</select>
+        </div>
       </div>
       <div class="row">
         <div><label>Début d'exercice</label><input type="date" id="s-start" value="${esc(s.exerciceStart)}"></div>
@@ -195,7 +199,7 @@ export function viewSettings() {
       <div class="row" ${pid === "custom" ? "" : "hidden"}>
         <div><label>Endpoint (compatible OpenAI)</label><input id="s-aiendpoint" placeholder="https://…/v1/chat/completions" value="${esc(s.aiEndpoint || "")}"></div>
       </div>
-      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} ${pid === "custom" ? "" : `Clé gratuite sur ${PROVIDERS[pid].keyUrl}.`} Les photos sont analysées par le modèle vision ${pid === "custom" ? "du fournisseur choisi" : PROVIDERS[pid].vision}.</p>
+      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔐 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} ${pid === "custom" ? "" : `Clé gratuite sur ${PROVIDERS[pid].keyUrl}.`} Les photos sont analysées par le modèle vision ${pid === "custom" ? "du fournisseur choisi" : PROVIDERS[pid].vision}.</p>
     </div>
 
     <div class="card">
@@ -205,7 +209,7 @@ export function viewSettings() {
     </div>
 
     <div class="card">
-      <h2>📗 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
+      <h2>📓 Plan de comptes — ${esc(plan.name)} (${planAccounts.length} comptes)</h2>
       <div class="row">
         <div><label>Nouveau compte (numéro)</label><input id="ca-code" placeholder="Ex. 7085"></div>
         <div><label>Libellé</label><input id="ca-label" placeholder="Ex. Ventes de services divers"></div>
@@ -258,6 +262,13 @@ export function viewSettings() {
     router.render();
   });
 
+  document.getElementById("s-language").addEventListener("change", (e) => {
+    s.language = e.target.value;
+    saveStore(store);
+    toast("✓ Langue enregistrée.");
+    router.render();
+  });
+
   document.getElementById("s-aikey").addEventListener("change", async (e) => {
     const v = e.target.value.trim();
     if (v) {
@@ -265,7 +276,7 @@ export function viewSettings() {
         s.aiKeyEnc = await encryptSecret(v);
         s.aiKey = "";
         toast("✓ Clé chiffrée et enregistrée.");
-        document.getElementById("s-aikey-status").textContent = "🔒 Clé chiffrée enregistrée sur cet appareil (AES-GCM).";
+        document.getElementById("s-aikey-status").textContent = "🔐 Clé chiffrée enregistrée sur cet appareil (AES-GCM).";
       } catch (_err) {
         s.aiKey = v;
         s.aiKeyEnc = "";

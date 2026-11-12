@@ -47,6 +47,8 @@ async function refresh(){
  if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
  dashboardView();
+ const pendingToken=new URLSearchParams(location.search).get("invitation");
+ if(pendingToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingToken;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
 }
 async function edge(action,payload={}){
  const {data,error}=await supabase.functions.invoke("manage-company-members",{body:{action,...payload}});

@@ -133,6 +133,47 @@ Deno.serve(async (request) => {
   };
 
   try {
+    if (action === "list_company_members") {
+      const { data: rows, error } = await adminClient.from("company_memberships")
+        .select("user_id,role,status,created_at")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (error) return fail(500, "Impossible de charger les membres.");
+      const ids = (rows ?? []).map((row) => row.user_id);
+      const { data: profiles, error: profileError } = ids.length
+        ? await adminClient.from("profiles").select("id,display_name").in("id", ids)
+        : { data: [], error: null };
+      if (profileError) return fail(500, "Impossible de charger les profils des membres.");
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      const members = await Promise.all((rows ?? []).map(async (row) => {
+        const { data } = await adminClient.auth.admin.getUserById(row.user_id);
+        const profile = profileById.get(row.user_id);
+        return {
+          user_id: row.user_id,
+          email: data.user?.email ?? null,
+          display_name: profile?.display_name ?? null,
+          role: row.role,
+          status: row.status,
+          created_at: row.created_at,
+        };
+      }));
+      return json(200, { members });
+    }
+
+    if (action === "list_company_invitations") {
+      const { data, error } = await adminClient.from("company_invitations")
+        .select("id,email,role,expires_at,created_at")
+        .eq("company_id", companyId)
+        .is("accepted_at", null)
+        .is("revoked_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) return fail(500, "Impossible de charger les invitations en attente.");
+      return json(200, { invitations: data ?? [] });
+    }
+
     if (action === "create_invitation") {
       const email = normalizeEmail(body.email);
       const role = body.role;

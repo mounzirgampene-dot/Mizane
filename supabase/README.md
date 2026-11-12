@@ -48,7 +48,7 @@ Actions disponibles (requêtes POST JSON) :
 - `set_member_status` : suspend ou réactive un membre.
 - `remove_member` : retire un membre de l'entreprise.
 
-La création d'invitation retourne le jeton une seule fois à l'administrateur appelant. **L'envoi automatique par e-mail n'est pas encore intégré** : le jeton doit être transmis par un canal sûr jusqu'à l'ajout d'un fournisseur d'e-mail transactionnel. Ne pas l'inscrire dans des journaux publics.
+La création d'invitation envoie un e-mail via Resend. Le jeton brut n'est jamais retourné au navigateur ni inscrit dans les journaux ; seul son hachage est conservé en base. Le lien est valable 7 jours et son acceptation exige une session authentifiée dont l'adresse correspond à celle du destinataire.
 
 ### Déploiement dans un projet de développement
 
@@ -126,3 +126,27 @@ Deux actions supplémentaires sont disponibles dans `manage-company-members` et 
 - `list_company_invitations` : renvoie les invitations encore valides et non révoquées (maximum 100 résultats). Les jetons et empreintes ne sont jamais renvoyés.
 
 Le navigateur ne lit pas directement les profils privés des autres utilisateurs : ces données sont récupérées côté serveur après le contrôle d’administration. Les opérations de changement de rôle, suspension/réactivation, retrait et révocation utilisent les actions déjà protégées par la même vérification serveur.
+
+
+## Envoi transactionnel des invitations par e-mail
+
+La fonction `manage-company-members` envoie les invitations avec Resend. Configurer les secrets côté projet Supabase (jamais dans Git ou le frontend) :
+
+```sh
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxx
+supabase secrets set MIZANE_APP_URL=https://VOTRE-UTILISATEUR.github.io/Mizane
+supabase secrets set MIZANE_EMAIL_FROM='MIZANE <invitations@votre-domaine.com>'
+```
+
+`MIZANE_APP_URL` doit être l'URL de base GitHub Pages. `MIZANE_EMAIL_FROM` doit correspondre à un expéditeur vérifié dans Resend. En environnement d'essai, Resend peut limiter les destinataires et/ou l'expéditeur. Pour une utilisation réelle, vérifier un domaine et configurer ses DNS.
+
+Le jeton brut n'est jamais retourné au frontend ni journalisé. Il est transmis dans le fragment URL du lien e-mail. Si Resend refuse l'envoi, l'enregistrement d'invitation est supprimé. L'invitation expire après 7 jours, est à usage unique et exige une session authentifiée dont l'adresse correspond.
+
+Après configuration, redéployer :
+```sh
+supabase functions deploy manage-company-members
+```
+
+## Récupération du mot de passe
+
+Le portail écoute l'événement Supabase Auth `PASSWORD_RECOVERY` et affiche un formulaire de nouveau mot de passe. Le formulaire vérifie la confirmation puis appelle `supabase.auth.updateUser({ password })`. Dans Supabase Auth, ajouter `https://VOTRE-UTILISATEUR.github.io/Mizane/espace.html` aux URL de redirection autorisées et vérifier le modèle d'e-mail de récupération.

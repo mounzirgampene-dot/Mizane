@@ -8,6 +8,9 @@ let supabase;
 let session = null;
 let memberships = [];
 let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
+let pendingInvitationToken = new URLSearchParams(location.hash.slice(1)).get("invitation") || "";
+let passwordRecoveryMode = false;
+if (pendingInvitationToken) history.replaceState(null, "", location.pathname + location.search);
 
 const esc = (value = "") => String(value).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const roleLabel = (role) => ({admin:"Administrateur",accountant:"Comptable",reader:"Lecteur"}[role] || role);
@@ -16,6 +19,9 @@ function showError(error){const msg=error?.message||String(error);toast(msg);con
 function busy(button,on){if(button){button.disabled=on;button.dataset.oldText ||= button.textContent;button.textContent=on?"Patientez…":button.dataset.oldText}}
 function configError(){
  root.innerHTML=`<section class="panel"><p class="eyebrow">Configuration requise</p><h1>Connecter MIZANE à Supabase</h1><p>Le portail SaaS est séparé de l'application comptable locale. Pour l'activer, configurez l'URL du projet et la clé publique Supabase.</p><div class="notice">Copiez <code>js/supabase-config.example.js</code> vers <code>js/supabase-config.js</code>, puis remplacez les deux valeurs d'exemple. Utilisez uniquement la clé publique anon/publishable.</div><div class="actions"><a class="button secondary" href="index.html">Ouvrir la comptabilité locale</a></div></section>`;
+}
+function recoveryView(){
+ root.innerHTML=`<section class="panel"><p class="eyebrow">Sécurité du compte</p><h1>Choisir un nouveau mot de passe</h1><p>Définissez un mot de passe d’au moins 8 caractères pour votre compte MIZANE.</p><form id="recovery-form"><div class="field"><label for="new-password">Nouveau mot de passe</label><input id="new-password" type="password" minlength="8" autocomplete="new-password" required></div><div class="field"><label for="confirm-password">Confirmer le mot de passe</label><input id="confirm-password" type="password" minlength="8" autocomplete="new-password" required></div><p class="notice hidden" data-error></p><button type="submit">Enregistrer le nouveau mot de passe</button></form></section>`;
 }
 function authView(mode="login"){
  const signup=mode==="signup";
@@ -34,7 +40,7 @@ function dashboardView(){
  <div class="field"><label for="standard">Référentiel comptable</label><select id="standard"><option value="CGNC">CGNC — Maroc</option><option value="SYSCOHADA">SYSCOHADA</option><option value="PCG">PCG — France</option></select></div>
  <div class="field"><label for="timezone">Fuseau horaire</label><input id="timezone" value="Africa/Casablanca" required></div>
  <div class="field full actions"><button type="submit">Créer l'espace</button><button type="button" class="secondary" data-action="hide-create">Annuler</button></div><p class="notice hidden" data-error></p></form></section>
- <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">L'envoi automatique par e-mail n'est pas encore activé. Un jeton à transmettre par un canal sûr sera affiché.</p><div id="invite-result" class="notice hidden"></div></form></section>
+ <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">Un e-mail contenant un lien sécurisé sera envoyé à cette adresse. Le lien expire après 7 jours et ne peut être utilisé qu'une seule fois.</p><div id="invite-result" class="notice hidden"></div></form></section>
  ${active&&active.role==="admin"?"<section class=\"panel\"><div class=\"topline\"><div><p class=\"eyebrow\">Administration</p><h2>Collaborateurs</h2></div><button class=\"secondary\" data-action=\"reload-management\">Actualiser</button></div><p class=\"muted\">Les changements de rôle et de statut s’appliquent uniquement à cette entreprise. Le dernier administrateur actif ne peut pas être retiré ni rétrogradé.</p><div id=\"members-list\" class=\"empty\">Chargement des membres…</div><h2 style=\"margin-top:24px\">Invitations en attente</h2><div id=\"invitations-list\" class=\"empty\">Chargement des invitations…</div></section>":""}`;
 }
 async function refresh(){
@@ -49,8 +55,7 @@ async function refresh(){
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
  dashboardView();
  if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();
- const pendingToken=new URLSearchParams(location.search).get("invitation");
- if(pendingToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingToken;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
+ if(pendingInvitationToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
 }
 async function edge(action,payload={}){
  const {data,error}=await supabase.functions.invoke("manage-company-members",{body:{action,...payload}});
@@ -94,6 +99,14 @@ root.addEventListener("change",async(e)=>{
 root.addEventListener("submit",async(e)=>{
  e.preventDefault();const form=e.target;const submit=form.querySelector('button[type="submit"]');busy(submit,true);
  try{
+  if(form.id==="recovery-form"){
+   const password=form.querySelector("#new-password").value;
+   const confirmation=form.querySelector("#confirm-password").value;
+   if(password.length<8)throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+   if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
+   const {error}=await supabase.auth.updateUser({password});if(error)throw error;
+   passwordRecoveryMode=false;toast("Mot de passe mis à jour.");await refresh();
+  }
   if(form.id==="auth-form"){
    const email=form.querySelector("#email").value.trim();const password=form.querySelector("#password").value;const signup=!!form.querySelector("#display-name")&&!form.querySelector("#name-field").classList.contains("hidden");
    if(signup){const display_name=form.querySelector("#display-name").value.trim();const {data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(!data.session){toast("Compte créé. Vérifiez votre boîte e-mail pour confirmer l'inscription.");authView("login");return}session=data.session;await refresh();}
@@ -103,13 +116,12 @@ root.addEventListener("submit",async(e)=>{
    const {data,error}=await supabase.rpc("create_company",{p_legal_name:form.querySelector("#legal-name").value.trim(),p_country_code:form.querySelector("#country").value.toUpperCase(),p_base_currency:form.querySelector("#currency").value.toUpperCase(),p_accounting_standard:form.querySelector("#standard").value,p_timezone:form.querySelector("#timezone").value.trim()});if(error)throw error;activeCompanyId=data;await refresh();toast("Entreprise créée. Vous êtes administrateur de cet espace.");
   }
   if(form.id==="accept-form"){
-   const result=await edge("accept_invitation",{invitation_token:form.querySelector("#invite-token").value.trim()});activeCompanyId=result.company_id;await refresh();toast("Invitation acceptée.");
+   const result=await edge("accept_invitation",{invitation_token:form.querySelector("#invite-token").value.trim()});pendingInvitationToken="";activeCompanyId=result.company_id;await refresh();toast("Invitation acceptée.");
   }
   if(form.id==="invite-form"){
    const active=memberships.find(m=>m.company.id===activeCompanyId);if(!active||active.role!=="admin")throw new Error("Droits administrateur requis.");
    const result=await edge("create_invitation",{company_id:activeCompanyId,email:form.querySelector("#invite-email").value.trim(),role:form.querySelector("#invite-role").value});
-   const link=location.origin+location.pathname+"?invitation="+encodeURIComponent(result.invitation_token);
-   const target=root.querySelector("#invite-result");target.innerHTML=`Invitation créée pour <strong>${esc(result.invitation.email)}</strong>. Expiration : ${esc(new Date(result.invitation.expires_at).toLocaleString("fr-FR"))}.<br><label>Jeton à transmettre par un canal sûr</label><input readonly value="${esc(result.invitation_token)}"><button type="button" class="secondary" data-action="copy-token">Copier le jeton</button><p class="muted">Le destinataire doit se connecter avec l'adresse e-mail indiquée, puis coller ce jeton dans « Accepter une invitation ».</p>`;target.dataset.token=result.invitation_token;target.classList.remove("hidden");
+   const target=root.querySelector("#invite-result");target.textContent=`Invitation envoyée à ${result.invitation.email}. Le lien sécurisé est valable jusqu’au ${new Date(result.invitation.expires_at).toLocaleString("fr-FR")}.`;target.classList.remove("hidden");form.reset();await loadManagement();
   }
  }catch(error){showError(error)}finally{busy(submit,false)}
 });
@@ -117,9 +129,15 @@ root.addEventListener("click",async(e)=>{const b=e.target.closest('[data-action=
 async function start(){
  if(!SUPABASE_URL.startsWith("https://")||SUPABASE_URL.includes("VOTRE-PROJET")||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY.includes("VOTRE_CLE")){configError();return}
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ supabase.auth.onAuthStateChange((event,next)=>{
+  session=next;
+  if(event==="PASSWORD_RECOVERY"){passwordRecoveryMode=true;recoveryView();return}
+  if(!session){passwordRecoveryMode=false;memberships=[];authView()}
+ });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
+ const hashParams=new URLSearchParams(location.hash.slice(1));
+ if(passwordRecoveryMode||(hashParams.get("type")==="recovery"&&session)){passwordRecoveryMode=true;recoveryView();return}
  if(session)await refresh();else authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
- supabase.auth.onAuthStateChange((_event,next)=>{session=next;if(!session){memberships=[];authView()}});
- const token=new URLSearchParams(location.search).get("invitation");if(token){const field=root.querySelector("#invite-token");if(field){field.value=token;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
+ if(pendingInvitationToken){const field=root.querySelector("#invite-token");if(field){field.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
 }
 start().catch(showError);

@@ -5,7 +5,7 @@ import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
-  getDraftLines, setDraftLines, openModal, closeModal,
+  getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
 } from "../state.js";
 
 export function viewDashboard() {
@@ -53,6 +53,10 @@ function lineRowHTML(l, i) {
 
 export function viewEntry() {
   const draftLines = getDraftLines();
+  const header = getDraftHeader();
+  if (!header.date) setDraftHeader({ date: new Date().toISOString().slice(0, 10) });
+  if (!header.journal) setDraftHeader({ journal: "ACH" });
+  const currentHeader = getDraftHeader();
   const totals = draftLines.reduce((acc, l) => ({ debit: acc.debit + (Number(l.debit) || 0), credit: acc.credit + (Number(l.credit) || 0) }), { debit: 0, credit: 0 });
   const diff = Math.round((totals.debit - totals.credit) * 100) / 100;
   const balanced = Math.abs(diff) < 0.001 && totals.debit > 0;
@@ -63,11 +67,11 @@ export function viewEntry() {
     </datalist>
     <div class="card">
       <div class="row">
-        <div><label>Date</label><input type="date" id="e-date" value="${new Date().toISOString().slice(0, 10)}"></div>
+        <div><label>Date</label><input type="date" id="e-date" value="${esc(currentHeader.date)}"></div>
         <div><label>Journal</label>
-          <select id="e-journal">${JOURNALS.map((j) => `<option value="${j.id}">${j.id} — ${esc(j.name)}</option>`).join("")}</select>
+          <select id="e-journal">${JOURNALS.map((j) => `<option value="${j.id}" ${currentHeader.journal === j.id ? "selected" : ""}>${j.id} — ${esc(j.name)}</option>`).join("")}</select>
         </div>
-        <div><label>Pièce / référence</label><input id="e-ref" placeholder="FCT-001, TCK-014…"></div>
+        <div><label>Pièce / référence</label><input id="e-ref" value="${esc(currentHeader.reference)}" placeholder="FCT-001, TCK-014…"></div>
       </div>
       <div class="table-wrap" style="margin-top:12px">
         <table>
@@ -102,7 +106,17 @@ export function viewEntry() {
   $app.querySelectorAll("[data-i]").forEach((inp) => {
     inp.addEventListener("input", () => {
       draftLines[Number(inp.dataset.i)][inp.dataset.f] = inp.value;
-      if (inp.dataset.f === "debit" || inp.dataset.f === "credit") viewEntry();
+      if (inp.dataset.f === "debit" || inp.dataset.f === "credit") updateEntryTotals();
+    });
+  });
+  ["e-date", "e-journal", "e-ref"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", (e) => {
+      const field = id === "e-date" ? "date" : id === "e-journal" ? "journal" : "reference";
+      setDraftHeader({ [field]: e.target.value });
+    });
+    document.getElementById(id).addEventListener("change", (e) => {
+      const field = id === "e-date" ? "date" : id === "e-journal" ? "journal" : "reference";
+      setDraftHeader({ [field]: e.target.value });
     });
   });
   $app.querySelectorAll("[data-del-line]").forEach((btn) => {
@@ -131,10 +145,29 @@ export function viewEntry() {
     }
     saveStore(store);
     toast(`✓ Écriture #${res.entry.id} enregistrée.`);
-    setDraftLines([{ account: "", label: "", debit: "", credit: "" }, { account: "", label: "", debit: "", credit: "" }]);
+    resetDraft();
     router.go("entries");
   });
   document.getElementById("ai-suggest-btn").addEventListener("click", aiSuggestModal);
+}
+
+function updateEntryTotals() {
+  const lines = getDraftLines();
+  const debit = lines.reduce((sum, line) => sum + (Number(line.debit) || 0), 0);
+  const credit = lines.reduce((sum, line) => sum + (Number(line.credit) || 0), 0);
+  const diff = Math.round((debit - credit) * 100) / 100;
+  const balanced = Math.abs(diff) < 0.001 && debit > 0;
+  const debitEl = document.getElementById("tot-debit");
+  const creditEl = document.getElementById("tot-credit");
+  const statusEl = document.querySelector("#post-entry")?.closest(".row")?.querySelector(".kpi:nth-of-type(3) .value");
+  if (debitEl) debitEl.textContent = money(debit);
+  if (creditEl) creditEl.textContent = money(credit);
+  if (statusEl) {
+    statusEl.textContent = balanced ? "✓" : money(diff);
+    statusEl.style.color = balanced ? "var(--ok)" : "var(--danger)";
+    const label = statusEl.nextElementSibling;
+    if (label) label.textContent = balanced ? "Équilibrée" : "Écart";
+  }
 }
 
 function aiSuggestModal() {
@@ -190,13 +223,9 @@ function aiSuggestModal() {
 
 function loadDraftFromSuggestion(s, note) {
   setDraftLines((s.lines || []).map((l) => ({ account: String(l.account || ""), label: l.label || "", debit: l.debit ? String(l.debit) : "", credit: l.credit ? String(l.credit) : "", third: l.third || "" })));
-  while (getDraftLines().length < 2) getDraftLines().push({ account: "", label: "", debit: "", credit: "" });
+  while (getDraftLines().length < 2) getDraftLines().push({ account: "", label: "", debit: "", credit: "", third: "" });
+  setDraftHeader({ date: s.date || new Date().toISOString().slice(0, 10), journal: s.journal || "ACH", reference: s.reference || "" });
   router.go("entry");
-  setTimeout(() => {
-    if (s.date) document.getElementById("e-date").value = s.date;
-    if (s.journal) document.getElementById("e-journal").value = s.journal;
-    if (s.reference) document.getElementById("e-ref").value = s.reference;
-  }, 0);
   toast(note);
 }
 

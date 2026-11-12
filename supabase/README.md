@@ -27,13 +27,55 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `profiles` : profil applicatif lié à l'identité Supabase Auth.
 - `companies` : espaces indépendants.
 - `company_memberships` : rôle indépendant par utilisateur et entreprise.
-- `company_invitations` : structure des invitations ; l'émission et l'acceptation seront ajoutées dans une Edge Function.
+- `company_invitations` : invitations avec jeton haché et durée de validité.
 - `company_settings` : paramètres propres à l'entreprise.
 - `audit_logs` : journal des événements sensibles.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
 - RLS et politiques de lecture / mise à jour d'administration.
 
 Les clients ne disposent volontairement d'aucune politique pour créer directement des appartenances, modifier des rôles ou écrire des événements d'audit. Ces actions doivent passer par des fonctions serveur contrôlées.
+
+## Fonctions serveur de gestion des membres
+
+La fonction Edge `manage-company-members` se trouve dans `supabase/functions/manage-company-members/index.ts`. Elle vérifie le JWT de l'utilisateur et contrôle côté serveur que celui-ci est administrateur actif de l'entreprise.
+
+Actions disponibles (requêtes POST JSON) :
+
+- `create_invitation` : crée une invitation pour un rôle `accountant` ou `reader`, valable 7 jours.
+- `accept_invitation` : permet à l'utilisateur authentifié dont l'adresse correspond à l'invitation d'accepter le jeton.
+- `revoke_invitation` : révoque une invitation non utilisée.
+- `set_member_role` : change le rôle d'un membre.
+- `set_member_status` : suspend ou réactive un membre.
+- `remove_member` : retire un membre de l'entreprise.
+
+La création d'invitation retourne le jeton une seule fois à l'administrateur appelant. **L'envoi automatique par e-mail n'est pas encore intégré** : le jeton doit être transmis par un canal sûr jusqu'à l'ajout d'un fournisseur d'e-mail transactionnel. Ne pas l'inscrire dans des journaux publics.
+
+### Déploiement dans un projet de développement
+
+Après avoir appliqué les migrations :
+
+```sh
+supabase functions deploy manage-company-members
+```
+
+La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Configurer `MIZANE_ALLOWED_ORIGIN` avec l'origine exacte de l'application avant d'ouvrir l'API au frontend ; le joker CORS ne doit servir qu'aux essais locaux.
+
+Exemple de corps JSON pour créer une invitation :
+
+```json
+{
+  "action": "create_invitation",
+  "company_id": "UUID_DE_L_ENTREPRISE",
+  "email": "collaborateur@example.com",
+  "role": "accountant"
+}
+```
+
+Pour accepter, l'utilisateur doit être connecté avec l'adresse e-mail destinataire et envoyer `action` = `accept_invitation` avec `invitation_token`. Les autres actions exigent `company_id` et les champs propres à l'opération.
+
+La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise. Cela évite que deux requêtes concurrentes retirent simultanément les droits des deux derniers administrateurs.
+
+Le test `supabase/tests/atomic_member_management.test.sql` vérifie cette protection. Il doit être exécuté avec `supabase test db` sur un environnement local ou de développement.
 
 ## Tests automatisés RLS
 
@@ -65,7 +107,8 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- Les invitations, la révocation, le changement de rôle et la protection contre la suppression du dernier administrateur nécessitent des Edge Functions.
+- La fonction de gestion des membres est écrite, mais elle n'est pas encore déployée ni testée sur un projet Supabase.
+- L'envoi automatique des invitations par e-mail reste à intégrer.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.
 - La migration n'a pas été exécutée sur un projet Supabase : aucun accès à un projet ou à ses secrets n'a été fourni dans cette étape.

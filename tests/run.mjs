@@ -1,7 +1,7 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
 import {
-  newStore, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
+  newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
@@ -121,6 +121,9 @@ test("contrepassation inverse débits et crédits", () => {
   const rev = reverseEntry(s, e.id);
   assert.equal(rev.ok, true);
   assert.equal(s.entries.length, 2);
+  assert.equal(s.entries[0].reversed, true);
+  assert.equal(reverseEntry(s, e.id).ok, false, "une seconde contrepassation doit être refusée");
+  assert.equal(reverseEntry(s, e.id, "2025-02-30").ok, false, "une date impossible doit être refusée");
   const tb = trialBalance(s);
   assert.equal(tb.totals.debit, tb.totals.credit);
   assert.equal(tb.totals.debit, 1000);
@@ -360,6 +363,12 @@ test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", asy
 });
 
 console.log("— Cas limites —");
+test("validDate rejette les dates calendaires impossibles", () => {
+  assert.equal(validDate("2026-99-99"), false);
+  assert.equal(validDate("2025-02-29"), false);
+  assert.equal(validDate("2024-02-29"), true);
+});
+
 test("validateEntry refuse les montants négatifs", () => {
   const s = freshStore();
   const v = validateEntry(s, { date: "2025-01-01", journal: "OD", lines: [
@@ -392,6 +401,8 @@ test("providerOf / visionModel : détection mistral, groq, gemini, custom", asyn
   assert.equal(providerOf(mk("https://api.groq.com/openai/v1/chat/completions")), "groq");
   assert.equal(providerOf(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini");
   assert.equal(providerOf(mk("https://exemple.com/v1/chat/completions")), "custom");
+  assert.equal(providerOf({ settings: { aiProvider: "custom", aiEndpoint: "https://api.mistral.ai/v1/chat/completions", aiModel: "m" } }), "custom",
+    "le fournisseur explicitement choisi doit primer sur l'endpoint détecté");
   assert.equal(visionModel(mk("https://api.groq.com/openai/v1/chat/completions")), "meta-llama/llama-4-scout-17b-16e-instruct");
   assert.equal(visionModel(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini-3.8-flash");
 });

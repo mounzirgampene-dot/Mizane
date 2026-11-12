@@ -27,10 +27,16 @@ export const PROVIDERS = {
   },
 };
 
-export function providerOf(store) {
-  const ep = store.settings.aiEndpoint || "";
+export function detectedProviderFromEndpoint(endpoint) {
+  const ep = endpoint || "";
   for (const [id, p] of Object.entries(PROVIDERS)) if (p.endpoint === ep) return id;
   return "custom";
+}
+
+export function providerOf(store) {
+  const stored = store.settings.aiProvider;
+  if (stored && (PROVIDERS[stored] || stored === "custom")) return stored;
+  return detectedProviderFromEndpoint(store.settings.aiEndpoint);
 }
 
 export function visionModel(store) {

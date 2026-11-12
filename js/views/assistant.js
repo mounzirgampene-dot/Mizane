@@ -293,6 +293,7 @@ export function viewSettings() {
   });
   document.getElementById("s-aiprovider").addEventListener("change", (e) => {
     const id = e.target.value;
+    s.aiProvider = id;
     if (id !== "custom") {
       s.aiEndpoint = PROVIDERS[id].endpoint;
       s.aiModel = PROVIDERS[id].models.includes(s.aiModel) ? s.aiModel : PROVIDERS[id].models[0];

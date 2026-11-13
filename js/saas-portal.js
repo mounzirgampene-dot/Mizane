@@ -6,6 +6,7 @@ const toastNode = document.querySelector("#portal-toast");
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
 let supabase;
 let session = null;
+let passwordRecoveryMode = false;
 let memberships = [];
 let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 
@@ -80,6 +81,7 @@ root.addEventListener("submit",async(e)=>{
    if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
    const {error}=await supabase.auth.updateUser({password});
    if(error)throw error;
+   passwordRecoveryMode=false;
    history.replaceState({},document.title,location.pathname);
    toast("Mot de passe modifié avec succès.");
    await refresh();
@@ -109,12 +111,12 @@ async function start(){
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
  supabase.auth.onAuthStateChange((event,next)=>{
   session=next;
-  if(event==="PASSWORD_RECOVERY"){recoveryView();return}
+  if(event==="PASSWORD_RECOVERY"){passwordRecoveryMode=true;recoveryView();return}
   if(!session){memberships=[];authView()}
  });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
- if(session&&!location.hash.includes("type=recovery"))await refresh();
- else if(!location.hash.includes("type=recovery"))authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
+ if(session&&!passwordRecoveryMode)await refresh();
+ else if(!passwordRecoveryMode)authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
  const token=new URLSearchParams(location.search).get("invitation");if(token){const field=root.querySelector("#invite-token");if(field){field.value=token;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
 }
 start().catch(showError);

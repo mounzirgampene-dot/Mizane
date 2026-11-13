@@ -16,7 +16,7 @@ on conflict (id) do nothing;
 insert into public.company_memberships (company_id, user_id, role, status)
 values
   ('43000000-0000-4000-8000-000000000003', '41000000-0000-4000-8000-000000000001', 'admin', 'active'),
-  ('43000000-0000-4000-8000-000000000002', '42000000-0000-4000-8000-000000000002', 'admin', 'active')
+  ('43000000-0000-4000-8000-000000000003', '42000000-0000-4000-8000-000000000002', 'admin', 'active')
 on conflict (company_id, user_id) do update set role = 'admin', status = 'active';
 
 set local role service_role;

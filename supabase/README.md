@@ -58,7 +58,7 @@ Après avoir appliqué les migrations :
 supabase functions deploy manage-company-members
 ```
 
-La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Configurer `MIZANE_ALLOWED_ORIGIN` avec l'origine exacte de l'application avant d'ouvrir l'API au frontend ; le joker CORS ne doit servir qu'aux essais locaux.
+La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Le code fixe actuellement l'origine CORS de GitHub Pages MIZANE : `https://mounzirgampene-dot.github.io`.
 
 Exemple de corps JSON pour créer une invitation :
 
@@ -73,9 +73,13 @@ Exemple de corps JSON pour créer une invitation :
 
 Pour accepter, l'utilisateur doit être connecté avec l'adresse e-mail destinataire et envoyer `action` = `accept_invitation` avec `invitation_token`. Les autres actions exigent `company_id` et les champs propres à l'opération.
 
-La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise. Cela évite que deux requêtes concurrentes retirent simultanément les droits des deux derniers administrateurs.
+La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise.
 
-Le test `supabase/tests/atomic_member_management.test.sql` vérifie cette protection. Il doit être exécuté avec `supabase test db` sur un environnement local ou de développement.
+L'acceptation d'une invitation est également atomique depuis la migration `20261113000100_atomic_invitation_acceptance.sql`. La fonction SQL `accept_company_invitation` partage le même verrou par entreprise que `manage_company_member` : si la suspension gagne la course, l'acceptation est refusée ; si l'acceptation gagne, la suspension s'exécute ensuite et l'accès reste suspendu. Le jeton, l'appartenance et le journal d'audit sont traités dans une seule transaction.
+
+Avant de redéployer `manage-company-members`, appliquer cette nouvelle migration sur le projet de développement. Les migrations déjà appliquées ne doivent pas être rejouées. Examiner l'état local/distant avec `supabase migration list` et utiliser une migration ciblée, après vérification, plutôt qu'un reset ou une réinitialisation.
+
+Les tests `supabase/tests/atomic_member_management.test.sql` et `supabase/tests/atomic_invitation_acceptance.test.sql` couvrent respectivement la protection du dernier administrateur et le refus d'une ancienne invitation pour un membre suspendu. Ils doivent être exécutés avec `supabase test db` sur un environnement local ou de développement.
 
 ## Tests automatisés RLS
 
@@ -107,9 +111,9 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- La migration de gestion atomique des membres a été appliquée sur MIZANE-DEV ; son historique de migration Supabase doit encore être réconcilié avec les fichiers Git.
+- Les migrations `20261112000100` et `20261112000200` sont appliquées sur MIZANE-DEV et leur historique local/distant a été réconcilié. La migration `20261113000100_atomic_invitation_acceptance.sql` doit encore être appliquée.
 - Le test de protection du dernier administrateur a été vérifié sur MIZANE-DEV : rétrogradation avec deux administrateurs, rétablissement du second administrateur, puis refus du retrait du dernier administrateur. Les données de test sont annulées à la fin de la transaction.
-- La fonction Edge de gestion des membres est écrite, mais elle n'est pas encore déployée sur Supabase.
+- La fonction Edge `manage-company-members` est déployée sur MIZANE-DEV. Le code Git inclut désormais l'appel à la fonction SQL d'acceptation atomique ; ce nouveau code doit être redéployé après application de la migration `20261113000100`.
 - L'envoi automatique des invitations par e-mail reste à intégrer dans une étape ultérieure.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.

@@ -83,6 +83,7 @@ Deno.serve(async (request) => {
       .select("status").eq("company_id", invitation.company_id).eq("user_id", actor.id).maybeSingle();
     if (priorError) return fail(500, "Impossible de vérifier l'appartenance existante.");
     if (prior?.status === "active") return fail(409, "Vous êtes déjà membre de cette entreprise.");
+    if (prior?.status === "suspended") return fail(403, "Votre accès à cette entreprise a été suspendu par un administrateur.");
     const { data: claimed, error: claimError } = await adminClient.from("company_invitations")
       .update({ accepted_at: new Date().toISOString() }).eq("id", invitation.id)
       .is("accepted_at", null).is("revoked_at", null).gt("expires_at", new Date().toISOString())

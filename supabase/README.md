@@ -77,9 +77,7 @@ La protection du dernier administrateur est réalisée dans la migration `202611
 
 L'acceptation d'une invitation est également atomique depuis la migration `20261113000100_atomic_invitation_acceptance.sql`. La fonction SQL `accept_company_invitation` partage le même verrou par entreprise que `manage_company_member` : si la suspension gagne la course, l'acceptation est refusée ; si l'acceptation gagne, la suspension s'exécute ensuite et l'accès reste suspendu. Le jeton, l'appartenance et le journal d'audit sont traités dans une seule transaction.
 
-Avant de redéployer `manage-company-members`, appliquer cette nouvelle migration sur le projet de développement. Les migrations déjà appliquées ne doivent pas être rejouées. Examiner l'état local/distant avec `supabase migration list` et utiliser une migration ciblée, après vérification, plutôt qu'un reset ou une réinitialisation.
-
-Les tests `supabase/tests/atomic_member_management.test.sql` et `supabase/tests/atomic_invitation_acceptance.test.sql` couvrent respectivement la protection du dernier administrateur et le refus d'une ancienne invitation pour un membre suspendu. Ils doivent être exécutés avec `supabase test db` sur un environnement local ou de développement.
+Sur MIZANE-DEV, les trois migrations `20261112000100`, `20261112000200` et `20261113000100` sont appliquées et leur historique local/distant est synchronisé. La fonction Edge `manage-company-members` a été redéployée en version 2 avec la vérification JWT activée. Ne pas rejouer ces migrations ; vérifier l'état avec `supabase migration list` avant toute évolution.
 
 ## Tests automatisés RLS
 
@@ -91,7 +89,7 @@ Après installation de Supabase CLI et démarrage de l'environnement local (`sup
 supabase test db
 ```
 
-Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Le résultat n'est pas encore certifié : les tests n'ont pas pu être exécutés ici faute d'environnement Supabase connecté.
+Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Les tests pgTAP de cette PR ont été exécutés sur MIZANE-DEV dans des transactions terminées par `ROLLBACK` : les 3 assertions de gestion du dernier administrateur et les 4 assertions d'acceptation atomique ont réussi. Les identifiants de test, entreprises, invitations et appartenances temporaires ont été vérifiés absents après les tests.
 
 ## Vérifications manuelles complémentaires
 
@@ -111,12 +109,15 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- Les migrations `20261112000100` et `20261112000200` sont appliquées sur MIZANE-DEV et leur historique local/distant a été réconcilié. La migration `20261113000100_atomic_invitation_acceptance.sql` doit encore être appliquée.
-- Le test de protection du dernier administrateur a été vérifié sur MIZANE-DEV : rétrogradation avec deux administrateurs, rétablissement du second administrateur, puis refus du retrait du dernier administrateur. Les données de test sont annulées à la fin de la transaction.
-- La fonction Edge `manage-company-members` est déployée sur MIZANE-DEV. Le code Git inclut désormais l'appel à la fonction SQL d'acceptation atomique ; ce nouveau code doit être redéployé après application de la migration `20261113000100`.
+- Les trois migrations `20261112000100`, `20261112000200` et `20261113000100` sont appliquées sur MIZANE-DEV et leur historique local/distant est synchronisé.
+- Les 3 tests pgTAP de gestion atomique des membres et les 4 tests d'acceptation atomique ont réussi sur MIZANE-DEV. Les transactions ont été annulées et l'absence des données de test a été vérifiée.
+- La fonction Edge `manage-company-members` est active sur MIZANE-DEV en version 2, avec la vérification JWT activée.
 - L'envoi automatique des invitations par e-mail reste à intégrer dans une étape ultérieure.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.
+- Supabase Advisor signale trois fonctions `SECURITY DEFINER` accessibles aux utilisateurs authentifiés (`create_company`, `has_company_role`, `is_active_company_member`) ; vérifier que cette exposition est intentionnelle et couverte par les tests RLS.
+- Supabase Advisor signale que la protection contre les mots de passe compromis est désactivée ; l'activer avant une ouverture plus large des inscriptions.
+- Supabase Advisor signale trois clés étrangères sans index dédié (`audit_logs.actor_user_id`, `companies.created_by`, `company_invitations.invited_by`) ; optimisation à traiter séparément.
 
 ## Règle de livraison
 

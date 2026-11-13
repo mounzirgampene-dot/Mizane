@@ -33,14 +33,23 @@ select lives_ok(
 );
 
 select lives_ok(
-  $$ select public.manage_company_member(
+  $ select public.manage_company_member(
     '43000000-0000-4000-8000-000000000003',
     '42000000-0000-4000-8000-000000000002',
     'set_role',
     'admin',
     null
-  ) $$,
+  ) $,
   'The second admin can be restored'
+);
+
+-- Revenir volontairement à un seul administrateur actif avant le test final.
+select public.manage_company_member(
+  '43000000-0000-4000-8000-000000000003',
+  '42000000-0000-4000-8000-000000000002',
+  'set_role',
+  'reader',
+  null
 );
 
 select throws_ok(

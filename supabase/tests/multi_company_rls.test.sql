@@ -44,6 +44,9 @@ reset role;
 insert into public.companies (id, legal_name, country_code, base_currency, accounting_standard, created_by)
 values ('30000000-0000-4000-8000-000000000003', 'MIZANE Test B', 'MA', 'MAD', 'CGNC', '20000000-0000-4000-8000-000000000002')
 on conflict (id) do nothing;
+insert into public.company_settings (company_id)
+values ('30000000-0000-4000-8000-000000000003')
+on conflict (company_id) do nothing;
 insert into public.company_memberships (company_id, user_id, role, status)
 values ('30000000-0000-4000-8000-000000000003', '20000000-0000-4000-8000-000000000002', 'admin', 'active')
 on conflict (company_id, user_id) do nothing;

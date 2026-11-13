@@ -21,6 +21,9 @@ function authView(mode="login"){
  const signup=mode==="signup";
  root.innerHTML=`<section class="panel"><p class="eyebrow">MIZANE · Compte utilisateur unique</p><h1>${signup?"Créer votre compte":"Connexion à votre espace"}</h1><p>Un seul compte peut accéder à plusieurs entreprises, avec un rôle indépendant dans chacune.</p><div class="tabs"><button data-mode="login" aria-pressed="${!signup}">Connexion</button><button class="secondary" data-mode="signup" aria-pressed="${signup}">Créer un compte</button></div><form id="auth-form"><div class="field ${signup?"":"hidden"}" id="name-field"><label for="display-name">Nom complet</label><input id="display-name" autocomplete="name" maxlength="100" ${signup?"required":"disabled"}></div><div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" minlength="8" autocomplete="${signup?"new-password":"current-password"}" required></div><p class="notice hidden" data-error></p><div class="actions"><button type="submit">${signup?"Créer mon compte":"Se connecter"}</button><button type="button" class="secondary" data-action="forgot">Mot de passe oublié</button></div></form><p class="muted">L'application comptable locale reste accessible indépendamment du compte SaaS.</p><a href="index.html">← Retour à la comptabilité locale</a></section>`;
 }
+function recoveryView(){
+ root.innerHTML=`<section class="panel"><p class="eyebrow">Sécurité du compte</p><h1>Définir un nouveau mot de passe</h1><p>Saisissez votre nouveau mot de passe, puis confirmez-le. Votre mot de passe doit contenir au moins 8 caractères.</p><form id="recovery-form"><div class="field"><label for="new-password">Nouveau mot de passe</label><input id="new-password" type="password" minlength="8" autocomplete="new-password" required></div><div class="field"><label for="confirm-password">Confirmer le nouveau mot de passe</label><input id="confirm-password" type="password" minlength="8" autocomplete="new-password" required></div><p class="notice hidden" data-error></p><div class="actions"><button type="submit">Enregistrer le nouveau mot de passe</button><button type="button" class="secondary" data-action="back-login">Retour à la connexion</button></div></form></section>`;
+}
 function dashboardView(){
  const active=memberships.find(x=>x.company.id===activeCompanyId);
  root.innerHTML=`<section class="panel"><div class="topline"><div><p class="eyebrow">Espace personnel</p><h1>Bonjour, ${esc(session.user.user_metadata?.display_name||session.user.email)}</h1><p class="muted">${esc(session.user.email)}</p></div><button class="secondary" data-action="logout">Déconnexion</button></div><p>Vos entreprises et vos autorisations sont gérées séparément. Changer d'entreprise ne nécessite pas de déconnexion.</p></section>
@@ -59,6 +62,7 @@ root.addEventListener("click",async(e)=>{
  const button=e.target.closest("[data-action]");if(!button)return;
  const action=button.dataset.action;
  try{
+  if(action==="back-login"){authView("login");}
   if(action==="forgot"){const email=root.querySelector("#email")?.value.trim();if(!email)throw new Error("Saisissez d'abord votre adresse e-mail.");const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;toast("E-mail de réinitialisation envoyé si le compte existe.");}
   if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];authView();}
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
@@ -70,6 +74,16 @@ root.addEventListener("click",async(e)=>{
 root.addEventListener("submit",async(e)=>{
  e.preventDefault();const form=e.target;const submit=form.querySelector('button[type="submit"]');busy(submit,true);
  try{
+  if(form.id==="recovery-form"){
+   const password=form.querySelector("#new-password").value;
+   const confirmation=form.querySelector("#confirm-password").value;
+   if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
+   const {error}=await supabase.auth.updateUser({password});
+   if(error)throw error;
+   history.replaceState({},document.title,location.pathname);
+   toast("Mot de passe modifié avec succès.");
+   await refresh();
+  }
   if(form.id==="auth-form"){
    const email=form.querySelector("#email").value.trim();const password=form.querySelector("#password").value;const signup=!!form.querySelector("#display-name")&&!form.querySelector("#name-field").classList.contains("hidden");
    if(signup){const display_name=form.querySelector("#display-name").value.trim();const {data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(!data.session){toast("Compte créé. Vérifiez votre boîte e-mail pour confirmer l'inscription.");authView("login");return}session=data.session;await refresh();}
@@ -93,9 +107,14 @@ root.addEventListener("click",async(e)=>{const b=e.target.closest('[data-action=
 async function start(){
  if(!SUPABASE_URL.startsWith("https://")||SUPABASE_URL.includes("VOTRE-PROJET")||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY.includes("VOTRE_CLE")){configError();return}
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
+ supabase.auth.onAuthStateChange((event,next)=>{
+  session=next;
+  if(event==="PASSWORD_RECOVERY"){recoveryView();return}
+  if(!session){memberships=[];authView()}
+ });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
- if(session)await refresh();else authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
- supabase.auth.onAuthStateChange((_event,next)=>{session=next;if(!session){memberships=[];authView()}});
+ if(session&&!location.hash.includes("type=recovery"))await refresh();
+ else if(!location.hash.includes("type=recovery"))authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
  const token=new URLSearchParams(location.search).get("invitation");if(token){const field=root.querySelector("#invite-token");if(field){field.value=token;toast("Invitation détectée : vérifiez le jeton et acceptez-la.")}}
 }
 start().catch(showError);

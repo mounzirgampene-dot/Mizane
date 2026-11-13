@@ -107,11 +107,12 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- La fonction de gestion des membres est écrite, mais elle n'est pas encore déployée ni testée sur un projet Supabase.
-- L'envoi automatique des invitations par e-mail reste à intégrer.
+- La migration de gestion atomique des membres a été appliquée sur MIZANE-DEV ; son historique de migration Supabase doit encore être réconcilié avec les fichiers Git.
+- Le test de protection du dernier administrateur a été vérifié sur MIZANE-DEV : rétrogradation avec deux administrateurs, rétablissement du second administrateur, puis refus du retrait du dernier administrateur. Les données de test sont annulées à la fin de la transaction.
+- La fonction Edge de gestion des membres est écrite, mais elle n'est pas encore déployée sur Supabase.
+- L'envoi automatique des invitations par e-mail reste à intégrer dans une étape ultérieure.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.
-- La migration n'a pas été exécutée sur un projet Supabase : aucun accès à un projet ou à ses secrets n'a été fourni dans cette étape.
 
 ## Règle de livraison
 

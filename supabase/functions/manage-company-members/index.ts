@@ -4,7 +4,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("MIZANE_ALLOWED_ORIGIN") ?? "*",
+  "Access-Control-Allow-Origin": "https://mounzirgampene-dot.github.io",
+  "Vary": "Origin",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -254,6 +255,6 @@ Deno.serve(async (request) => {
     return fail(400, "Action inconnue.");
   } catch (error) {
     console.error("manage-company-members:", error);
-    return fail(500, error instanceof Error ? error.message : "Erreur serveur.");
+    return fail(500, "Une erreur interne est survenue. Veuillez réessayer.");
   }
 });

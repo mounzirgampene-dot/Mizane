@@ -4,7 +4,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("MIZANE_ALLOWED_ORIGIN") ?? "*",
+  "Access-Control-Allow-Origin": "https://mounzirgampene-dot.github.io",
+  "Vary": "Origin",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
@@ -65,43 +66,29 @@ Deno.serve(async (request) => {
 
   const action = body.action;
 
-  // L'acceptation repose sur le jeton et l'e-mail authentifié, pas sur un rôle admin.
+  // L'acceptation est atomique avec la suspension/réactivation/retrait :
+  // la fonction SQL partage le verrou advisory par entreprise.
   if (action === "accept_invitation") {
     const token = typeof body.invitation_token === "string" ? body.invitation_token.trim() : "";
     const email = normalizeEmail(actor.email);
-    if (!token || token.length !== 64 || !email) return fail(400, "Invitation ou adresse e-mail invalide.");
+    if (!token || token.length !== 64 || !email) {
+      return fail(400, "Invitation ou adresse e-mail invalide.");
+    }
     const tokenHash = await hashToken(token);
-    const { data: invitation, error } = await adminClient.from("company_invitations")
-      .select("id,company_id,email,role,expires_at,accepted_at,revoked_at")
-      .eq("token_hash", tokenHash).maybeSingle();
-    if (error) return fail(500, "Impossible de vérifier l'invitation.");
-    if (!invitation || invitation.email !== email || invitation.accepted_at || invitation.revoked_at ||
-        new Date(invitation.expires_at).getTime() <= Date.now()) {
-      return fail(400, "Invitation invalide, expirée, révoquée ou destinée à une autre adresse.");
-    }
-    const { data: prior, error: priorError } = await adminClient.from("company_memberships")
-      .select("status").eq("company_id", invitation.company_id).eq("user_id", actor.id).maybeSingle();
-    if (priorError) return fail(500, "Impossible de vérifier l'appartenance existante.");
-    if (prior?.status === "active") return fail(409, "Vous êtes déjà membre de cette entreprise.");
-    const { data: claimed, error: claimError } = await adminClient.from("company_invitations")
-      .update({ accepted_at: new Date().toISOString() }).eq("id", invitation.id)
-      .is("accepted_at", null).is("revoked_at", null).gt("expires_at", new Date().toISOString())
-      .select("id").maybeSingle();
-    if (claimError || !claimed) return fail(409, "Cette invitation a déjà été utilisée ou n'est plus valide.");
-    const { error: upsertError } = await adminClient.from("company_memberships").upsert({
-      company_id: invitation.company_id, user_id: actor.id, role: invitation.role, status: "active",
-    }, { onConflict: "company_id,user_id" });
-    if (upsertError) {
-      await adminClient.from("company_invitations").update({ accepted_at: null }).eq("id", invitation.id);
-      return fail(500, "Impossible d'ajouter le membre.");
-    }
-    const { error: auditError } = await adminClient.from("audit_logs").insert({
-      company_id: invitation.company_id, actor_user_id: actor.id, action: "invitation.accepted",
-      entity_type: "company_membership", entity_id: actor.id,
-      details: { invitation_id: invitation.id, role: invitation.role },
+    const { data: result, error } = await adminClient.rpc("accept_company_invitation", {
+      p_token_hash: tokenHash,
+      p_user_id: actor.id,
+      p_email: email,
     });
-    if (auditError) console.error("audit invitation.accepted:", auditError.message);
-    return json(200, { accepted: true, company_id: invitation.company_id, role: invitation.role });
+    if (error) {
+      if (error.code === "P0002") return fail(400, "Invitation invalide, expirée ou révoquée.");
+      if (error.code === "23505") return fail(409, "Vous êtes déjà membre de cette entreprise.");
+      if (error.code === "42501") return fail(403, "Votre accès à cette entreprise a été suspendu par un administrateur.");
+      if (error.code === "22023") return fail(400, "Invitation destinée à une autre adresse ou invalide.");
+      console.error("accept_company_invitation:", error.message);
+      return fail(500, "Impossible d'accepter cette invitation.");
+    }
+    return json(200, result as Record<string, unknown>);
   }
 
   const companyId = body.company_id;
@@ -253,6 +240,6 @@ Deno.serve(async (request) => {
     return fail(400, "Action inconnue.");
   } catch (error) {
     console.error("manage-company-members:", error);
-    return fail(500, error instanceof Error ? error.message : "Erreur serveur.");
+    return fail(500, "Une erreur interne est survenue. Veuillez réessayer.");
   }
 });

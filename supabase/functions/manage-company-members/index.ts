@@ -3,20 +3,20 @@
 // Secrets requis côté Supabase : SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://mounzirgampene-dot.github.io",
+const allowedOrigins = new Set([
+  "https://mounzirgampene-dot.github.io",
+  // Serveur local de développement : autorisé uniquement dans le projet MIZANE-DEV.
+  "http://localhost:8000",
+]);
+
+const getCorsHeaders = (origin: string | null) => ({
+  ...(origin && allowedOrigins.has(origin)
+    ? { "Access-Control-Allow-Origin": origin }
+    : {}),
   "Vary": "Origin",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const json = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-  });
-
-const fail = (status: number, message: string) => json(status, { error: message });
+});
 const validUuid = (value: unknown): value is string =>
   typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -35,6 +35,14 @@ const makeToken = () => {
 };
 
 Deno.serve(async (request) => {
+  const corsHeaders = getCorsHeaders(request.headers.get("Origin"));
+  const json = (status: number, body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+    });
+  const fail = (status: number, message: string) => json(status, { error: message });
+
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return fail(405, "Méthode non autorisée.");
 

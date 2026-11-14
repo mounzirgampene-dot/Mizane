@@ -79,6 +79,10 @@ begin
 end;
 $$;
 
+-- Le profil est créé uniquement par le déclencheur Auth, jamais par un appel RPC direct.
+revoke all on function public.handle_new_auth_user()
+  from public, anon, authenticated, service_role;
+
 revoke all on function public.manage_company_member(uuid, uuid, text, public.company_role, public.membership_status)
   from public, anon, authenticated;
 grant execute on function public.manage_company_member(uuid, uuid, text, public.company_role, public.membership_status)

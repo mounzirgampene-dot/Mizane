@@ -58,7 +58,7 @@ Après avoir appliqué les migrations :
 supabase functions deploy manage-company-members
 ```
 
-La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Configurer `MIZANE_ALLOWED_ORIGIN` avec l'origine exacte de l'application avant d'ouvrir l'API au frontend ; le joker CORS ne doit servir qu'aux essais locaux.
+La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Le code fixe actuellement l'origine CORS de GitHub Pages MIZANE : `https://mounzirgampene-dot.github.io`.
 
 Exemple de corps JSON pour créer une invitation :
 
@@ -73,9 +73,11 @@ Exemple de corps JSON pour créer une invitation :
 
 Pour accepter, l'utilisateur doit être connecté avec l'adresse e-mail destinataire et envoyer `action` = `accept_invitation` avec `invitation_token`. Les autres actions exigent `company_id` et les champs propres à l'opération.
 
-La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise. Cela évite que deux requêtes concurrentes retirent simultanément les droits des deux derniers administrateurs.
+La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise.
 
-Le test `supabase/tests/atomic_member_management.test.sql` vérifie cette protection. Il doit être exécuté avec `supabase test db` sur un environnement local ou de développement.
+L'acceptation d'une invitation est également atomique depuis la migration `20261113000100_atomic_invitation_acceptance.sql`. La fonction SQL `accept_company_invitation` partage le même verrou par entreprise que `manage_company_member` : si la suspension gagne la course, l'acceptation est refusée ; si l'acceptation gagne, la suspension s'exécute ensuite et l'accès reste suspendu. Le jeton, l'appartenance et le journal d'audit sont traités dans une seule transaction.
+
+Sur MIZANE-DEV, les trois migrations `20261112000100`, `20261112000200` et `20261113000100` sont appliquées et leur historique local/distant est synchronisé. La fonction Edge `manage-company-members` a été redéployée en version 2 avec la vérification JWT activée. Ne pas rejouer ces migrations ; vérifier l'état avec `supabase migration list` avant toute évolution.
 
 ## Tests automatisés RLS
 
@@ -87,7 +89,7 @@ Après installation de Supabase CLI et démarrage de l'environnement local (`sup
 supabase test db
 ```
 
-Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Le résultat n'est pas encore certifié : les tests n'ont pas pu être exécutés ici faute d'environnement Supabase connecté.
+Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Les tests pgTAP de cette PR ont été exécutés sur MIZANE-DEV dans des transactions terminées par `ROLLBACK` : les 3 assertions de gestion du dernier administrateur et les 4 assertions d'acceptation atomique ont réussi. Les identifiants de test, entreprises, invitations et appartenances temporaires ont été vérifiés absents après les tests.
 
 ## Vérifications manuelles complémentaires
 
@@ -107,11 +109,15 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- La fonction de gestion des membres est écrite, mais elle n'est pas encore déployée ni testée sur un projet Supabase.
-- L'envoi automatique des invitations par e-mail reste à intégrer.
+- Les trois migrations `20261112000100`, `20261112000200` et `20261113000100` sont appliquées sur MIZANE-DEV et leur historique local/distant est synchronisé.
+- Les 3 tests pgTAP de gestion atomique des membres et les 4 tests d'acceptation atomique ont réussi sur MIZANE-DEV. Les transactions ont été annulées et l'absence des données de test a été vérifiée.
+- La fonction Edge `manage-company-members` est active sur MIZANE-DEV en version 2, avec la vérification JWT activée.
+- L'envoi automatique des invitations par e-mail reste à intégrer dans une étape ultérieure.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.
-- La migration n'a pas été exécutée sur un projet Supabase : aucun accès à un projet ou à ses secrets n'a été fourni dans cette étape.
+- Supabase Advisor signale trois fonctions `SECURITY DEFINER` accessibles aux utilisateurs authentifiés (`create_company`, `has_company_role`, `is_active_company_member`) ; vérifier que cette exposition est intentionnelle et couverte par les tests RLS.
+- Supabase Advisor signale que la protection contre les mots de passe compromis est désactivée ; l'activer avant une ouverture plus large des inscriptions.
+- Supabase Advisor signale trois clés étrangères sans index dédié (`audit_logs.actor_user_id`, `companies.created_by`, `company_invitations.invited_by`) ; optimisation à traiter séparément.
 
 ## Règle de livraison
 

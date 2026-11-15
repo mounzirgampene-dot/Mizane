@@ -3,19 +3,15 @@
 // Secrets requis côté Supabase : SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("MIZANE_ALLOWED_ORIGIN") ?? "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+const allowedOrigins = new Set([
+  "https://mounzirgampene-dot.github.io",
+  // Serveur local de développement : autorisé uniquement dans MIZANE-DEV.
+  "http://localhost:8000",
+]);
 
-const json = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-  });
-
-const fail = (status: number, message: string) => json(status, { error: message });
+const validUuid = (value: unknown): value is string =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 const validUuid = (value: unknown): value is string =>
   typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -36,6 +32,20 @@ const makeToken = () => {
 };
 
 Deno.serve(async (request) => {
+  const origin = request.headers.get("Origin");
+  const corsHeaders = {
+    ...(origin && allowedOrigins.has(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    "Vary": "Origin",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+  const json = (status: number, body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+    });
+  const fail = (status: number, message: string) => json(status, { error: message });
+
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return fail(405, "Méthode non autorisée.");
 
@@ -277,8 +287,8 @@ Deno.serve(async (request) => {
     if (action === "set_member_role" || action === "set_member_status" || action === "remove_member") {
       const memberId = body.user_id;
       if (!validUuid(memberId)) return fail(400, "Identifiant de membre invalide.");
-      if (memberId === actor.id && action !== "set_member_role") {
-        return fail(400, "Un administrateur ne peut pas se suspendre ou se retirer lui-même depuis cette fonction.");
+      if (memberId === actor.id) {
+        return fail(400, "Un administrateur ne peut pas modifier son propre rôle, se suspendre ou se retirer depuis cette fonction.");
       }
 
       let rpcAction: string;
@@ -332,6 +342,6 @@ Deno.serve(async (request) => {
     return fail(400, "Action inconnue.");
   } catch (error) {
     console.error("manage-company-members:", error);
-    return fail(500, error instanceof Error ? error.message : "Erreur serveur.");
+    return fail(500, "Une erreur interne est survenue. Veuillez réessayer.");
   }
 });

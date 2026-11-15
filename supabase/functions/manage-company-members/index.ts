@@ -3,20 +3,20 @@
 // Secrets requis côté Supabase : SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "https://mounzirgampene-dot.github.io",
+const allowedOrigins = new Set([
+  "https://mounzirgampene-dot.github.io",
+  // Serveur local de développement : autorisé uniquement dans le projet MIZANE-DEV.
+  "http://localhost:8000",
+]);
+
+const getCorsHeaders = (origin: string | null) => ({
+  ...(origin && allowedOrigins.has(origin)
+    ? { "Access-Control-Allow-Origin": origin }
+    : {}),
   "Vary": "Origin",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const json = (status: number, body: Record<string, unknown>) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
-  });
-
-const fail = (status: number, message: string) => json(status, { error: message });
+});
 const validUuid = (value: unknown): value is string =>
   typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -35,6 +35,14 @@ const makeToken = () => {
 };
 
 Deno.serve(async (request) => {
+  const corsHeaders = getCorsHeaders(request.headers.get("Origin"));
+  const json = (status: number, body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json; charset=utf-8" },
+    });
+  const fail = (status: number, message: string) => json(status, { error: message });
+
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return fail(405, "Méthode non autorisée.");
 
@@ -120,6 +128,47 @@ Deno.serve(async (request) => {
   };
 
   try {
+    if (action === "list_company_members") {
+      const { data: rows, error } = await adminClient.from("company_memberships")
+        .select("user_id,role,status,created_at")
+        .eq("company_id", companyId)
+        .order("created_at", { ascending: true })
+        .limit(200);
+      if (error) return fail(500, "Impossible de charger les membres.");
+      const ids = (rows ?? []).map((row) => row.user_id);
+      const { data: profiles, error: profileError } = ids.length
+        ? await adminClient.from("profiles").select("id,display_name").in("id", ids)
+        : { data: [], error: null };
+      if (profileError) return fail(500, "Impossible de charger les profils des membres.");
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      const members = await Promise.all((rows ?? []).map(async (row) => {
+        const { data } = await adminClient.auth.admin.getUserById(row.user_id);
+        const profile = profileById.get(row.user_id);
+        return {
+          user_id: row.user_id,
+          email: data.user?.email ?? null,
+          display_name: profile?.display_name ?? null,
+          role: row.role,
+          status: row.status,
+          created_at: row.created_at,
+        };
+      }));
+      return json(200, { members });
+    }
+
+    if (action === "list_company_invitations") {
+      const { data, error } = await adminClient.from("company_invitations")
+        .select("id,email,role,expires_at,created_at")
+        .eq("company_id", companyId)
+        .is("accepted_at", null)
+        .is("revoked_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) return fail(500, "Impossible de charger les invitations en attente.");
+      return json(200, { invitations: data ?? [] });
+    }
+
     if (action === "create_invitation") {
       const email = normalizeEmail(body.email);
       const role = body.role;
@@ -185,7 +234,7 @@ Deno.serve(async (request) => {
     if (action === "set_member_role" || action === "set_member_status" || action === "remove_member") {
       const memberId = body.user_id;
       if (!validUuid(memberId)) return fail(400, "Identifiant de membre invalide.");
-      if (memberId === actor.id && action !== "set_member_role") {
+      if (memberId === actor.id) {
         return fail(400, "Un administrateur ne peut pas se suspendre ou se retirer lui-même depuis cette fonction.");
       }
 

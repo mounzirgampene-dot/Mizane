@@ -27,7 +27,7 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `profiles` : profil applicatif lié à l'identité Supabase Auth.
 - `companies` : espaces indépendants.
 - `company_memberships` : rôle indépendant par utilisateur et entreprise.
-- `company_invitations` : structure des invitations ; l'émission et l'acceptation seront ajoutées dans une Edge Function.
+- `company_invitations` : invitations avec jeton haché et durée de validité.
 - `company_settings` : paramètres propres à l'entreprise.
 - `audit_logs` : journal des événements sensibles.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
@@ -35,7 +35,61 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 
 Les clients ne disposent volontairement d'aucune politique pour créer directement des appartenances, modifier des rôles ou écrire des événements d'audit. Ces actions doivent passer par des fonctions serveur contrôlées.
 
-## Vérifications à effectuer dans un projet de test
+## Fonctions serveur de gestion des membres
+
+La fonction Edge `manage-company-members` se trouve dans `supabase/functions/manage-company-members/index.ts`. Elle vérifie le JWT de l'utilisateur et contrôle côté serveur que celui-ci est administrateur actif de l'entreprise.
+
+Actions disponibles (requêtes POST JSON) :
+
+- `create_invitation` : crée une invitation pour un rôle `accountant` ou `reader`, valable 7 jours.
+- `accept_invitation` : permet à l'utilisateur authentifié dont l'adresse correspond à l'invitation d'accepter le jeton.
+- `revoke_invitation` : révoque une invitation non utilisée.
+- `set_member_role` : change le rôle d'un membre.
+- `set_member_status` : suspend ou réactive un membre.
+- `remove_member` : retire un membre de l'entreprise.
+
+La création d'invitation envoie un e-mail via Resend. Le jeton brut n'est jamais retourné au navigateur ni inscrit dans les journaux ; seul son hachage est conservé en base. Le lien est valable 7 jours et son acceptation exige une session authentifiée dont l'adresse correspond à celle du destinataire.
+
+### Déploiement dans un projet de développement
+
+Après avoir appliqué les migrations :
+
+```sh
+supabase functions deploy manage-company-members
+```
+
+La fonction utilise les variables serveur `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`, fournies par l'environnement Supabase. Ne jamais exposer la clé `service_role` dans le navigateur ni dans GitHub. La vérification JWT doit rester activée. Configurer `MIZANE_ALLOWED_ORIGIN` avec l'origine exacte de l'application avant d'ouvrir l'API au frontend ; le joker CORS ne doit servir qu'aux essais locaux.
+
+Exemple de corps JSON pour créer une invitation :
+
+```json
+{
+  "action": "create_invitation",
+  "company_id": "UUID_DE_L_ENTREPRISE",
+  "email": "collaborateur@example.com",
+  "role": "accountant"
+}
+```
+
+Pour accepter, l'utilisateur doit être connecté avec l'adresse e-mail destinataire et envoyer `action` = `accept_invitation` avec `invitation_token`. Les autres actions exigent `company_id` et les champs propres à l'opération.
+
+La protection du dernier administrateur est réalisée dans la migration `20261112000200_atomic_member_management.sql`, par une fonction SQL réservée à `service_role` et verrouillée par entreprise. Cela évite que deux requêtes concurrentes retirent simultanément les droits des deux derniers administrateurs.
+
+Le test `supabase/tests/atomic_member_management.test.sql` vérifie cette protection. Il doit être exécuté avec `supabase test db` sur un environnement local ou de développement.
+
+## Tests automatisés RLS
+
+Un premier jeu de tests pgTAP est disponible dans `supabase/tests/multi_company_rls.test.sql`. Il crée deux identités de test, vérifie la création atomique d'une entreprise, l'attribution du rôle administrateur, la visibilité limitée aux entreprises membres et l'indépendance des rôles.
+
+Après installation de Supabase CLI et démarrage de l'environnement local (`supabase start`), exécuter :
+
+```sh
+supabase test db
+```
+
+Ces tests doivent être exécutés sur une base locale ou un projet de développement jetable, jamais sur la base de production. Le résultat n'est pas encore certifié : les tests n'ont pas pu être exécutés ici faute d'environnement Supabase connecté.
+
+## Vérifications manuelles complémentaires
 
 Créer deux comptes Auth distincts : Alice et Bilal.
 
@@ -53,7 +107,8 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Limites connues de cette première étape
 
 - Aucun écran d'inscription/connexion ou de création d'entreprise n'a encore été branché.
-- Les invitations, la révocation, le changement de rôle et la protection contre la suppression du dernier administrateur nécessitent des Edge Functions.
+- La fonction de gestion des membres est écrite, mais elle n'est pas encore déployée ni testée sur un projet Supabase.
+- L'envoi automatique des invitations par e-mail reste à intégrer.
 - Les tables comptables existantes ne sont pas encore migrées vers PostgreSQL et n'ont donc pas encore de `company_id`.
 - Le mode local actuel reste inchangé.
 - La migration n'a pas été exécutée sur un projet Supabase : aucun accès à un projet ou à ses secrets n'a été fourni dans cette étape.
@@ -61,3 +116,37 @@ Créer deux comptes Auth distincts : Alice et Bilal.
 ## Règle de livraison
 
 Ne pas activer le mode multi-entreprises en production avant que les tests RLS positifs et négatifs, les Edge Functions, les tests d'invitation, la migration des données et le parcours de retour arrière aient été validés.
+
+
+## API de consultation de la gestion des membres
+
+Deux actions supplémentaires sont disponibles dans `manage-company-members` et exigent un JWT valide ainsi qu’un rôle `admin` actif dans l’entreprise demandée :
+
+- `list_company_members` : renvoie les identifiants, e-mails, noms affichés, rôles et statuts des membres (maximum 200 résultats).
+- `list_company_invitations` : renvoie les invitations encore valides et non révoquées (maximum 100 résultats). Les jetons et empreintes ne sont jamais renvoyés.
+
+Le navigateur ne lit pas directement les profils privés des autres utilisateurs : ces données sont récupérées côté serveur après le contrôle d’administration. Les opérations de changement de rôle, suspension/réactivation, retrait et révocation utilisent les actions déjà protégées par la même vérification serveur.
+
+
+## Envoi transactionnel des invitations par e-mail
+
+La fonction `manage-company-members` envoie les invitations avec Resend. Configurer les secrets côté projet Supabase (jamais dans Git ou le frontend) :
+
+```sh
+supabase secrets set RESEND_API_KEY=re_xxxxxxxxx
+supabase secrets set MIZANE_APP_URL=https://VOTRE-UTILISATEUR.github.io/Mizane
+supabase secrets set MIZANE_EMAIL_FROM='MIZANE <invitations@votre-domaine.com>'
+```
+
+`MIZANE_APP_URL` doit être l'URL de base GitHub Pages. `MIZANE_EMAIL_FROM` doit correspondre à un expéditeur vérifié dans Resend. En environnement d'essai, Resend peut limiter les destinataires et/ou l'expéditeur. Pour une utilisation réelle, vérifier un domaine et configurer ses DNS.
+
+Le jeton brut n'est jamais retourné au frontend ni journalisé. Il est transmis dans le fragment URL du lien e-mail. Si Resend refuse l'envoi, l'enregistrement d'invitation est supprimé. L'invitation expire après 7 jours, est à usage unique et exige une session authentifiée dont l'adresse correspond.
+
+Après configuration, redéployer :
+```sh
+supabase functions deploy manage-company-members
+```
+
+## Récupération du mot de passe
+
+Le portail écoute l'événement Supabase Auth `PASSWORD_RECOVERY` et affiche un formulaire de nouveau mot de passe. Le formulaire vérifie la confirmation puis appelle `supabase.auth.updateUser({ password })`. Dans Supabase Auth, ajouter `https://VOTRE-UTILISATEUR.github.io/Mizane/espace.html` aux URL de redirection autorisées et vérifier le modèle d'e-mail de récupération.

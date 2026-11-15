@@ -40,7 +40,7 @@ function dashboardView(){
  <div class="field"><label for="standard">Référentiel comptable</label><select id="standard"><option value="CGNC">CGNC — Maroc</option><option value="SYSCOHADA">SYSCOHADA</option><option value="PCG">PCG — France</option></select></div>
  <div class="field"><label for="timezone">Fuseau horaire</label><input id="timezone" value="Africa/Casablanca" required></div>
  <div class="field full actions"><button type="submit">Créer l'espace</button><button type="button" class="secondary" data-action="hide-create">Annuler</button></div><p class="notice hidden" data-error></p></form></section>
- <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">Un e-mail contenant un lien sécurisé sera envoyé à cette adresse. Le lien expire après 7 jours et ne peut être utilisé qu'une seule fois.</p><div id="invite-result" class="notice hidden"></div></form></section>
+ <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">MIZANE créera un lien sécurisé que vous pourrez copier et transmettre vous-même (WhatsApp, SMS ou autre). Le lien expire après 7 jours et ne peut être utilisé qu'une seule fois.</p><div id="invite-result" class="notice hidden"></div></form></section>
  ${active&&active.role==="admin"?"<section class=\"panel\"><div class=\"topline\"><div><p class=\"eyebrow\">Administration</p><h2>Collaborateurs</h2></div><button class=\"secondary\" data-action=\"reload-management\">Actualiser</button></div><p class=\"muted\">Les changements de rôle et de statut s’appliquent uniquement à cette entreprise. Le dernier administrateur actif ne peut pas être retiré ni rétrogradé.</p><div id=\"members-list\" class=\"empty\">Chargement des membres…</div><h2 style=\"margin-top:24px\">Invitations en attente</h2><div id=\"invitations-list\" class=\"empty\">Chargement des invitations…</div></section>":""}`;
 }
 async function refresh(){
@@ -120,12 +120,16 @@ root.addEventListener("submit",async(e)=>{
   }
   if(form.id==="invite-form"){
    const active=memberships.find(m=>m.company.id===activeCompanyId);if(!active||active.role!=="admin")throw new Error("Droits administrateur requis.");
-   const result=await edge("create_invitation",{company_id:activeCompanyId,email:form.querySelector("#invite-email").value.trim(),role:form.querySelector("#invite-role").value});
-   const target=root.querySelector("#invite-result");target.textContent=`Invitation envoyée à ${result.invitation.email}. Le lien sécurisé est valable jusqu’au ${new Date(result.invitation.expires_at).toLocaleString("fr-FR")}.`;target.classList.remove("hidden");form.reset();await loadManagement();
+   const result=await edge("create_invitation",{company_id:activeCompanyId,email:form.querySelector("#invite-email").value.trim(),role:form.querySelector("#invite-role").value,delivery:"manual"});
+   const target=root.querySelector("#invite-result");
+   const expires=new Date(result.invitation.expires_at).toLocaleString("fr-FR");
+   const link=esc(result.invitation_url);
+   target.innerHTML=`Invitation créée pour <strong>${esc(result.invitation.email)}</strong>. Elle expire le ${esc(expires)}.<div class="field" style="margin-top:12px"><label for="created-invitation-link">Lien à transmettre au collaborateur</label><input id="created-invitation-link" type="url" readonly value="${link}"></div><div class="actions"><button type="button" data-action="copy-invitation-link" data-link="${link}">Copier le lien</button><a class="button secondary" href="${link}" target="_blank" rel="noopener">Ouvrir le lien</a></div><p class="muted">Transmettez ce lien uniquement à ${esc(result.invitation.email)}.</p>`;
+   target.classList.remove("hidden");form.reset();await loadManagement();
   }
  }catch(error){showError(error)}finally{busy(submit,false)}
 });
-root.addEventListener("click",async(e)=>{const b=e.target.closest('[data-action="copy-token"]');if(b){try{await navigator.clipboard.writeText(root.querySelector("#invite-result").dataset.token);toast("Jeton copié.")}catch{toast("Copie impossible : sélectionnez le jeton manuellement.")}}});
+root.addEventListener("click",async(e)=>{const b=e.target.closest('[data-action="copy-invitation-link"]');if(b){try{await navigator.clipboard.writeText(b.dataset.link);toast("Lien d’invitation copié.")}catch{const field=root.querySelector("#created-invitation-link");field?.select();toast("Sélectionnez le lien puis copiez-le manuellement.")}}});
 async function start(){
  if(!SUPABASE_URL.startsWith("https://")||SUPABASE_URL.includes("VOTRE-PROJET")||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY.includes("VOTRE_CLE")){configError();return}
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});

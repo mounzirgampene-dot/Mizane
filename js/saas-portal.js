@@ -21,7 +21,7 @@ function configError(){
  root.innerHTML=`<section class="panel"><p class="eyebrow">Configuration requise</p><h1>Connecter MIZANE à Supabase</h1><p>Le portail SaaS est séparé de l'application comptable locale. Pour l'activer, configurez l'URL du projet et la clé publique Supabase.</p><div class="notice">Copiez <code>js/supabase-config.example.js</code> vers <code>js/supabase-config.js</code>, puis remplacez les deux valeurs d'exemple. Utilisez uniquement la clé publique anon/publishable.</div><div class="actions"><a class="button secondary" href="index.html">Ouvrir la comptabilité locale</a></div></section>`;
 }
 function recoveryView(){
- root.innerHTML=`<section class="panel"><p class="eyebrow">Sécurité du compte</p><h1>Choisir un nouveau mot de passe</h1><p>Définissez un mot de passe d’au moins 8 caractères pour votre compte MIZANE.</p><form id="recovery-form"><div class="field"><label for="new-password">Nouveau mot de passe</label><input id="new-password" type="password" minlength="8" autocomplete="new-password" required></div><div class="field"><label for="confirm-password">Confirmer le mot de passe</label><input id="confirm-password" type="password" minlength="8" autocomplete="new-password" required></div><p class="notice hidden" data-error></p><button type="submit">Enregistrer le nouveau mot de passe</button></form></section>`;
+ root.innerHTML=`<section class="panel"><p class="eyebrow">Sécurité du compte</p><h1>Choisir un nouveau mot de passe</h1><p>Choisissez au moins 12 caractères avec une majuscule, une minuscule, un chiffre et un symbole.</p><form id="recovery-form"><div class="field"><label for="new-password">Nouveau mot de passe</label><input id="new-password" type="password" minlength="12" autocomplete="new-password" required></div><div class="field"><label for="confirm-password">Confirmer le mot de passe</label><input id="confirm-password" type="password" minlength="12" autocomplete="new-password" required></div><p class="notice hidden" data-error></p><button type="submit">Enregistrer le nouveau mot de passe</button></form></section>`;
 }
 function authView(mode="login"){
  const signup=mode==="signup";
@@ -102,7 +102,7 @@ root.addEventListener("submit",async(e)=>{
   if(form.id==="recovery-form"){
    const password=form.querySelector("#new-password").value;
    const confirmation=form.querySelector("#confirm-password").value;
-   if(password.length<8)throw new Error("Le mot de passe doit contenir au moins 8 caractères.");
+   if(!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(password))throw new Error("Le mot de passe doit contenir au moins 12 caractères, une majuscule, une minuscule, un chiffre et un symbole.");
    if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
    const {error}=await supabase.auth.updateUser({password});if(error)throw error;
    passwordRecoveryMode=false;toast("Mot de passe mis à jour.");await refresh();

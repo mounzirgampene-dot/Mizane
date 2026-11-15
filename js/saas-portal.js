@@ -102,7 +102,7 @@ root.addEventListener("submit",async(e)=>{
   if(form.id==="recovery-form"){
    const password=form.querySelector("#new-password").value;
    const confirmation=form.querySelector("#confirm-password").value;
-   if(!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(password))throw new Error("Le mot de passe doit contenir au moins 12 caractères, une majuscule, une minuscule, un chiffre et un symbole.");
+   if(!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(password))throw new Error("Le mot de passe doit contenir au moins 12 caractères, une majuscule, une minuscule, un chiffre et un symbole.");
    if(password!==confirmation)throw new Error("Les deux mots de passe ne correspondent pas.");
    const {error}=await supabase.auth.updateUser({password});if(error)throw error;
    passwordRecoveryMode=false;toast("Mot de passe mis à jour.");await refresh();

@@ -234,7 +234,7 @@ Deno.serve(async (request) => {
     if (action === "set_member_role" || action === "set_member_status" || action === "remove_member") {
       const memberId = body.user_id;
       if (!validUuid(memberId)) return fail(400, "Identifiant de membre invalide.");
-      if (memberId === actor.id && action !== "set_member_role") {
+      if (memberId === actor.id) {
         return fail(400, "Un administrateur ne peut pas se suspendre ou se retirer lui-même depuis cette fonction.");
       }
 

@@ -59,7 +59,19 @@ async function refresh(){
 }
 async function edge(action,payload={}){
  const {data,error}=await supabase.functions.invoke("manage-company-members",{body:{action,...payload}});
- if(error)throw error;if(data?.error)throw new Error(data.error);return data;
+ if(error){
+  let serverMessage="";
+  try{
+   const response=error.context;
+   const body=response&&typeof response.clone==="function"?await response.clone().json():null;
+   serverMessage=body?.error||body?.message||"";
+  }catch{}
+  if(error.context?.status===409&&/already a member of this company/i.test(serverMessage)){
+   throw new Error("Vous êtes déjà membre de cette entreprise. Vous pouvez accéder directement à votre espace sans accepter une nouvelle invitation.");
+  }
+  throw new Error(serverMessage||error.message||"Une erreur est survenue lors de l’opération.");
+ }
+ if(data?.error)throw new Error(data.error);return data;
 }
 async function loadManagement(){
  const active=memberships.find(m=>m.company.id===activeCompanyId);

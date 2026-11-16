@@ -1,6 +1,6 @@
 # Supabase — démarrage de l'environnement multi-entreprises
 
-Cette première migration ajoute uniquement les fondations d'identité, d'entreprises et d'appartenances. Elle ne connecte pas encore l'interface MIZANE à Supabase et ne migre aucune donnée comptable.
+Les migrations fondatrices ajoutent les fondations d'identité, d'entreprises et d'appartenances. Depuis le 16 novembre 2026, le schéma comptable cloud et l'import initial sécurisé sont également installés sur MIZANE-DEV. L'interface comptable n'est toutefois pas encore branchée à la synchronisation cloud et aucune donnée locale n'a été transférée.
 
 ## Prérequis
 
@@ -30,6 +30,8 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `company_invitations` : invitations avec jeton haché et durée de validité.
 - `company_settings` : paramètres propres à l'entreprise.
 - `audit_logs` : journal des événements sensibles.
+- `accounting_settings`, `accounting_custom_accounts`, `accounting_thirds`, `accounting_entries`, `accounting_entry_lines` et `accounting_assets` : socle comptable isolé par entreprise.
+- `import_accounting_snapshot(company_id, snapshot)` : import initial atomique, réservé aux rôles `admin` et `accountant`, avec contrôle de la partie double et exclusion des clés API.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
 - RLS et politiques de lecture / mise à jour d'administration.
 
@@ -150,3 +152,59 @@ supabase functions deploy manage-company-members
 ## Récupération du mot de passe
 
 Le portail écoute l'événement Supabase Auth `PASSWORD_RECOVERY` et affiche un formulaire de nouveau mot de passe. Le formulaire vérifie la confirmation puis appelle `supabase.auth.updateUser({ password })`. Dans Supabase Auth, ajouter `https://VOTRE-UTILISATEUR.github.io/Mizane/espace.html` aux URL de redirection autorisées et vérifier le modèle d'e-mail de récupération.
+
+
+## Socle comptable cloud — 16 novembre 2026
+
+Le schéma comptable a été appliqué sur le seul projet MIZANE-DEV (`rudsovhdvinvyrwjamfo`) par les migrations :
+
+- `20261116000100_cloud_accounting_schema.sql`
+- `20261116000200_accounting_snapshot_import.sql`
+
+La branche de travail GitHub est `feat/cloud-accounting-dev`. Aucune fusion vers `main` n'a été effectuée et aucun changement n'a été appliqué à Supabase PRODUCTION.
+
+### Modèle ajouté
+
+- `accounting_settings` : paramètres de l'exercice, devise, pays, plan comptable et prochain identifiant local. Les clés fournisseur `aiKey`, `ai_key`, `apiKey`, `api_key` et `providerApiKey` sont retirées lors de l'import initial.
+- `accounting_custom_accounts` : comptes personnalisés propres à l'entreprise.
+- `accounting_thirds` : clients, fournisseurs et autres tiers.
+- `accounting_entries` : en-têtes des écritures, avec identifiant UUID cloud et identifiant local source.
+- `accounting_entry_lines` : lignes comptables, avec contrainte débit/crédit sur chaque ligne et rattachement composite à l'écriture de la même entreprise.
+- `accounting_assets` : immobilisations et amortissements.
+
+Toutes ces tables ont RLS activée et forcée. Les membres actifs peuvent consulter les données de leur entreprise. Aucun droit d'écriture directe n'est accordé à `authenticated` dans cette première étape : les écritures doivent passer par des fonctions serveur contrôlées.
+
+### Import initial sécurisé
+
+La fonction SQL `import_accounting_snapshot(uuid, jsonb)` :
+
+1. exige une session authentifiée et un rôle actif `admin` ou `accountant` dans l'entreprise ciblée ;
+2. refuse l'import si une comptabilité cloud existe déjà, afin de ne pas écraser ni dupliquer des données ;
+3. importe les paramètres sans clé API, les comptes personnalisés, les tiers, les écritures, leurs lignes et les immobilisations ;
+4. contrôle les dates, journaux, montants, lignes et équilibre débit/crédit ;
+5. résout les liens de contrepassation après insertion des écritures ;
+6. journalise l'opération dans `audit_logs`.
+
+Un import en erreur est annulé dans sa transaction. L'interface locale n'appelle pas encore cette fonction ; il n'y a donc aucun transfert automatique à ce stade.
+
+### Vérifications réalisées sur DEV
+
+- Les six tables existent et ont RLS activée.
+- Les politiques de lecture ne sont définies que pour les membres actifs.
+- Les privilèges SQL des utilisateurs authentifiés sont limités à `SELECT`.
+- Un test transactionnel avec une entreprise temporaire et une écriture fictive a montré qu'un membre autorisé voit l'en-tête et ses deux lignes, tandis qu'un utilisateur non membre ne voit aucune ligne.
+- Un test d'import transactionnel a importé correctement un instantané fictif (1 écriture, 2 lignes, 1 tiers, 1 immobilisation et 1 compte personnalisé), puis a confirmé qu'aucune clé `aiKey` n'était stockée. Les données de test ont été annulées par rollback.
+- Un rôle `reader` a été refusé par la fonction d'import.
+
+Ces essais sont des tests ponctuels exécutés dans des transactions annulées ; ils ne constituent pas encore une campagne complète de tests multi-entreprises en environnement navigateur.
+
+### Étapes restantes avant activation
+
+1. Ajouter au portail la sélection d'entreprise active et le pont sécurisé avec la comptabilité locale.
+2. Préparer une sauvegarde JSON et un écran de prévisualisation avant le premier transfert.
+3. Générer des identifiants de synchronisation stables côté navigateur et gérer les conflits sans écrasement.
+4. Tester deux entreprises réellement séparées avec un administrateur, un comptable et un lecteur.
+5. Déployer et tester les fonctions serveur avant d'autoriser la saisie comptable cloud.
+6. Ajouter ensuite l'assistant IA SaaS côté serveur, avec JWT, contrôle du rôle et données limitées à l'entreprise active.
+
+**Important :** l'application locale reste la source de données actuelle. Le schéma cloud est préparé, mais la synchronisation n'est pas encore activée. Ne pas déployer cette branche en production avant validation explicite.

@@ -10,6 +10,7 @@ let memberships = [];
 let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 let pendingInvitationToken = new URLSearchParams(location.hash.slice(1)).get("invitation") || "";
 let passwordRecoveryMode = false;
+const recoveryLinkDetected = new URLSearchParams(location.hash.slice(1)).get("type") === "recovery";
 if (pendingInvitationToken) history.replaceState(null, "", location.pathname + location.search);
 
 const esc = (value = "") => String(value).replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -147,12 +148,12 @@ async function start(){
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
  supabase.auth.onAuthStateChange((event,next)=>{
   session=next;
-  if(event==="PASSWORD_RECOVERY"){passwordRecoveryMode=true;recoveryView();return}
+  if(event==="PASSWORD_RECOVERY" || (recoveryLinkDetected && next)){passwordRecoveryMode=true;recoveryView();return}
   if(!session){passwordRecoveryMode=false;memberships=[];authView()}
  });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
  const hashParams=new URLSearchParams(location.hash.slice(1));
- if(passwordRecoveryMode||(hashParams.get("type")==="recovery"&&session)){passwordRecoveryMode=true;recoveryView();return}
+ if(passwordRecoveryMode || (recoveryLinkDetected && session) || (hashParams.get("type")==="recovery" && session)){passwordRecoveryMode=true;recoveryView();return}
  if(session)await refresh();else authView(new URLSearchParams(location.search).has("signup")?"signup":"login");
  if(pendingInvitationToken){const field=root.querySelector("#invite-token");if(field){field.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
 }

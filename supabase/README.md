@@ -35,6 +35,7 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `import_accounting_snapshot(company_id, actor_user_id, snapshot)` : RPC privilégiée, exécutable uniquement par `service_role`, appelée par l'Edge Function ; import initial atomique, contrôle de la partie double et exclusion des clés API.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
 - RLS et politiques de lecture / mise à jour d'administration.
+- Les helpers RLS `is_active_company_member` et `has_company_role` résident dans le schéma non exposé `private` ; ils ne sont pas publiés comme RPC du schéma `public`.
 
 Les clients ne disposent volontairement d'aucune politique pour créer directement des appartenances, modifier des rôles ou écrire des événements d'audit. Ces actions doivent passer par des fonctions serveur contrôlées.
 
@@ -226,3 +227,14 @@ supabase functions deploy sync-accounting
 Le portail de la branche `feat/cloud-accounting-dev` affiche une action d'import initial aux administrateurs et comptables. Avant l'envoi, il télécharge une sauvegarde JSON locale, affiche l'entreprise source et l'entreprise cible, avertit en cas de différence de nom, puis demande confirmation. L'import est unique et refuse une entreprise dont les tables comptables contiennent déjà des données.
 
 **Ce parcours n'est pas encore une synchronisation continue.** Après l'import, les écritures locales et cloud ne se mettent pas automatiquement à jour l'une l'autre. Il faut livrer le moteur de synchronisation bidirectionnelle et sa gestion des conflits avant de présenter la comptabilité cloud comme active.
+
+
+### Durcissement complémentaire RLS
+
+Les fonctions de vérification d'appartenance utilisées par les politiques RLS ont été déplacées de `public` vers le schéma non exposé `private`. Les politiques de toutes les tables d'entreprise et comptables utilisent désormais ces fonctions privées. Les membres authentifiés conservent le droit d'exécution nécessaire aux politiques, mais les fonctions ne sont plus accessibles comme endpoints RPC publics.
+
+Le conseiller de sécurité Supabase ne signale plus les helpers d'appartenance ni le RPC d'import. Il conserve deux alertes préexistantes :
+- `create_company` est un RPC `SECURITY DEFINER` accessible aux utilisateurs authentifiés ; il est volontairement nécessaire à la création atomique d'une entreprise et vérifie `auth.uid()` avant toute opération.
+- La protection des mots de passe compromis (Have I Been Pwned) est désactivée dans la configuration Auth du projet. Elle devra être activée dans les paramètres Auth avant la production.
+
+Les tests RLS après déplacement des helpers confirment qu'un membre actif voit les écritures de son entreprise et qu'un utilisateur non membre ne voit aucune écriture.

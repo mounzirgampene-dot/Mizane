@@ -85,6 +85,7 @@ Deno.serve(async (request) => {
 
   const { data, error } = await adminClient.rpc("import_accounting_snapshot", {
     p_company_id: companyId,
+    p_actor_user_id: actor.id,
     p_snapshot: snapshot,
   });
 

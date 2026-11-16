@@ -31,7 +31,8 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `company_settings` : paramètres propres à l'entreprise.
 - `audit_logs` : journal des événements sensibles.
 - `accounting_settings`, `accounting_custom_accounts`, `accounting_thirds`, `accounting_entries`, `accounting_entry_lines` et `accounting_assets` : socle comptable isolé par entreprise.
-- `import_accounting_snapshot(company_id, snapshot)` : import initial atomique, réservé aux rôles `admin` et `accountant`, avec contrôle de la partie double et exclusion des clés API.
+- `sync-accounting` : Edge Function avec JWT obligatoire, vérification du membre actif et des rôles `admin`/`accountant`.
+- `import_accounting_snapshot(company_id, actor_user_id, snapshot)` : RPC privilégiée, exécutable uniquement par `service_role`, appelée par l'Edge Function ; import initial atomique, contrôle de la partie double et exclusion des clés API.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
 - RLS et politiques de lecture / mise à jour d'administration.
 
@@ -208,3 +209,20 @@ Ces essais sont des tests ponctuels exécutés dans des transactions annulées ;
 6. Ajouter ensuite l'assistant IA SaaS côté serveur, avec JWT, contrôle du rôle et données limitées à l'entreprise active.
 
 **Important :** l'application locale reste la source de données actuelle. Le schéma cloud est préparé, mais la synchronisation n'est pas encore activée. Ne pas déployer cette branche en production avant validation explicite.
+
+
+### Import initial depuis le portail MIZANE
+
+La fonction `sync-accounting` est déployée sur MIZANE-DEV avec `verify_jwt=true`. Elle résout le JWT auprès de Supabase Auth, contrôle que l'utilisateur est membre actif avec le rôle `admin` ou `accountant`, puis appelle le RPC d'import avec l'identifiant de l'acteur vérifié.
+
+Le RPC `import_accounting_snapshot` n'est pas exécutable par `authenticated` ni par `anon` : seul `service_role` peut l'appeler. Il recontrôle dans PostgreSQL que l'acteur transmis possède bien une appartenance active et le rôle requis. La clé `service_role` reste exclusivement côté serveur.
+
+Déploiement de la fonction :
+
+```sh
+supabase functions deploy sync-accounting
+```
+
+Le portail de la branche `feat/cloud-accounting-dev` affiche une action d'import initial aux administrateurs et comptables. Avant l'envoi, il télécharge une sauvegarde JSON locale, affiche l'entreprise source et l'entreprise cible, avertit en cas de différence de nom, puis demande confirmation. L'import est unique et refuse une entreprise dont les tables comptables contiennent déjà des données.
+
+**Ce parcours n'est pas encore une synchronisation continue.** Après l'import, les écritures locales et cloud ne se mettent pas automatiquement à jour l'une l'autre. Il faut livrer le moteur de synchronisation bidirectionnelle et sa gestion des conflits avant de présenter la comptabilité cloud comme active.

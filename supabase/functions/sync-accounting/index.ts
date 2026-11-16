@@ -35,7 +35,7 @@ Deno.serve(async (request) => {
   if (!url || !serviceKey) return fail(500, "Configuration serveur incomplète.");
 
   const authorization = request.headers.get("Authorization") ?? "";
-  const jwt = authorization.replace(/^Bearer\\s+/i, "");
+  const jwt = authorization.replace(/^Bearer\s+/i, "");
   if (!jwt || jwt === authorization) return fail(401, "Authentification requise.");
 
   const adminClient = createClient(url, serviceKey, {

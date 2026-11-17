@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const origins = new Set(["https://mounzirgampene-dot.github.io","http://localhost:8000"]);
+const allowedOrigin = (origin: string | null) => Boolean(origin && (origins.has(origin) || /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/i.test(origin)));
 const providers = {
   mistral: { endpoint:"https://api.mistral.ai/v1/chat/completions", models:["mistral-small-latest","mistral-medium-latest","mistral-large-latest","open-mistral-nemo","ministral-8b-latest","pixtral-12b-2409"] },
   groq: { endpoint:"https://api.groq.com/openai/v1/chat/completions", models:["llama-3.3-70b-versatile","meta-llama/llama-4-scout-17b-16e-instruct","openai/gpt-oss-120b","llama-3.1-8b-instant"] },
@@ -9,7 +10,7 @@ const providers = {
 const validUuid=(v)=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 Deno.serve(async (req)=>{
  const origin=req.headers.get("Origin");
- const cors={...(origin&&origins.has(origin)?{"Access-Control-Allow-Origin":origin}:{}),"Vary":"Origin","Access-Control-Allow-Headers":"authorization, apikey, x-client-info, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
+ const cors={...(allowedOrigin(origin)?{"Access-Control-Allow-Origin":origin}:{}),"Vary":"Origin","Access-Control-Allow-Headers":"authorization, apikey, x-client-info, content-type","Access-Control-Allow-Methods":"POST, OPTIONS"};
  const json=(status,body)=>new Response(JSON.stringify(body),{status,headers:{...cors,"Content-Type":"application/json; charset=utf-8"}});
  if(req.method==="OPTIONS")return new Response("ok",{headers:cors});
  if(req.method!=="POST")return json(405,{error:"Méthode non autorisée."});
@@ -42,6 +43,7 @@ Deno.serve(async (req)=>{
    return json(200,{configured:false,provider});
  }
  if(action==="status"){
+   if(member.role!=="admin")return json(403,{error:"Seul un administrateur peut consulter la configuration des clés."});
    const configured=[];
    for(const id of Object.keys(providers)){
      const {data,error}=await admin.rpc("mizane_get_company_ai_secret",{p_company_id:companyId,p_provider:id});

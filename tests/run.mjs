@@ -520,5 +520,56 @@ test("i18n : mêmes clés pour toutes les langues", async () => {
   assert.ok(counts[0] > 100, "dictionnaire substantiel");
 });
 
+
+console.log("— Synchronisation comptable —");
+const { cleanSecrets, fingerprint, localSnapshot, orderOperations } = await import("../js/accounting-sync.js");
+const sourceUid = "11111111-1111-4111-8111-111111111111";
+const reverseUid = "22222222-2222-4222-8222-222222222222";
+test("nettoyage des secrets : clés sensibles supprimées récursivement", () => {
+  const value = cleanSecrets({ settings: { apiKey: "secret", company: "MIZANE", nested: [{ accessToken: "token", label: "ok" }] } });
+  assert.deepEqual(value, { settings: { company: "MIZANE", nested: [{ label: "ok" }] } });
+});
+test("empreinte : indépendante de l'ordre des propriétés", () => {
+  assert.equal(fingerprint({ b: 2, a: 1 }), fingerprint({ a: 1, b: 2 }));
+  assert.notEqual(fingerprint({ a: 1 }), fingerprint({ a: 2 }));
+});
+test("instantané local : identifiants clients stables et secrets exclus", () => {
+  const store = {
+    settings: { plan: "syscohada", apiKey: "NE_DOIT_PAS_SORTIR", customAccounts: [{ code: "471", label: "Attente", type: "asset" }] },
+    thirds: [{ name: "Client test", type: "client", phone: "", email: "" }],
+    assets: [],
+    entries: [{ id: 1, date: "2025-01-01", journal: "OD", reference: "T1", lines: [{ account: "521", debit: 10, credit: 0 }, { account: "101", debit: 0, credit: 10 }] }]
+  };
+  const first = localSnapshot(store);
+  const ids = [store.settings.customAccounts[0].client_uid, store.thirds[0].client_uid, store.entries[0].client_uid];
+  const second = localSnapshot(store);
+  assert.deepEqual([store.settings.customAccounts[0].client_uid, store.thirds[0].client_uid, store.entries[0].client_uid], ids);
+  assert.deepEqual(Object.keys(first.custom_account), Object.keys(second.custom_account));
+  assert.ok(!JSON.stringify(first).includes("NE_DOIT_PAS_SORTIR"));
+  assert.ok(!JSON.stringify(first).includes("apiKey"));
+});
+test("ordre des lots : écriture d'origine avant sa contrepassation", () => {
+  const operations = [
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } },
+    { entity_type: "third", operation: "upsert", client_uid: "33333333-3333-4333-8333-333333333333", data: {} },
+    { entity_type: "entry", operation: "upsert", client_uid: sourceUid, data: { reverse_of_client_uid: null } }
+  ];
+  const ordered = orderOperations(operations);
+  assert.equal(ordered[0].entity_type, "third");
+  assert.deepEqual(ordered.slice(1).map(x => x.client_uid), [sourceUid, reverseUid]);
+});
+test("ordre des lots : cycle de contrepassation refusé", () => {
+  assert.throws(() => orderOperations([
+    { entity_type: "entry", operation: "upsert", client_uid: sourceUid, data: { reverse_of_client_uid: reverseUid } },
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } }
+  ]), /dépendance circulaire/);
+});
+test("ordre des lots : contrepassation et suppression de l'origine refusées ensemble", () => {
+  assert.throws(() => orderOperations([
+    { entity_type: "entry", operation: "delete", client_uid: sourceUid, data: {} },
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } }
+  ]), /écriture d'origine est supprimée/);
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

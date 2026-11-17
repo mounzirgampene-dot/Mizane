@@ -101,7 +101,10 @@ function installRemote(store, kind, uid, remote, cloud) {
   if(kind==="settings") {
     if(!remote){return;}
     const localSecrets={};
-    for(const [k,v] of Object.entries(store.settings||{})) if(/^(aiKey|aiKeyEnc|apiKey|apiKeyEnc|providerApiKey|providerApiKeyEnc)$/i.test(k))localSecrets[k]=v;
+    for(const [k,v] of Object.entries(store.settings||{})) {
+      const normalized=k.replace(/[^a-z0-9]/gi,"").toLowerCase();
+      if(/^(aikey|aikeyenc|apikey|apikeyenc|providerapikey|providerapikeyenc|openaiapikey|openaiapikeyenc|mistralapikey|mistralapikeyenc|groqapikey|groqapikeyenc|googleapikey|googleapikeyenc)$/.test(normalized))localSecrets[k]=v;
+    }
     store.settings={...clone(remote.data.settings||{}),...localSecrets,customAccounts:store.settings.customAccounts||[]};
     store.nextId=Math.max(Number(store.nextId)||1,Number(remote.data.next_entry_id)||1);
     return;
@@ -162,7 +165,7 @@ function localObject(records,kind,uid) {
   return records[kind]?.[uid]?.data||null;
 }
 function remoteObject(records,kind,uid) {
-  if(kind==="settings")return records.settings.settings||null;
+  if(kind==="settings")return records.settings.settings?.data||null;
   return records[kind]?.[uid]?.data||null;
 }
 export async function syncAccounting(supabase, companyId, role) {
@@ -217,7 +220,7 @@ export async function syncAccounting(supabase, companyId, role) {
           if(role==="reader")throw new Error("Votre rôle est en lecture seule. Des modifications locales existent et ne peuvent pas être envoyées.");
           const action=localData===null?"delete":"upsert";
           const data=kind==="settings"?(localData?{settings:localData.settings,next_entry_id:localData.next_entry_id}:{}):(localData||{});
-          operations.push(makeOperation(kind,uid,action,base?.version||0,data));
+          operations.push(makeOperation(kind,uid,action,cloudRec?.version??base?.version??0,data));
         } else if(cloudChanged&&!localChanged) {
           if(kind==="settings")installRemote(store,kind,uid,cloudRec,remote);
           else installRemote(store,kind,uid,cloudRec,remote);

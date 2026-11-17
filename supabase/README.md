@@ -286,62 +286,26 @@ Les tables de paramètres, comptes personnalisés, tiers, immobilisations et éc
 La règle prévue pour le futur push est un contrôle optimiste : une modification ne sera acceptée que si la version attendue correspond à la version serveur ; sinon le serveur renverra un conflit sans écraser les données. Ce contrôle n'est pas encore exposé par une API d'écriture.
 
 
-## Moteur d'écriture incrémentale cloud — 17 novembre 2026
-
-Le premier endpoint d'écriture incrémentale est désormais déployé sur MIZANE-DEV :
-
-- Edge Function `push-accounting-changes`, JWT obligatoire (`verify_jwt=true`), contrôle côté serveur de l'identité, de l'appartenance active et du rôle `admin` ou `accountant`.
-- RPC `apply_accounting_changes(company_id, actor_user_id, operation_id, changes)`, exécutable uniquement par `service_role`. PostgreSQL recontrôle lui-même le rôle actif de l'acteur.
-- Lots de 1 à 100 changements, avec opérations `upsert` et `delete` pour les paramètres, comptes personnalisés, tiers, immobilisations et écritures.
-- Contrôle optimiste par `expected_sync_version`. Une version périmée renvoie un statut `conflict` et ne remplace pas la valeur serveur.
-- Idempotence par `operation_id` et empreinte du contenu : le rejeu d'un même lot renvoie le résultat initial, tandis que la réutilisation de l'identifiant avec un contenu différent est refusée.
-- Une écriture et toutes ses lignes sont créées ou remplacées dans la même transaction SQL. Les lignes sont contrôlées et le total débit doit correspondre au total crédit. Les suppressions déclenchent les tombstones du journal de synchronisation.
-- Les clés fournisseur sont filtrées des paramètres avant enregistrement. Les opérations sont également inscrites dans `audit_logs`.
-
-La table privée `private.accounting_sync_operations` conserve les résultats d'idempotence ; elle n'est pas exposée par la Data API. Les utilisateurs `authenticated` ne disposent toujours d'aucun droit direct d'écriture sur les tables comptables, et le RPC d'écriture ne leur est pas exécutable.
-
-### Tests transactionnels effectués sur DEV
-
-Les tests ont été exécutés dans des transactions annulées par `ROLLBACK` :
-
-1. création d'un tiers avec version initiale 1 ;
-2. rejeu du même `operation_id`, avec retour identique sans doublon ;
-3. modification concurrente simulée, passage de version 1 à 2 ;
-4. envoi d'une version attendue périmée, conflit détecté et donnée serveur préservée ;
-5. création d'une écriture équilibrée avec ses deux lignes ;
-6. remplacement transactionnel des lignes et incrément de version ;
-7. suppression de l'écriture et de ses lignes ;
-8. rejet d'une écriture déséquilibrée, sans donnée partielle conservée.
-
-Les tests se sont terminés sans erreur et les transactions ont été annulées. Aucune donnée comptable de test n'a été conservée.
-
-### Limite fonctionnelle importante
-
-Ce moteur serveur est en place, mais le navigateur n'est pas encore raccordé au push/pull incrémental. Il ne faut donc pas présenter la synchronisation multi-appareils comme opérationnelle : le pont local, la récupération des changements cloud, la gestion des conflits dans l'interface et les essais navigateur restent à réaliser. L'assistant IA SaaS n'est pas encore connecté à ces données.
-
-Le conseiller de sécurité a également signalé une table `public.accounting_sync_operations` vide, avec RLS activée et aucune politique ; elle refuse donc les accès via RLS. Cette table n'est pas utilisée par le nouveau RPC, qui utilise la table privée. Les alertes préexistantes concernant `create_company` et la protection des mots de passe compromis restent à traiter avant production.
-
-
 ## Moteur d'écriture incrémentale — 17 novembre 2026
 
-La migration `20261117092000_accounting_incremental_write_engine.sql` ajoute le RPC `push_accounting_changes` et le registre privé d'idempotence `accounting_sync_operations`. L'Edge Function `push-accounting-changes` exige un JWT valide, vérifie l'appartenance active et le rôle `admin` ou `accountant`, puis appelle le RPC avec l'identité Auth vérifiée.
+La migration `20261117092000_accounting_incremental_write_engine.sql` ajoute le RPC `push_accounting_changes` et le registre `public.accounting_sync_operations`. Cette table est sous RLS activée et forcée, sans politique de lecture, et aucun privilège n'est accordé à `anon` ou `authenticated` ; elle est utilisée uniquement par le code serveur privilégié. L'Edge Function `push-accounting-changes` exige un JWT valide, vérifie l'appartenance active et le rôle `admin` ou `accountant`, puis appelle le RPC avec l'identité Auth vérifiée.
 
 Le protocole accepte des lots de 1 à 100 opérations et prend en charge les entités `settings`, `custom_account`, `third`, `asset` et `entry`. Chaque opération porte un `client_uid` (sauf les paramètres), un `expected_sync_version`, un type `upsert` ou `delete` et les données de l'entité. Chaque lot porte un `operation_uid` UUID stable : le rejeu du même lot renvoie le résultat enregistré, sans appliquer deux fois les modifications.
 
 Le serveur sérialise les lots d'une entreprise, vérifie toutes les versions avant toute écriture et renvoie un résultat de conflit sans appliquer le lot si une version est périmée. Les écritures et leurs lignes sont traitées dans la même transaction ; la partie double, les journaux, les comptes, les montants et les références de contrepassation sont contrôlés. Les suppressions physiques génèrent des tombstones via les déclencheurs du journal. Toute erreur SQL annule le lot complet.
 
-Le registre d'idempotence n'est pas lisible par les utilisateurs authentifiés : RLS est activée et forcée, aucun accès n'est accordé à `anon` ou `authenticated`, et seuls les appels serveur utilisent `service_role`. Le RPC recontrôle lui-même l'identité et le rôle transmis.
+Le RPC `push_accounting_changes` est réservé à `service_role` ; l'Edge Function est son seul point d'entrée applicatif. La fonction interne recontrôle l'appartenance active et le rôle `admin` ou `accountant`. Le registre d'idempotence est protégé par RLS activée et forcée, sans politique ni privilège pour `anon` ou `authenticated`.
 
 **Limite actuelle :** ce moteur fournit l'API serveur de push, mais le client local n'est pas encore raccordé à ce protocole. La synchronisation bidirectionnelle, le rapprochement automatique des conflits et l'assistant IA SaaS ne sont donc pas encore activés. Les tests exécutés sur DEV utilisent des entreprises temporaires et sont annulés par rollback ; aucune donnée comptable réelle n'a été transférée.
 
 
-Le registre d'idempotence conserve également l'empreinte du contenu JSON du lot. Réutiliser le même `operation_uid` avec un contenu différent est refusé ; le même identifiant avec le même contenu renvoie le résultat initial. Les doublons d'une même entité à l'intérieur d'un lot sont refusés. Les versions renvoyées sont relues après les éventuelles mises à jour de liens de contrepassation, afin que le client reçoive la version finale réellement enregistrée.
+Le registre d'idempotence conserve également l'empreinte du contenu JSON du lot. Réutiliser le même `operation_uid` avec un contenu différent est refusé ; le même identifiant avec le même contenu renvoie le résultat initial. Le corps envoyé à l'Edge Function contient `company_id`, `operation_uid` et `operations` ; chaque opération utilise `entity_type`, `operation`, `client_uid` (sauf `settings`), `expected_sync_version` et `data`. Les doublons d'une même entité à l'intérieur d'un lot sont refusés. Les versions renvoyées sont relues après les éventuelles mises à jour de liens de contrepassation, afin que le client reçoive la version finale réellement enregistrée.
 
 
 ### Protection des clés IA chiffrées dans les paramètres — 17 novembre 2026
 
 Un contrôle complémentaire a été ajouté après examen du format réel de stockage local : l'application peut conserver une clé fournisseur sous forme chiffrée dans `aiKeyEnc`. Le premier filtrage ne couvrait pas tous les noms de clés possibles.
 
-La fonction privée `private.strip_accounting_secrets(jsonb)` retire maintenant récursivement les clés API et jetons connus, y compris leurs variantes chiffrées (`aiKeyEnc`, `apiKeyEnc`, `providerApiKeyEnc`, etc.), même lorsqu'elles sont imbriquées dans un objet ou un tableau. Elle est utilisée par l'import initial et par le moteur d'écriture incrémentale. La fonction `read-accounting` version 5 applique le filtrage correspondant avant de renvoyer les paramètres au navigateur. Une contrainte PostgreSQL interdit également plusieurs noms de secrets au premier niveau des paramètres.
+La fonction privée `private.strip_accounting_secrets(jsonb)` retire maintenant récursivement les clés API et jetons connus, y compris leurs variantes chiffrées (`aiKeyEnc`, `apiKeyEnc`, `providerApiKeyEnc`, etc.), même lorsqu'elles sont imbriquées dans un objet ou un tableau. Elle est utilisée par l'import initial et par le moteur d'écriture incrémentale. La fonction `read-accounting` version 6 applique le filtrage correspondant avant de renvoyer les paramètres au navigateur. Une contrainte PostgreSQL interdit également plusieurs noms de secrets au premier niveau des paramètres.
 
 Tests transactionnels annulés : l'import initial et le push incrémental ont reçu des clés fictives en clair chiffré et imbriquées ; les clés ont été retirées, tandis que les paramètres non sensibles ont été conservés. Aucune donnée de test n'a été persistée.

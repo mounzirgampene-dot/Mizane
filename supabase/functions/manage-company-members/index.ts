@@ -113,8 +113,10 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (membershipError) return fail(500, "Impossible de vérifier les droits.");
-  if (!actorMembership || actorMembership.status !== "active" || actorMembership.role !== "admin") {
-    return fail(403, "Seul un administrateur actif de cette entreprise peut effectuer cette action.");
+  const historyRead = action === "list_audit_history";
+  if (!actorMembership || actorMembership.status !== "active" ||
+      (actorMembership.role !== "admin" && !(historyRead && actorMembership.role === "accountant"))) {
+    return fail(403, historyRead ? "L’historique est réservé à l’administrateur et au comptable." : "Seul un administrateur actif de cette entreprise peut effectuer cette action.");
   }
 
   if (action === "delete_company") {
@@ -144,6 +146,31 @@ Deno.serve(async (request) => {
   };
 
   try {
+    if (action === "list_audit_history") {
+      const scope = body.scope === "mine" ? "mine" : "all";
+      let query = adminClient.from("audit_logs")
+        .select("id,actor_user_id,action,entity_type,entity_id,details,created_at")
+        .eq("company_id", companyId).order("created_at", { ascending: false }).limit(100);
+      if (scope === "mine") query = query.eq("actor_user_id", actor.id);
+      const { data: logs, error } = await query;
+      if (error) return fail(500, "Impossible de charger l’historique de l’entreprise.");
+      const actorIds = [...new Set((logs ?? []).map((row) => row.actor_user_id).filter(Boolean))];
+      const { data: profiles, error: profilesError } = actorIds.length
+        ? await adminClient.from("profiles").select("id,display_name").in("id", actorIds)
+        : { data: [], error: null };
+      if (profilesError) return fail(500, "Impossible de charger les noms des collaborateurs.");
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      const actors = await Promise.all(actorIds.map(async (id) => {
+        const { data } = await adminClient.auth.admin.getUserById(id);
+        return [id, data.user?.email ?? null];
+      }));
+      const emailById = new Map(actors);
+      return json(200, { logs: (logs ?? []).map((row) => ({
+        ...row,
+        actor_name: profileById.get(row.actor_user_id)?.display_name ?? null,
+        actor_email: emailById.get(row.actor_user_id) ?? null,
+      })) });
+    }
     if (action === "list_company_members") {
       const { data: rows, error } = await adminClient.from("company_memberships")
         .select("user_id,role,status,created_at")

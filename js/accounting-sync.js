@@ -232,8 +232,8 @@ export async function syncAccounting(supabase, companyId, role) {
       const initialCloud=await readCloud(supabase,companyId);
       const initialRemote=remoteSnapshot(initialCloud,store);
       assertLocalUnchanged();
-      saveShadow(companyId,initialRemote);
       localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
+      saveShadow(companyId,initialRemote);
       return {pushed:initialOperations.length,pulled:initialPulled,conflicts:0,initialized:true};
     }
     const operations=[];

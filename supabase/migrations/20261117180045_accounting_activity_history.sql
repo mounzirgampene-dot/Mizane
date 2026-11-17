@@ -1,5 +1,4 @@
 -- Journal détaillé des opérations comptables.
-create index if not exists audit_logs_company_created_at_idx on public.audit_logs(company_id, created_at desc);
 create index if not exists audit_logs_actor_created_at_idx on public.audit_logs(company_id, actor_user_id, created_at desc);
 
 create or replace function public.push_accounting_changes(

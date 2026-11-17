@@ -30,27 +30,27 @@ Deno.serve(async (req)=>{
  if(memberError)return json(500,{error:"Vérification des droits impossible."});
  if(!member||member.status!=="active"||!["admin","accountant","reader"].includes(member.role))return json(403,{error:"Accès refusé à cette entreprise."});
  if(action==="configure"){
-   if(member.role!=="admin")return json(403,{error:"Seul un administrateur peut configurer la clé IA."});
+   if(!["admin","accountant"].includes(member.role))return json(403,{error:"Seuls l’administrateur et le comptable peuvent configurer la clé IA."});
    if(typeof body.api_key!=="string"||body.api_key.length>4096)return json(400,{error:"Clé API invalide."});
    const {data,error}=await admin.rpc("mizane_set_company_ai_secret",{p_company_id:companyId,p_provider:provider,p_api_key:body.api_key});
    if(error){console.error("AI credential save:",error.message);return json(500,{error:"Impossible d'enregistrer la clé IA dans le coffre sécurisé."});}
    return json(200,{configured:true,provider});
  }
  if(action==="delete"){
-   if(member.role!=="admin")return json(403,{error:"Seul un administrateur peut supprimer la clé IA."});
+   if(!["admin","accountant"].includes(member.role))return json(403,{error:"Seuls l’administrateur et le comptable peuvent supprimer la clé IA."});
    const {data,error}=await admin.rpc("mizane_delete_company_ai_secret",{p_company_id:companyId,p_provider:provider});
    if(error){console.error("AI credential delete:",error.message);return json(500,{error:"Impossible de supprimer la clé IA."});}
    return json(200,{configured:false,provider});
  }
  if(action==="status"){
-   if(member.role!=="admin")return json(403,{error:"Seul un administrateur peut consulter la configuration des clés."});
+   if(!["admin","accountant"].includes(member.role))return json(403,{error:"Accès réservé à l’administrateur et au comptable."});
    const configured=[];
    for(const id of Object.keys(providers)){
      const {data,error}=await admin.rpc("mizane_get_company_ai_secret",{p_company_id:companyId,p_provider:id});
      if(error){console.error("AI credential status:",error.message);return json(500,{error:"État de configuration indisponible."});}
      if(data)configured.push(id);
    }
-   return json(200,{providers:configured});
+   return json(200,{providers:configured,role:member.role});
  }
  if(action!=="chat")return json(400,{error:"Action inconnue."});
  if(!Array.isArray(body.messages)||body.messages.length<1||body.messages.length>30)return json(400,{error:"Historique de conversation invalide."});

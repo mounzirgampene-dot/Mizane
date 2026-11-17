@@ -268,3 +268,12 @@ Le socle d'identité de synchronisation est en préparation sur DEV :
 - L'import initial sécurisé préserve les UUID locaux lorsqu'ils sont fournis ; les sauvegardes plus anciennes sans UUID restent compatibles grâce à une génération côté serveur.
 
 **Limite :** ce socle ne constitue pas encore le moteur de synchronisation. Il manque encore le protocole d'échange incrémental, les versions/conflits, les suppressions contrôlées, les écritures transactionnelles continues et les tests multi-appareils. Aucun transfert réel n'a été déclenché.
+
+
+### Journal des modifications pour synchronisation incrémentale — 17 novembre 2026
+
+La migration `20261117090000_accounting_sync_change_log.sql` ajoute `accounting_sync_changes`, journal minimal et cloisonné par entreprise. Des déclencheurs enregistrent les insertions, modifications et suppressions des paramètres, comptes personnalisés, tiers, immobilisations et écritures. Le journal ne stocke pas le contenu comptable, uniquement le type d'entité, l'UUID stable, l'opération, l'entreprise et un curseur séquentiel.
+
+La fonction Edge `read-accounting` version 3 accepte `changes_since` et renvoie jusqu'à 500 événements après ce curseur, avec `changes_pagination.next_cursor` et `has_more`. L'adhésion active est vérifiée avant lecture. Les événements de suppression sont conservés comme tombstones afin que les appareils puissent apprendre qu'un élément a été supprimé.
+
+**Limites actuelles :** le journal ne transporte pas les lignes de données elles-mêmes et aucun endpoint d'écriture incrémentale n'est encore disponible. Les lignes d'écritures sont synchronisées avec leur écriture parent dans une future transaction serveur. Le client ne doit pas encore considérer le journal comme une synchronisation opérationnelle complète.

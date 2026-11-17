@@ -577,7 +577,7 @@ test("ordre des lots : contrepassation et suppression de l'origine refusées ens
 
 async function testAsync(name, fn) {
   try { await fn(); passed++; console.log("  ✓ " + name); }
-  catch (e) { failed++; console.error("  ✗ " + name + "\\n    " + e.message); }
+  catch (e) { failed++; console.error("  ✗ " + name + "\\n    " + (e.stack || e.message)); }
 }
 function memoryStorage() {
   const values = new Map();

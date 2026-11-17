@@ -60,12 +60,12 @@ export const PROVIDERS = {
 export function detectedProviderFromEndpoint(endpoint) {
   const ep = endpoint || "";
   for (const [id, p] of Object.entries(PROVIDERS)) if (p.endpoint === ep) return id;
-  return "custom";
+  return "mistral";
 }
 
 export function providerOf(store) {
   const stored = store.settings.aiProvider;
-  if (stored && (PROVIDERS[stored] || stored === "custom")) return stored;
+  if (stored && PROVIDERS[stored]) return stored;
   return detectedProviderFromEndpoint(store.settings.aiEndpoint);
 }
 

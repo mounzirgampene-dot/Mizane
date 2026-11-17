@@ -333,3 +333,6 @@ Le serveur sérialise les lots d'une entreprise, vérifie toutes les versions av
 Le registre d'idempotence n'est pas lisible par les utilisateurs authentifiés : RLS est activée et forcée, aucun accès n'est accordé à `anon` ou `authenticated`, et seuls les appels serveur utilisent `service_role`. Le RPC recontrôle lui-même l'identité et le rôle transmis.
 
 **Limite actuelle :** ce moteur fournit l'API serveur de push, mais le client local n'est pas encore raccordé à ce protocole. La synchronisation bidirectionnelle, le rapprochement automatique des conflits et l'assistant IA SaaS ne sont donc pas encore activés. Les tests exécutés sur DEV utilisent des entreprises temporaires et sont annulés par rollback ; aucune donnée comptable réelle n'a été transférée.
+
+
+Le registre d'idempotence conserve également l'empreinte du contenu JSON du lot. Réutiliser le même `operation_uid` avec un contenu différent est refusé ; le même identifiant avec le même contenu renvoie le résultat initial. Les doublons d'une même entité à l'intérieur d'un lot sont refusés. Les versions renvoyées sont relues après les éventuelles mises à jour de liens de contrepassation, afin que le client reçoive la version finale réellement enregistrée.

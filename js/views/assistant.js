@@ -269,7 +269,7 @@ export function viewSettings() {
       aiPanel.innerHTML = '<p class="warn">La gestion des clés IA est réservée aux administrateurs et aux comptables de cette entreprise.</p>';
       return;
     }
-    const selected = s.aiProvider || pid;
+    const selected = PROVIDERS[s.aiProvider] ? s.aiProvider : pid;
     const links = Object.entries(providerLinks).map(([id, url]) =>
       '<a class="button secondary" href="' + url + '" target="_blank" rel="noopener noreferrer">Créer une clé ' + providerNames[id] + '</a>'
     ).join(" ");

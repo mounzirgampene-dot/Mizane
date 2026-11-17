@@ -336,3 +336,12 @@ Le registre d'idempotence n'est pas lisible par les utilisateurs authentifiés :
 
 
 Le registre d'idempotence conserve également l'empreinte du contenu JSON du lot. Réutiliser le même `operation_uid` avec un contenu différent est refusé ; le même identifiant avec le même contenu renvoie le résultat initial. Les doublons d'une même entité à l'intérieur d'un lot sont refusés. Les versions renvoyées sont relues après les éventuelles mises à jour de liens de contrepassation, afin que le client reçoive la version finale réellement enregistrée.
+
+
+### Protection des clés IA chiffrées dans les paramètres — 17 novembre 2026
+
+Un contrôle complémentaire a été ajouté après examen du format réel de stockage local : l'application peut conserver une clé fournisseur sous forme chiffrée dans `aiKeyEnc`. Le premier filtrage ne couvrait pas tous les noms de clés possibles.
+
+La fonction privée `private.strip_accounting_secrets(jsonb)` retire maintenant récursivement les clés API et jetons connus, y compris leurs variantes chiffrées (`aiKeyEnc`, `apiKeyEnc`, `providerApiKeyEnc`, etc.), même lorsqu'elles sont imbriquées dans un objet ou un tableau. Elle est utilisée par l'import initial et par le moteur d'écriture incrémentale. La fonction `read-accounting` version 5 applique le filtrage correspondant avant de renvoyer les paramètres au navigateur. Une contrainte PostgreSQL interdit également plusieurs noms de secrets au premier niveau des paramètres.
+
+Tests transactionnels annulés : l'import initial et le push incrémental ont reçu des clés fictives en clair chiffré et imbriquées ; les clés ont été retirées, tandis que les paramètres non sensibles ont été conservés. Aucune donnée de test n'a été persistée.

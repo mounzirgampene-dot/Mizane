@@ -5,10 +5,10 @@ import { COUNTRIES, getCountry } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
+  configureCompanyAI,
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
 import { LANGS } from "../i18n.js";
-import { encryptSecret } from "../crypto.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
 export function viewAssistant() {
@@ -199,7 +199,7 @@ export function viewSettings() {
       <div class="row" ${pid === "custom" ? "" : "hidden"}>
         <div><label>Endpoint (compatible OpenAI)</label><input id="s-aiendpoint" placeholder="https://…/v1/chat/completions" value="${esc(s.aiEndpoint || "")}"></div>
       </div>
-      <p class="muted" id="s-aikey-status">${s.aiKeyEnc ? "🔐 Clé chiffrée enregistrée sur cet appareil (AES-GCM)." : s.aiKey ? "⚠️ Clé en clair — resaisissez-la pour la chiffrer." : "Aucune clé enregistrée."} ${pid === "custom" ? "" : `Clé gratuite sur ${PROVIDERS[pid].keyUrl}.`} Les photos sont analysées par le modèle vision ${pid === "custom" ? "du fournisseur choisi" : PROVIDERS[pid].vision}.</p>
+      <p class="muted" id="s-aikey-status">La clé sera conservée dans le coffre sécurisé du serveur, séparément pour chaque entreprise. Elle ne sera pas enregistrée dans la sauvegarde locale.</p>
     </div>
 
     <div class="card">
@@ -270,26 +270,18 @@ export function viewSettings() {
   });
 
   document.getElementById("s-aikey").addEventListener("change", async (e) => {
-    const v = e.target.value.trim();
-    if (v) {
-      try {
-        s.aiKeyEnc = await encryptSecret(v);
-        s.aiKey = "";
-        toast("✓ Clé chiffrée et enregistrée.");
-        document.getElementById("s-aikey-status").textContent = "🔐 Clé chiffrée enregistrée sur cet appareil (AES-GCM).";
-      } catch (_err) {
-        s.aiKey = v;
-        s.aiKeyEnc = "";
-        toast("Chiffrement indisponible : clé stockée en clair.");
-      }
-    } else {
-      s.aiKey = "";
-      s.aiKeyEnc = "";
-      toast("Clé supprimée.");
-      document.getElementById("s-aikey-status").textContent = "Aucune clé enregistrée.";
-    }
-    saveStore(store);
-    e.target.value = "";
+    const value = e.target.value.trim();
+    if (!value) return;
+    const status = document.getElementById("s-aikey-status");
+    status.textContent = "Enregistrement sécurisé en cours…";
+    try {
+      await configureCompanyAI(s.aiProvider || pid, value);
+      s.aiKey = ""; s.aiKeyEnc = "";
+      saveStore(store);
+      status.textContent = "✓ Clé enregistrée dans Supabase Vault pour l’entreprise active.";
+      toast("✓ Clé IA enregistrée de manière sécurisée.");
+    } catch (err) { status.textContent = err.message; toast(err.message); }
+    finally { e.target.value = ""; }
   });
   document.getElementById("s-aiprovider").addEventListener("change", (e) => {
     const id = e.target.value;

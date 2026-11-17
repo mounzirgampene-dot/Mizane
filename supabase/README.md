@@ -255,3 +255,16 @@ La fonction Edge `read-accounting` expose une lecture paginée des données comp
 Requête : `POST /functions/v1/read-accounting` avec le corps JSON `{"company_id":"<uuid>","limit":100,"offset":0}`.
 
 Cette fonction fournit une lecture cloud sécurisée ; elle ne réalise pas encore la synchronisation continue, ne donne aucun droit d'écriture au rôle lecteur et ne connecte pas encore l'assistant IA SaaS.
+
+
+### Identifiants stables pour la synchronisation — 17 novembre 2026
+
+Le socle d'identité de synchronisation est en préparation sur DEV :
+
+- Le navigateur attribue un UUID stable (client_uid) aux écritures, tiers, immobilisations et comptes personnalisés, puis le conserve dans mizane_v1.
+- Un identifiant d'appareil distinct est conservé dans localStorage sous mizane_sync_device_v1 ; il n'est pas copié dans les sauvegardes JSON afin qu'un autre appareil ne se fasse pas passer pour le même appareil.
+- accounting_custom_accounts possède désormais client_uid, avec unicité par entreprise.
+- La lecture cloud renvoie désormais aussi le client_uid des comptes personnalisés.
+- L'import initial sécurisé préserve les UUID locaux lorsqu'ils sont fournis ; les sauvegardes plus anciennes sans UUID restent compatibles grâce à une génération côté serveur.
+
+**Limite :** ce socle ne constitue pas encore le moteur de synchronisation. Il manque encore le protocole d'échange incrémental, les versions/conflits, les suppressions contrôlées, les écritures transactionnelles continues et les tests multi-appareils. Aucun transfert réel n'a été déclenché.

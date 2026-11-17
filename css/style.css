@@ -228,3 +228,26 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
   color: #111827;
   border: 1px solid #94a3b8;
 }
+
+
+/* Accès au compte utilisateur depuis la barre principale. */
+.account-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+  padding: 5px 11px;
+  border: 1px solid rgba(255,255,255,.7);
+  border-radius: 8px;
+  color: #fff;
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.account-link:hover, .account-link:focus-visible {
+  background: rgba(255,255,255,.16);
+  color: #fff;
+  outline-offset: 2px;
+}

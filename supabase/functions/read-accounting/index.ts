@@ -90,11 +90,11 @@ Deno.serve(async (request) => {
   }
 
   const [settingsRes, accountsRes, thirdsRes, assetsRes, entriesRes, changesRes] = await Promise.all([
-    admin.from("accounting_settings").select("settings,next_entry_id,updated_at").eq("company_id", companyId).maybeSingle(),
-    admin.from("accounting_custom_accounts").select("client_uid,code,label,account_type,updated_at").eq("company_id", companyId).order("code").limit(5000),
-    admin.from("accounting_thirds").select("client_uid,name,third_type,phone,email,updated_at").eq("company_id", companyId).order("name").limit(5000),
-    admin.from("accounting_assets").select("client_uid,name,account_code,amount,years,method,service_date,amortized,updated_at").eq("company_id", companyId).order("name").limit(5000),
-    admin.from("accounting_entries").select("id,client_uid,entry_date,journal,reference,is_reversed,reverse_of_entry_id,created_at,updated_at").eq("company_id", companyId).order("entry_date", { ascending: true }).order("id", { ascending: true }).range(offset, offset + limit),
+    admin.from("accounting_settings").select("settings,next_entry_id,updated_at,sync_version").eq("company_id", companyId).maybeSingle(),
+    admin.from("accounting_custom_accounts").select("client_uid,code,label,account_type,updated_at,sync_version").eq("company_id", companyId).order("code").limit(5000),
+    admin.from("accounting_thirds").select("client_uid,name,third_type,phone,email,updated_at,sync_version").eq("company_id", companyId).order("name").limit(5000),
+    admin.from("accounting_assets").select("client_uid,name,account_code,amount,years,method,service_date,amortized,updated_at,sync_version").eq("company_id", companyId).order("name").limit(5000),
+    admin.from("accounting_entries").select("id,client_uid,entry_date,journal,reference,is_reversed,reverse_of_entry_id,created_at,updated_at,sync_version").eq("company_id", companyId).order("entry_date", { ascending: true }).order("id", { ascending: true }).range(offset, offset + limit),
     admin.from("accounting_sync_changes").select("change_seq,entity_type,client_uid,operation,changed_at").eq("company_id", companyId).gt("change_seq", changesSince).order("change_seq", { ascending: true }).limit(501),
   ]);
 

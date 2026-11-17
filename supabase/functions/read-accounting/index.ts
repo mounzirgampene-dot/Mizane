@@ -15,7 +15,8 @@ function redactSecrets(value: unknown): unknown {
   if (!value || typeof value !== "object") return value;
   const out: Record<string, unknown> = {};
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (/^(?:ai|api|providerapi|openaiapi|mistralapi|groqapi|googleapi)key(?:enc)?$|^(?:secret|accesstoken|refreshtoken)$/i.test(key)) continue;
+    const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    if (/^(?:aikey|aikeyenc|apikey|apikeyenc|providerapikey|providerapikeyenc|openaiapikey|openaiapikeyenc|mistralapikey|mistralapikeyenc|groqapikey|groqapikeyenc|googleapikey|googleapikeyenc|secret|accesstoken|refreshtoken)$/.test(normalizedKey)) continue;
     out[key] = redactSecrets(item);
   }
   return out;

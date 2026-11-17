@@ -70,6 +70,8 @@ Deno.serve(async (request) => {
   const limit = Number.isInteger(body.limit) ? Math.min(200, Math.max(1, Number(body.limit))) : 100;
   const offset = Number.isInteger(body.offset) ? Math.max(0, Number(body.offset)) : 0;
   if (offset > 1_000_000) return fail(400, "Position de lecture invalide.");
+  const changesSince = body.changes_since == null ? 0 : Number(body.changes_since);
+  if (!Number.isSafeInteger(changesSince) || changesSince < 0) return fail(400, "Curseur de synchronisation invalide.");
 
   const { data: membership, error: membershipError } = await admin
     .from("company_memberships")
@@ -87,15 +89,16 @@ Deno.serve(async (request) => {
     return fail(403, "Vous n'êtes pas autorisé à consulter cette comptabilité.");
   }
 
-  const [settingsRes, accountsRes, thirdsRes, assetsRes, entriesRes] = await Promise.all([
+  const [settingsRes, accountsRes, thirdsRes, assetsRes, entriesRes, changesRes] = await Promise.all([
     admin.from("accounting_settings").select("settings,next_entry_id,updated_at").eq("company_id", companyId).maybeSingle(),
     admin.from("accounting_custom_accounts").select("client_uid,code,label,account_type,updated_at").eq("company_id", companyId).order("code").limit(5000),
     admin.from("accounting_thirds").select("client_uid,name,third_type,phone,email,updated_at").eq("company_id", companyId).order("name").limit(5000),
     admin.from("accounting_assets").select("client_uid,name,account_code,amount,years,method,service_date,amortized,updated_at").eq("company_id", companyId).order("name").limit(5000),
     admin.from("accounting_entries").select("id,client_uid,entry_date,journal,reference,is_reversed,reverse_of_entry_id,created_at,updated_at").eq("company_id", companyId).order("entry_date", { ascending: true }).order("id", { ascending: true }).range(offset, offset + limit),
+    admin.from("accounting_sync_changes").select("change_seq,entity_type,client_uid,operation,changed_at").eq("company_id", companyId).gt("change_seq", changesSince).order("change_seq", { ascending: true }).limit(501),
   ]);
 
-  for (const result of [settingsRes, accountsRes, thirdsRes, assetsRes, entriesRes]) {
+  for (const result of [settingsRes, accountsRes, thirdsRes, assetsRes, entriesRes, changesRes]) {
     if (result.error) {
       console.error("read-accounting query:", result.error.message);
       return fail(500, "Impossible de lire les données comptables.");
@@ -130,6 +133,10 @@ Deno.serve(async (request) => {
     linesByEntry.set(key, bucket);
   }
 
+  const fetchedChanges = changesRes.data ?? [];
+  const hasMoreChanges = fetchedChanges.length > 500;
+  const changes = fetchedChanges.slice(0, 500);
+
   return json(200, {
     company_id: companyId,
     role: membership.role,
@@ -139,5 +146,12 @@ Deno.serve(async (request) => {
     assets: assetsRes.data ?? [],
     entries: entries.map((entry) => ({ ...entry, lines: linesByEntry.get(String(entry.id)) ?? [] })),
     pagination: { offset, limit, returned: entries.length, has_more: hasMore, next_offset: hasMore ? offset + entries.length : null },
+    changes,
+    changes_pagination: {
+      since: changesSince,
+      returned: changes.length,
+      has_more: hasMoreChanges,
+      next_cursor: changes.length ? changes[changes.length - 1].change_seq : changesSince,
+    },
   });
 });

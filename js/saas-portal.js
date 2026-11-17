@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
+import { syncAccounting } from "./accounting-sync.js";
 
 const root = document.querySelector("#portal");
 const toastNode = document.querySelector("#portal-toast");
@@ -10,6 +11,7 @@ let memberships = [];
 let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 let pendingInvitationToken = new URLSearchParams(location.hash.slice(1)).get("invitation") || "";
 let passwordRecoveryMode = false;
+let accountingCloudReady = false;
 const recoveryLinkDetected = new URLSearchParams(location.hash.slice(1)).get("type") === "recovery";
 if (pendingInvitationToken) history.replaceState(null, "", location.pathname + location.search);
 
@@ -30,9 +32,15 @@ function authView(mode="login"){
 }
 function dashboardView(){
  const active=memberships.find(x=>x.company.id===activeCompanyId);
- root.innerHTML=`<section class="panel"><div class="topline"><div><p class="eyebrow">Espace personnel</p><h1>Bonjour, ${esc(session.user.user_metadata?.display_name||session.user.email)}</h1><p class="muted">${esc(session.user.email)}</p></div><button class="secondary" data-action="logout">Déconnexion</button></div><p>Vos entreprises et vos autorisations sont gérées séparément. Changer d'entreprise ne nécessite pas de déconnexion.</p></section>
+ const dashboardContent=`<section class="panel"><div class="topline"><div><p class="eyebrow">Espace personnel</p><h1>Bonjour, ${esc(session.user.user_metadata?.display_name||session.user.email)}</h1><p class="muted">${esc(session.user.email)}</p></div><button class="secondary" data-action="logout">Déconnexion</button></div><p>Vos entreprises et vos autorisations sont gérées séparément. Changer d'entreprise ne nécessite pas de déconnexion.</p></section>
  <section class="panel"><div class="topline"><h2>Mes entreprises</h2><button data-action="show-create">＋ Créer une entreprise</button></div><div class="company-list">${memberships.length?memberships.map(({company,role,status})=>`<article class="company ${company.id===activeCompanyId?"active":""}"><div class="topline"><h3>${esc(company.legal_name)}</h3><span class="role">${esc(roleLabel(role))}</span></div><p class="company-meta">${esc(company.country_code)} · ${esc(company.base_currency)} · ${esc(company.accounting_standard)}</p><p class="company-meta">Statut : ${esc(status==="active"?"Actif":"Suspendu")}</p><button class="${company.id===activeCompanyId?"":"secondary"}" data-action="select-company" data-id="${company.id}" ${status!=="active"?"disabled":""}>${company.id===activeCompanyId?"Entreprise active":"Ouvrir cet espace"}</button></article>`).join(""):`<div class="empty">Aucune entreprise associée à ce compte. Créez votre premier espace ou acceptez une invitation.</div>`}</div></section>
- ${active?`<section class="panel"><p class="eyebrow">Espace sélectionné</p><h2>${esc(active.company.legal_name)}</h2><p>Votre rôle : <strong>${esc(roleLabel(active.role))}</strong>. La sélection est mémorisée sur cet appareil.</p><div class="actions"><a class="button" href="index.html">Ouvrir la comptabilité locale</a><button class="secondary" data-action="show-invite" ${active.role!=="admin"?"disabled":""}>Inviter un collaborateur</button></div><p class="muted">La comptabilité locale n'est pas encore synchronisée avec cet espace cloud. Ne saisissez pas de données de production en supposant qu'elles sont synchronisées.</p></section>`: ""}
+ ${active?`<section class="panel"><p class="eyebrow">Espace sélectionné</p><h2>${esc(active.company.legal_name)}</h2><p>Votre rôle : <strong>${esc(roleLabel(active.role))}</strong>. La sélection est mémorisée sur cet appareil.</p><div class="actions"><a class="button" href="index.html">Ouvrir la comptabilité locale</a><button class="secondary" data-action="show-invite" ${active.role!=="admin"?"disabled":""}>Inviter un collaborateur</button></div><section class="sync-panel" aria-labelledby="sync-heading"><div class="topline"><h3 id="sync-heading">Synchronisation comptable</h3><span class="role">${accountingCloudReady ? "Cloud initialisé" : "Import initial requis"}</span></div>
+ <p class="muted">${accountingCloudReady ? "Votre comptabilité est reliée au cloud. Vous pouvez envoyer vos changements locaux et récupérer ceux des autres appareils." : "L'espace cloud existe, mais il ne contient pas encore votre comptabilité. Lancez l'import initial depuis l'appareil qui contient vos données."}</p>
+ ${accountingCloudReady && ["admin","accountant","reader"].includes(active.role) ? `<div class="actions"><button data-action="sync-accounting">⇄ Synchroniser maintenant</button></div><p class="muted">Les modifications simultanées sont signalées sans écrasement automatique.</p>` : ""}
+ ${!accountingCloudReady && ["admin","accountant"].includes(active.role) ? `<div class="actions"><button data-action="import-accounting">Préparer l'import initial de cette comptabilité</button></div>` : ""}
+ ${!accountingCloudReady && active.role==="reader" ? `<p class="muted">Un administrateur ou un comptable doit effectuer le premier import.</p>` : ""}
+ </section>
+ ${active.role==="admin" ? `<div class="danger-zone"><h3>Zone de danger</h3><p class="muted">Supprimer cette entreprise effacera définitivement ses écritures, tiers, immobilisations, paramètres, invitations et accès des collaborateurs. Les autres entreprises et les comptes utilisateurs ne seront pas supprimés.</p><button class="danger" data-action="delete-company">Supprimer cette entreprise</button></div>` : ""}</section>`: ""}
  <section class="panel"><h2>Accepter une invitation</h2><form id="accept-form"><div class="field"><label for="invite-token">Jeton d'invitation</label><input id="invite-token" autocomplete="off" minlength="64" maxlength="64" required placeholder="Coller le jeton reçu de l'administrateur"></div><button type="submit">Accepter l'invitation</button><p class="muted">Vous devez être connecté avec l'adresse e-mail à laquelle l'invitation a été envoyée.</p></form></section>
  <section id="create-panel" class="panel hidden"><h2>Créer une entreprise</h2><form id="create-form" class="form-grid">
  <div class="field full"><label for="legal-name">Raison sociale</label><input id="legal-name" required minlength="2" maxlength="180"></div>
@@ -43,6 +51,69 @@ function dashboardView(){
  <div class="field full actions"><button type="submit">Créer l'espace</button><button type="button" class="secondary" data-action="hide-create">Annuler</button></div><p class="notice hidden" data-error></p></form></section>
  <section id="invite-panel" class="panel hidden"><h2>Inviter un collaborateur</h2><form id="invite-form"><div class="field"><label for="invite-email">E-mail du collaborateur</label><input id="invite-email" type="email" required></div><div class="field"><label for="invite-role">Rôle</label><select id="invite-role"><option value="accountant">Comptable</option><option value="reader">Lecteur</option></select></div><button type="submit">Créer l'invitation</button><p class="muted">MIZANE créera un lien sécurisé que vous pourrez copier et transmettre vous-même (WhatsApp, SMS ou autre). Le lien expire après 7 jours et ne peut être utilisé qu'une seule fois.</p><div id="invite-result" class="notice hidden"></div></form></section>
  ${active&&active.role==="admin"?"<section class=\"panel\"><div class=\"topline\"><div><p class=\"eyebrow\">Administration</p><h2>Collaborateurs</h2></div><button class=\"secondary\" data-action=\"reload-management\">Actualiser</button></div><p class=\"muted\">Les changements de rôle et de statut s’appliquent uniquement à cette entreprise. Le dernier administrateur actif ne peut pas être retiré ni rétrogradé.</p><div id=\"members-list\" class=\"empty\">Chargement des membres…</div><h2 style=\"margin-top:24px\">Invitations en attente</h2><div id=\"invitations-list\" class=\"empty\">Chargement des invitations…</div></section>":""}`;
+ const sidebar=active&&["admin","accountant"].includes(active.role)?`<aside class="portal-sidebar" aria-label="Navigation des travaux"><p class="portal-sidebar-label">ESPACE COMPTABLE</p><button class="portal-side-link" data-action="show-dashboard">Vue générale</button><button class="portal-side-link" data-action="show-work">Mes travaux</button><button class="portal-side-link" data-action="show-history">Historique des actions</button></aside>`:"";
+ root.innerHTML=`<div class="portal-layout ${sidebar?"has-sidebar":"no-sidebar"}">${sidebar}<div class="portal-content">${dashboardContent}<section id="workspace-panel" class="panel hidden" aria-live="polite"></section></div></div>`;
+}
+async function importAccountingSnapshot(button){
+ const active=memberships.find(m=>m.company.id===activeCompanyId);
+ if(!active||!["admin","accountant"].includes(active.role))throw new Error("Droits administrateur ou comptable requis.");
+ let raw=localStorage.getItem("mizane_v1");
+ if(!raw)throw new Error("Aucune comptabilité locale n'a été trouvée sur cet appareil.");
+ let snapshot;
+ try{snapshot=JSON.parse(raw)}catch{throw new Error("Les données comptables locales sont illisibles. Exportez une sauvegarde et vérifiez-la avant de continuer.")}
+ if(!snapshot||typeof snapshot!=="object"||!snapshot.settings||!Array.isArray(snapshot.entries)){
+  throw new Error("La structure de la comptabilité locale n'est pas reconnue.");
+ }
+ if(snapshot.thirds!=null&&!Array.isArray(snapshot.thirds))throw new Error("La liste des tiers locaux est invalide.");
+ if(snapshot.assets!=null&&!Array.isArray(snapshot.assets))throw new Error("La liste des immobilisations locales est invalide.");
+ const makeUid=()=>globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
+ const ensureIds=items=>{for(const item of items||[])if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.client_uid||"")))item.client_uid=makeUid();};
+ ensureIds(snapshot.settings.customAccounts);ensureIds(snapshot.thirds);ensureIds(snapshot.assets);ensureIds(snapshot.entries);
+ raw=JSON.stringify(snapshot);
+ localStorage.setItem("mizane_v1",raw);
+ const localName=String(snapshot.settings.companyName||"Entreprise locale");
+ const cloudName=active.company.legal_name;
+ const mismatch=localName.trim().toLowerCase()!==cloudName.trim().toLowerCase();
+ const details=[
+  "Vous allez importer une copie initiale de la comptabilité de cet appareil vers l'entreprise cloud sélectionnée.",
+  "",
+  "Entreprise locale : "+localName,
+  "Entreprise cloud : "+cloudName,
+  "Écritures : "+snapshot.entries.length,
+  "Tiers : "+(snapshot.thirds||[]).length,
+  "Immobilisations : "+(snapshot.assets||[]).length,
+  "",
+  mismatch ? "ATTENTION : les noms des deux entreprises sont différents. Vérifiez que vous avez sélectionné le bon espace." : "",
+  "Une sauvegarde JSON sera téléchargée avant l'envoi. Les clés API IA ne seront pas transférées.",
+  "Cet import est unique : il ne met pas encore en place une synchronisation continue.",
+  "Continuer ?"
+ ].filter(Boolean).join("\n");
+ if(!confirm(details))return;
+ const backup=new Blob([raw],{type:"application/json"});
+ const link=document.createElement("a");
+ const backupUrl=URL.createObjectURL(backup);
+ link.href=backupUrl;
+ link.download="mizane-sauvegarde-avant-cloud-"+new Date().toISOString().slice(0,10)+".json";
+ document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(backupUrl),5000);
+ busy(button,true);
+ try{
+  const {data,error}=await supabase.functions.invoke("sync-accounting",{
+   body:{company_id:activeCompanyId,snapshot}
+  });
+  if(error){
+   let message=error.message||"Échec de l'import comptable.";
+   try{
+    const response=error.context;
+    const body=response&&typeof response.clone==="function"?await response.clone().json():null;
+    if(body?.error)message=body.error;
+   }catch{}
+   throw new Error(message);
+  }
+  if(data?.imported!==true)throw new Error("Le serveur n'a pas confirmé l'import comptable.");
+  await refresh();
+  toast("Import initial terminé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+ }finally{busy(button,false)}
 }
 async function refresh(){
  const {data: rows,error}=await supabase.from("company_memberships").select("company_id,role,status").eq("user_id",session.user.id).eq("status","active");
@@ -54,6 +125,12 @@ async function refresh(){
  memberships=(rows||[]).filter(m=>byId.has(m.company_id)).map(m=>({company:byId.get(m.company_id),role:m.role,status:m.status}));
  if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
+ accountingCloudReady = false;
+ if(activeCompanyId){
+  const {data: cloudSettings,error: cloudError}=await supabase.from("accounting_settings").select("company_id").eq("company_id",activeCompanyId).maybeSingle();
+  if(cloudError)throw cloudError;
+  accountingCloudReady=!!cloudSettings;
+ }
  dashboardView();
  if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();
  if(pendingInvitationToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
@@ -74,6 +151,40 @@ async function edge(action,payload={}){
  }
  if(data?.error)throw new Error(data.error);return data;
 }
+
+function auditActionLabel(action){
+ const labels={"accounting.snapshot_imported":"Import initial de la comptabilité","accounting.incremental_sync":"Synchronisation comptable","invitation.created":"Invitation créée","invitation.revoked":"Invitation révoquée","member.role_changed":"Rôle du collaborateur modifié","member.suspended":"Collaborateur suspendu","member.reactivated":"Collaborateur réactivé","member.removed":"Collaborateur retiré"};
+ if(labels[action])return labels[action];
+ const match=String(action||"").match(/^accounting\.(entry|third|asset|custom_account|settings)\.(upsert|delete)$/);
+ if(match){const entities={entry:"Écriture comptable",third:"Tiers",asset:"Immobilisation",custom_account:"Compte personnalisé",settings:"Paramètres comptables"};return entities[match[1]]+(match[2]==="delete"?" supprimé(e)":" créé(e) ou modifié(e)");}
+ return String(action||"Action").replaceAll("."," · ");
+}
+function auditSummary(details){
+ const d=details||{};
+ if(d.summary&&typeof d.summary==="object"){const s=d.summary;return [s.date,s.journal,s.reference,s.name,s.code,s.label,s.amount!=null?new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(Number(s.amount)):""].filter(Boolean).join(" · ");}
+ if(d.entries!=null)return [d.entries+" écriture(s)",d.lines+" ligne(s)",d.thirds+" tiers",d.assets+" immobilisation(s)",d.custom_accounts+" compte(s)"].join(" · ");
+ if(d.operations!=null)return d.operations+" opération(s) comptable(s)";
+ if(d.email)return d.email+(d.role?" · "+roleLabel(d.role):"");
+ if(d.from||d.to)return [d.from,d.to].filter(Boolean).join(" → ");
+ return "";
+}
+async function loadWorkspace(mode){
+ const active=memberships.find(m=>m.company.id===activeCompanyId);
+ if(!active||!["admin","accountant"].includes(active.role))throw new Error("Cette rubrique est réservée à l’administrateur et au comptable.");
+ const panel=root.querySelector("#workspace-panel");if(!panel)return;
+ panel.classList.remove("hidden");
+ panel.innerHTML='<p class="eyebrow">'+(mode==="work"?"MES TRAVAUX":"JOURNAL DE L’ENTREPRISE")+'</p><h2>'+(mode==="work"?"Mes travaux":"Historique des actions")+'</h2><p class="muted">Chargement des données…</p>';
+ try{
+  const result=await edge("list_audit_history",{company_id:activeCompanyId,scope:mode==="work"?"mine":"all"});
+  let rows=result.logs||[];
+  if(mode==="work")rows=rows.filter(row=>String(row.action||"").startsWith("accounting.")&&row.action!=="accounting.incremental_sync");
+  const heading=mode==="work"?"Vos opérations comptables enregistrées dans cet espace.":"Les actions effectuées par les membres de cette entreprise.";
+  panel.innerHTML='<div class="topline"><div><p class="eyebrow">'+(mode==="work"?"MES TRAVAUX":"JOURNAL DE L’ENTREPRISE")+'</p><h2>'+(mode==="work"?"Mes travaux":"Historique des actions")+'</h2><p class="muted">'+heading+'</p></div><div class="actions"><a class="button secondary" href="index.html#entries">Ouvrir la comptabilité</a><button class="secondary" data-action="'+(mode==="work"?"show-work":"show-history")+'">Actualiser</button></div></div>'+
+   (rows.length?'<div class="history-list">'+rows.map(row=>{const summary=auditSummary(row.details);const actor=row.actor_name||row.actor_email||"Utilisateur";return '<article class="history-item"><div class="history-item-main"><strong>'+esc(auditActionLabel(row.action))+'</strong>'+(summary?'<p class="history-summary">'+esc(summary)+'</p>':'')+'<p class="company-meta">'+(mode==="history"?esc(actor)+" · ":"")+esc(new Date(row.created_at).toLocaleString("fr-FR"))+'</p></div><span class="role">'+esc(row.entity_type||"activité")+'</span></article>';}).join("")+'</div>':'<div class="empty">'+(mode==="work"?"Aucun travail comptable n’a encore été enregistré pour votre compte.":"Aucune action n’a encore été enregistrée pour cette entreprise.")+'</div>');
+  panel.scrollIntoView({behavior:"smooth",block:"start"});
+ }catch(error){panel.innerHTML='<p class="eyebrow">Historique</p><h2>Impossible de charger les données</h2><p class="notice error">'+esc(error.message)+'</p>';}
+}
+
 async function loadManagement(){
  const active=memberships.find(m=>m.company.id===activeCompanyId);
  if(!active||active.role!=="admin")return;
@@ -92,16 +203,49 @@ root.addEventListener("click",async(e)=>{
  const button=e.target.closest("[data-action]");if(!button)return;
  const action=button.dataset.action;
  try{
+  if(action==="show-dashboard"){const panel=root.querySelector("#workspace-panel");if(panel)panel.classList.add("hidden");return;}
+  if(action==="show-work"){await loadWorkspace("work");return;}
+  if(action==="show-history"){await loadWorkspace("history");return;}
   if(action==="forgot"){const email=root.querySelector("#email")?.value.trim();if(!email)throw new Error("Saisissez d'abord votre adresse e-mail.");const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;toast("E-mail de réinitialisation envoyé si le compte existe.");}
   if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];authView();}
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
+  if(action==="import-accounting"){await importAccountingSnapshot(button);return;}
+  if(action==="sync-accounting"){
+   busy(button,true);
+   try{
+    const result=await syncAccounting(supabase,activeCompanyId,memberships.find(m=>m.company.id===activeCompanyId)?.role);
+    await refresh();
+    if(result.initialized)toast("Première synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
+    else toast("Synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
+   }finally{busy(button,false)}
+   return;
+  }
+  if(action==="delete-company"){
+   const active=memberships.find(m=>m.company.id===activeCompanyId);
+   if(!active||active.role!=="admin")throw new Error("Seul un administrateur actif peut supprimer cette entreprise.");
+   const expected=active.company.legal_name;
+   const typed=prompt("ATTENTION : cette opération effacera définitivement toutes les données de l'entreprise, y compris les écritures comptables.\n\nPour confirmer, saisissez exactement le nom suivant :\n"+expected);
+   if(typed===null)return;
+   if(typed.trim()!==expected)throw new Error("Le nom saisi ne correspond pas. Aucune suppression n'a été effectuée.");
+   if(!confirm("Dernière confirmation : supprimer définitivement « "+expected+" » et toutes ses données ?"))return;
+   busy(button,true);
+   try{
+    await edge("delete_company",{company_id:activeCompanyId});
+    activeCompanyId="";
+    localStorage.removeItem(ACTIVE_COMPANY_KEY);
+    accountingCloudReady=false;
+    await refresh();
+    toast("Entreprise supprimée définitivement.");
+   }finally{busy(button,false)}
+   return;
+  }
   if(action==="reload-management")await loadManagement();
   if(action==="toggle-member-status"){const next=button.dataset.status==="active"?"suspended":"active";if(!confirm(next==="suspended"?"Suspendre ce collaborateur ?":"Réactiver ce collaborateur ?"))return;await edge("set_member_status",{company_id:activeCompanyId,user_id:button.dataset.userId,status:next});await loadManagement();toast("Statut du collaborateur mis à jour.");}
   if(action==="remove-member"){if(!confirm("Retirer définitivement ce collaborateur de cette entreprise ?"))return;await edge("remove_member",{company_id:activeCompanyId,user_id:button.dataset.userId});await loadManagement();toast("Collaborateur retiré.");}
   if(action==="revoke-invitation"){if(!confirm("Révoquer cette invitation ? Le jeton ne pourra plus être utilisé."))return;await edge("revoke_invitation",{company_id:activeCompanyId,invitation_id:button.dataset.invitationId});await loadManagement();toast("Invitation révoquée.");}
-  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);dashboardView();if(memberships.some(m=>m.company.id===activeCompanyId&&m.role==="admin"))loadManagement();}
+  if(action==="select-company"){activeCompanyId=button.dataset.id;localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);await refresh();}
  }catch(error){showError(error)}
 });
 root.addEventListener("change",async(e)=>{

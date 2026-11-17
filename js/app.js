@@ -1,7 +1,7 @@
 // MIZANE — Contrôleur principal : navigation, routage, démarrage PWA.
 import { allAccounts } from "./plans.js";
 import { loadStore, demoData } from "./db.js";
-import { store, $nav, $app, $modalContent, router, setRoute, currentRoute, initStore, saveNow } from "./state.js";
+import { store, $nav, $app, $modalContent, router, setRoute, currentRoute, initStore, saveNow, toast } from "./state.js";
 import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
@@ -94,5 +94,19 @@ async function start() {
     try { await navigator.serviceWorker.register("sw.js"); } catch (_e) { /* PWA optionnel */ }
   }
 }
+
+// Si le portail SaaS met à jour le stockage local dans un autre onglet,
+ // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
+window.addEventListener("storage", (event) => {
+  if (event.key !== "mizane_v1" || !event.newValue) return;
+  try {
+    initStore(loadStore(allAccounts("syscohada")));
+    renderNav();
+    render();
+    toast("Comptabilité actualisée depuis un autre onglet.");
+  } catch (error) {
+    toast("Mise à jour cloud reçue, mais le rechargement local a échoué : " + (error?.message || "erreur inconnue"), 5000);
+  }
+});
 
 start();

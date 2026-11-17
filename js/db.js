@@ -2,6 +2,58 @@
 import { newStore, buildAccountCache, validDate, round2 } from "./accounting.js";
 
 const KEY = "mizane_v1";
+
+const SYNC_DEVICE_KEY = "mizane_sync_device_v1";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function createClientUid() {
+  try {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    if (!globalThis.crypto?.getRandomValues) return null;
+    const bytes = new Uint8Array(16);
+    globalThis.crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  } catch (_e) { return null; }
+}
+
+// Identifiants stables conservés dans la sauvegarde locale ; l'identifiant
+// d'appareil reste séparé pour ne pas être cloné lors d'un export/import JSON.
+function ensureSyncIdentity(store) {
+  let changed = false;
+  const assign = (items) => {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (!item || typeof item !== "object") continue;
+      if (!UUID_RE.test(String(item.client_uid || ""))) {
+        const uid = createClientUid();
+        if (uid) { item.client_uid = uid; changed = true; }
+      }
+    }
+  };
+  assign(store.settings?.customAccounts);
+  assign(store.thirds);
+  assign(store.assets);
+  assign(store.entries);
+  try {
+    let deviceId = localStorage.getItem(SYNC_DEVICE_KEY);
+    if (!UUID_RE.test(String(deviceId || ""))) {
+      deviceId = createClientUid();
+      if (deviceId) localStorage.setItem(SYNC_DEVICE_KEY, deviceId);
+    }
+  } catch (_e) { /* le mode local reste disponible si le stockage est indisponible */ }
+  return changed;
+}
+
+export function getSyncDeviceId() {
+  try {
+    const value = localStorage.getItem(SYNC_DEVICE_KEY);
+    return UUID_RE.test(String(value || "")) ? value : null;
+  } catch (_e) { return null; }
+}
+
 const JOURNALS_OK = ["ACH", "VTE", "BAN", "CAI", "OD"];
 const QUOTA_WARN_BYTES = 4500000;
 
@@ -29,10 +81,12 @@ export function loadStore(planAccounts) {
   if (!Array.isArray(store.assets)) store.assets = [];
   store.__planAccounts = planAccounts;
   buildAccountCache(store, planAccounts);
+  if (ensureSyncIdentity(store)) saveStore(store);
   return store;
 }
 
 export function saveStore(store) {
+  ensureSyncIdentity(store);
   const { __planAccounts, __accountCache, ...clean } = store;
   const json = JSON.stringify(clean);
   try {
@@ -106,6 +160,7 @@ export function validateBackup(data) {
     return {
       id, date: e.date, journal: e.journal, reference: String(e.reference || ""),
       lines, reversed: Boolean(e.reversed), reverseOf,
+      client_uid: UUID_RE.test(String(e.client_uid || "")) ? e.client_uid : undefined,
       createdAt: String(e.createdAt || ""),
     };
   });

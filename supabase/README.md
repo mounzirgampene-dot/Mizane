@@ -1,6 +1,6 @@
 # Supabase — démarrage de l'environnement multi-entreprises
 
-Cette première migration ajoute uniquement les fondations d'identité, d'entreprises et d'appartenances. Elle ne connecte pas encore l'interface MIZANE à Supabase et ne migre aucune donnée comptable.
+Les migrations fondatrices ajoutent les fondations d'identité, d'entreprises et d'appartenances. Depuis le 16 novembre 2026, le schéma comptable cloud et l'import initial sécurisé sont également installés sur MIZANE-DEV. L'interface comptable n'est toutefois pas encore branchée à la synchronisation cloud et aucune donnée locale n'a été transférée.
 
 ## Prérequis
 
@@ -30,8 +30,12 @@ Vérifier d'abord le SQL et la cible du projet. Ne jamais lancer cette commande 
 - `company_invitations` : invitations avec jeton haché et durée de validité.
 - `company_settings` : paramètres propres à l'entreprise.
 - `audit_logs` : journal des événements sensibles.
+- `accounting_settings`, `accounting_custom_accounts`, `accounting_thirds`, `accounting_entries`, `accounting_entry_lines` et `accounting_assets` : socle comptable isolé par entreprise.
+- `sync-accounting` : Edge Function avec JWT obligatoire, vérification du membre actif et des rôles `admin`/`accountant`.
+- `import_accounting_snapshot(company_id, actor_user_id, snapshot)` : RPC privilégiée, exécutable uniquement par `service_role`, appelée par l'Edge Function ; import initial atomique, contrôle de la partie double et exclusion des clés API.
 - `create_company(...)` : fonction atomique qui crée l'entreprise et attribue le rôle initial `admin`.
 - RLS et politiques de lecture / mise à jour d'administration.
+- Les helpers RLS `is_active_company_member` et `has_company_role` résident dans le schéma non exposé `private` ; ils ne sont pas publiés comme RPC du schéma `public`.
 
 Les clients ne disposent volontairement d'aucune politique pour créer directement des appartenances, modifier des rôles ou écrire des événements d'audit. Ces actions doivent passer par des fonctions serveur contrôlées.
 
@@ -150,3 +154,190 @@ supabase functions deploy manage-company-members
 ## Récupération du mot de passe
 
 Le portail écoute l'événement Supabase Auth `PASSWORD_RECOVERY` et affiche un formulaire de nouveau mot de passe. Le formulaire vérifie la confirmation puis appelle `supabase.auth.updateUser({ password })`. Dans Supabase Auth, ajouter `https://VOTRE-UTILISATEUR.github.io/Mizane/espace.html` aux URL de redirection autorisées et vérifier le modèle d'e-mail de récupération.
+
+
+## Socle comptable cloud — 16 novembre 2026
+
+Le schéma comptable a été appliqué sur le seul projet MIZANE-DEV (`rudsovhdvinvyrwjamfo`) par les migrations :
+
+- `20261116000100_cloud_accounting_schema.sql`
+- `20261116000200_accounting_snapshot_import.sql`
+
+La branche de travail GitHub est `feat/cloud-accounting-dev`. Aucune fusion vers `main` n'a été effectuée et aucun changement n'a été appliqué à Supabase PRODUCTION.
+
+### Modèle ajouté
+
+- `accounting_settings` : paramètres de l'exercice, devise, pays, plan comptable et prochain identifiant local. Les clés fournisseur `aiKey`, `ai_key`, `apiKey`, `api_key` et `providerApiKey` sont retirées lors de l'import initial.
+- `accounting_custom_accounts` : comptes personnalisés propres à l'entreprise.
+- `accounting_thirds` : clients, fournisseurs et autres tiers.
+- `accounting_entries` : en-têtes des écritures, avec identifiant UUID cloud et identifiant local source.
+- `accounting_entry_lines` : lignes comptables, avec contrainte débit/crédit sur chaque ligne et rattachement composite à l'écriture de la même entreprise.
+- `accounting_assets` : immobilisations et amortissements.
+
+Toutes ces tables ont RLS activée et forcée. Les membres actifs peuvent consulter les données de leur entreprise. Aucun droit d'écriture directe n'est accordé à `authenticated` dans cette première étape : les écritures doivent passer par des fonctions serveur contrôlées.
+
+### Import initial sécurisé
+
+La fonction SQL `import_accounting_snapshot(uuid, jsonb)` :
+
+1. exige une session authentifiée et un rôle actif `admin` ou `accountant` dans l'entreprise ciblée ;
+2. refuse l'import si une comptabilité cloud existe déjà, afin de ne pas écraser ni dupliquer des données ;
+3. importe les paramètres sans clé API, les comptes personnalisés, les tiers, les écritures, leurs lignes et les immobilisations ;
+4. contrôle les dates, journaux, montants, lignes et équilibre débit/crédit ;
+5. résout les liens de contrepassation après insertion des écritures ;
+6. journalise l'opération dans `audit_logs`.
+
+Un import en erreur est annulé dans sa transaction. L'interface locale n'appelle pas encore cette fonction ; il n'y a donc aucun transfert automatique à ce stade.
+
+### Vérifications réalisées sur DEV
+
+- Les six tables existent et ont RLS activée.
+- Les politiques de lecture ne sont définies que pour les membres actifs.
+- Les privilèges SQL des utilisateurs authentifiés sont limités à `SELECT`.
+- Un test transactionnel avec une entreprise temporaire et une écriture fictive a montré qu'un membre autorisé voit l'en-tête et ses deux lignes, tandis qu'un utilisateur non membre ne voit aucune ligne.
+- Un test d'import transactionnel a importé correctement un instantané fictif (1 écriture, 2 lignes, 1 tiers, 1 immobilisation et 1 compte personnalisé), puis a confirmé qu'aucune clé `aiKey` n'était stockée. Les données de test ont été annulées par rollback.
+- Un rôle `reader` a été refusé par la fonction d'import.
+
+Ces essais sont des tests ponctuels exécutés dans des transactions annulées ; ils ne constituent pas encore une campagne complète de tests multi-entreprises en environnement navigateur.
+
+### Étapes restantes avant activation
+
+1. Ajouter au portail la sélection d'entreprise active et le pont sécurisé avec la comptabilité locale.
+2. Préparer une sauvegarde JSON et un écran de prévisualisation avant le premier transfert.
+3. Générer des identifiants de synchronisation stables côté navigateur et gérer les conflits sans écrasement.
+4. Tester deux entreprises réellement séparées avec un administrateur, un comptable et un lecteur.
+5. Déployer et tester les fonctions serveur avant d'autoriser la saisie comptable cloud.
+6. Ajouter ensuite l'assistant IA SaaS côté serveur, avec JWT, contrôle du rôle et données limitées à l'entreprise active.
+
+**Important :** l'application locale reste la source de données actuelle. Le schéma cloud est préparé, mais la synchronisation n'est pas encore activée. Ne pas déployer cette branche en production avant validation explicite.
+
+
+### Import initial depuis le portail MIZANE
+
+La fonction `sync-accounting` est déployée sur MIZANE-DEV avec `verify_jwt=true`. Elle résout le JWT auprès de Supabase Auth, contrôle que l'utilisateur est membre actif avec le rôle `admin` ou `accountant`, puis appelle le RPC d'import avec l'identifiant de l'acteur vérifié.
+
+Le RPC `import_accounting_snapshot` n'est pas exécutable par `authenticated` ni par `anon` : seul `service_role` peut l'appeler. Il recontrôle dans PostgreSQL que l'acteur transmis possède bien une appartenance active et le rôle requis. La clé `service_role` reste exclusivement côté serveur.
+
+Déploiement de la fonction :
+
+```sh
+supabase functions deploy sync-accounting
+```
+
+Le portail de la branche `feat/cloud-accounting-dev` affiche une action d'import initial aux administrateurs et comptables. Avant l'envoi, il télécharge une sauvegarde JSON locale, affiche l'entreprise source et l'entreprise cible, avertit en cas de différence de nom, puis demande confirmation. L'import est unique et refuse une entreprise dont les tables comptables contiennent déjà des données.
+
+**Ce parcours n'est pas encore une synchronisation continue.** Après l'import, les écritures locales et cloud ne se mettent pas automatiquement à jour l'une l'autre. Il faut livrer le moteur de synchronisation bidirectionnelle et sa gestion des conflits avant de présenter la comptabilité cloud comme active.
+
+
+### Durcissement complémentaire RLS
+
+Les fonctions de vérification d'appartenance utilisées par les politiques RLS ont été déplacées de `public` vers le schéma non exposé `private`. Les politiques de toutes les tables d'entreprise et comptables utilisent désormais ces fonctions privées. Les membres authentifiés conservent le droit d'exécution nécessaire aux politiques, mais les fonctions ne sont plus accessibles comme endpoints RPC publics.
+
+Le conseiller de sécurité Supabase ne signale plus les helpers d'appartenance ni le RPC d'import. Il conserve deux alertes préexistantes :
+- `create_company` est un RPC `SECURITY DEFINER` accessible aux utilisateurs authentifiés ; il est volontairement nécessaire à la création atomique d'une entreprise et vérifie `auth.uid()` avant toute opération.
+- La protection des mots de passe compromis (Have I Been Pwned) est désactivée dans la configuration Auth du projet. Elle devra être activée dans les paramètres Auth avant la production.
+
+Les tests RLS après déplacement des helpers confirment qu'un membre actif voit les écritures de son entreprise et qu'un utilisateur non membre ne voit aucune écriture.
+
+
+## Lecture sécurisée de la comptabilité cloud
+
+La fonction Edge `read-accounting` expose une lecture paginée des données comptables d'une entreprise :
+- JWT obligatoire et identité résolue auprès de Supabase Auth ;
+- vérification d'une adhésion active au périmètre de l'entreprise ;
+- rôles autorisés : `admin`, `accountant` et `reader` (lecture seule) ;
+- aucun identifiant d'entreprise fourni ne suffit à contourner le contrôle d'adhésion ;
+- paramètres, comptes personnalisés, tiers, immobilisations, écritures et lignes sont renvoyés ;
+- pagination des écritures par `limit` (1 à 200) et `offset`, avec indicateur `has_more` ;
+- les champs de secrets et clés API sont retirés récursivement des paramètres renvoyés ;
+- la clé `service_role` reste exclusivement côté serveur.
+
+Requête : `POST /functions/v1/read-accounting` avec le corps JSON `{"company_id":"<uuid>","limit":100,"offset":0}`.
+
+Cette fonction fournit une lecture cloud sécurisée ; elle ne réalise pas encore la synchronisation continue, ne donne aucun droit d'écriture au rôle lecteur et ne connecte pas encore l'assistant IA SaaS.
+
+
+### Identifiants stables pour la synchronisation — 17 novembre 2026
+
+Le socle d'identité de synchronisation est en préparation sur DEV :
+
+- Le navigateur attribue un UUID stable (client_uid) aux écritures, tiers, immobilisations et comptes personnalisés, puis le conserve dans mizane_v1.
+- Un identifiant d'appareil distinct est conservé dans localStorage sous mizane_sync_device_v1 ; il n'est pas copié dans les sauvegardes JSON afin qu'un autre appareil ne se fasse pas passer pour le même appareil.
+- accounting_custom_accounts possède désormais client_uid, avec unicité par entreprise.
+- La lecture cloud renvoie désormais aussi le client_uid des comptes personnalisés.
+- L'import initial sécurisé préserve les UUID locaux lorsqu'ils sont fournis ; les sauvegardes plus anciennes sans UUID restent compatibles grâce à une génération côté serveur.
+
+**Limite :** ce socle ne constitue pas encore le moteur de synchronisation. Il manque encore le protocole d'échange incrémental, les versions/conflits, les suppressions contrôlées, les écritures transactionnelles continues et les tests multi-appareils. Aucun transfert réel n'a été déclenché.
+
+
+### Journal des modifications pour synchronisation incrémentale — 17 novembre 2026
+
+La migration `20261117090000_accounting_sync_change_log.sql` ajoute `accounting_sync_changes`, journal minimal et cloisonné par entreprise. Des déclencheurs enregistrent les insertions, modifications et suppressions des paramètres, comptes personnalisés, tiers, immobilisations et écritures. Le journal ne stocke pas le contenu comptable, uniquement le type d'entité, l'UUID stable, l'opération, l'entreprise et un curseur séquentiel.
+
+La fonction Edge `read-accounting` version 3 accepte `changes_since` et renvoie jusqu'à 500 événements après ce curseur, avec `changes_pagination.next_cursor` et `has_more`. L'adhésion active est vérifiée avant lecture. Les événements de suppression sont conservés comme tombstones afin que les appareils puissent apprendre qu'un élément a été supprimé.
+
+**Limites actuelles :** le journal ne transporte pas les lignes de données elles-mêmes et aucun endpoint d'écriture incrémentale n'est encore disponible. Les lignes d'écritures sont synchronisées avec leur écriture parent dans une future transaction serveur. Le client ne doit pas encore considérer le journal comme une synchronisation opérationnelle complète.
+
+
+### Versions de synchronisation et prévention des écrasements — 17 novembre 2026
+
+Les tables de paramètres, comptes personnalisés, tiers, immobilisations et écritures possèdent maintenant un champ `sync_version` initialisé à 1. Un déclencheur serveur incrémente cette version et actualise `updated_at` à chaque modification. La fonction `read-accounting` version 4 renvoie cette version pour chaque entité afin de permettre au futur endpoint d'écriture de comparer la version attendue par l'appareil avec la version actuelle du serveur.
+
+La règle prévue pour le futur push est un contrôle optimiste : une modification ne sera acceptée que si la version attendue correspond à la version serveur ; sinon le serveur renverra un conflit sans écraser les données. Ce contrôle n'est pas encore exposé par une API d'écriture.
+
+
+## Moteur d'écriture incrémentale — 17 novembre 2026
+
+La migration `20261117092000_accounting_incremental_write_engine.sql` ajoute le RPC `push_accounting_changes` et le registre `public.accounting_sync_operations`. Cette table est sous RLS activée et forcée, sans politique de lecture, et aucun privilège n'est accordé à `anon` ou `authenticated` ; elle est utilisée uniquement par le code serveur privilégié. L'Edge Function `push-accounting-changes` exige un JWT valide, vérifie l'appartenance active et le rôle `admin` ou `accountant`, puis appelle le RPC avec l'identité Auth vérifiée.
+
+Le protocole accepte des lots de 1 à 100 opérations et prend en charge les entités `settings`, `custom_account`, `third`, `asset` et `entry`. Chaque opération porte un `client_uid` (sauf les paramètres), un `expected_sync_version`, un type `upsert` ou `delete` et les données de l'entité. Chaque lot porte un `operation_uid` UUID stable : le rejeu du même lot renvoie le résultat enregistré, sans appliquer deux fois les modifications.
+
+Le serveur sérialise les lots d'une entreprise, vérifie toutes les versions avant toute écriture et renvoie un résultat de conflit sans appliquer le lot si une version est périmée. Les écritures et leurs lignes sont traitées dans la même transaction ; la partie double, les journaux, les comptes, les montants et les références de contrepassation sont contrôlés. Les suppressions physiques génèrent des tombstones via les déclencheurs du journal. Toute erreur SQL annule le lot complet.
+
+Le RPC `push_accounting_changes` est réservé à `service_role` ; l'Edge Function est son seul point d'entrée applicatif. La fonction interne recontrôle l'appartenance active et le rôle `admin` ou `accountant`. Le registre d'idempotence est protégé par RLS activée et forcée, sans politique ni privilège pour `anon` ou `authenticated`.
+
+**Limite actuelle :** ce moteur fournit l'API serveur de push, mais le client local n'est pas encore raccordé à ce protocole. La synchronisation bidirectionnelle, le rapprochement automatique des conflits et l'assistant IA SaaS ne sont donc pas encore activés. Les tests exécutés sur DEV utilisent des transactions annulées par rollback ; aucune donnée comptable réelle n'a été transférée. Le RPC actif a été testé sur des tiers (idempotence, empreinte du lot, conflit de version), des paramètres (filtrage récursif des clés IA), ainsi que sur des écritures équilibrées avec lignes et lien de contrepassation. La suppression de l'écriture source retire le lien de contrepassation et incrémente la version de l'écriture liée. Une écriture déséquilibrée est refusée sans conserver de ligne partielle.
+
+
+Le registre d'idempotence conserve également l'empreinte du contenu JSON du lot. Réutiliser le même `operation_uid` avec un contenu différent est refusé ; le même identifiant avec le même contenu renvoie le résultat initial. Le corps envoyé à l'Edge Function contient `company_id`, `operation_uid` et `operations` ; chaque opération utilise `entity_type`, `operation`, `client_uid` (sauf `settings`), `expected_sync_version` et `data`. Les doublons d'une même entité à l'intérieur d'un lot sont refusés. Les versions renvoyées sont relues après les éventuelles mises à jour de liens de contrepassation, afin que le client reçoive la version finale réellement enregistrée.
+
+
+### Protection des clés IA chiffrées dans les paramètres — 17 novembre 2026
+
+Un contrôle complémentaire a été ajouté après examen du format réel de stockage local : l'application peut conserver une clé fournisseur sous forme chiffrée dans `aiKeyEnc`. Le premier filtrage ne couvrait pas tous les noms de clés possibles.
+
+La fonction privée `private.strip_accounting_secrets(jsonb)` retire maintenant récursivement les clés API et jetons connus, y compris leurs variantes chiffrées (`aiKeyEnc`, `apiKeyEnc`, `providerApiKeyEnc`, etc.), même lorsqu'elles sont imbriquées dans un objet ou un tableau. Elle est utilisée par l'import initial et par le moteur d'écriture incrémentale. La fonction `read-accounting` version 6 applique le filtrage correspondant avant de renvoyer les paramètres au navigateur. Une contrainte PostgreSQL interdit également plusieurs noms de secrets au premier niveau des paramètres.
+
+Tests transactionnels annulés : l'import initial et le push incrémental ont reçu des clés fictives en clair chiffré et imbriquées ; les clés ont été retirées, tandis que les paramètres non sensibles ont été conservés. Aucune donnée de test n'a été persistée.
+
+
+## Client de synchronisation locale/cloud — 17 novembre 2026
+
+Le portail charge maintenant `js/accounting-sync.js` et propose le bouton « Synchroniser maintenant » lorsque l'entreprise cloud a déjà reçu son import initial.
+
+Le client :
+- lit la comptabilité locale `mizane_v1` et conserve les identifiants `client_uid` ;
+- lit les paramètres, comptes, tiers, immobilisations et écritures cloud, avec pagination des écritures ;
+- conserve une base de comparaison compacte (empreinte de contenu et version serveur, sans recopier les écritures) par entreprise dans `localStorage` sous `mizane_sync_shadow_v1:<company_id>` ;
+- envoie uniquement les créations, modifications et suppressions locales détectées, par lots de 100 opérations au maximum ;
+- récupère les changements cloud si la version locale n'a pas divergé depuis la dernière synchronisation ;
+- refuse les changements simultanés incompatibles sans écraser la version locale ou cloud ;
+- conserve les clés IA locales et ne les transmet pas au cloud ;
+- n'autorise pas les comptes ayant le rôle `reader` à envoyer des changements.
+
+La première exécution après l'import initial établit une base de comparaison compacte. Les éléments présents uniquement en local sont envoyés et ceux présents uniquement dans le cloud sont récupérés. Si un même identifiant existe des deux côtés avec un contenu différent, ou si les paramètres diffèrent, la synchronisation s'arrête sans écrasement automatique. Les exécutions suivantes effectuent le push/pull à partir de cette base. Les numéros numériques d'écriture restent propres à chaque appareil ; les liens entre écritures sont synchronisés par `client_uid`.
+
+La lecture cloud renvoie les comptes personnalisés depuis leur table versionnée et retire leur copie historique des paramètres, afin d'éviter des divergences entre les deux représentations. L'import initial conserve `nextId` dans `accounting_settings.next_entry_id`, mais les numéros numériques d'écriture restent locaux à chaque appareil et ne sont pas fusionnés entre appareils. Le client envoie uniquement les changements détectés ; pour la détection des changements distants, il lit actuellement le snapshot cloud complet, avec pagination des écritures.
+
+### Tests client exécutés avec un serveur simulé
+
+- initialisation de la base de comparaison sur un cloud identique ;
+- envoi d'une modification de paramètres, d'un compte personnalisé et d'un tiers ;
+- vérification qu'une seconde synchronisation sans changement n'envoie aucune opération ;
+- récupération d'une modification cloud dans le stockage local ;
+- détection d'une modification simultanée différente, en conservant la valeur locale.
+
+Ces tests valident le moteur client et ses règles de comparaison. Ils ne remplacent pas encore un essai navigateur connecté à un compte réel. La synchronisation est actuellement déclenchée manuellement par le bouton du portail ; aucune synchronisation automatique en arrière-plan n'est activée.
+
+
+L'application comptable locale écoute également les événements `storage` : lorsqu'une synchronisation du portail met à jour `mizane_v1` dans un autre onglet, l'état en mémoire de l'application est rechargé avant la prochaine sauvegarde. Le client compare en outre la valeur locale au début et à la fin de l'opération ; si un autre onglet a modifié les données pendant l'échange réseau, il interrompt la synchronisation au lieu d'écraser ces modifications.

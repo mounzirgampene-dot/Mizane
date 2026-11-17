@@ -30,8 +30,11 @@ const makeToken = () => {
 
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
+  const isAllowedOrigin = (value: string) =>
+    allowedOrigins.has(value) ||
+    /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(value);
   const corsHeaders = {
-    ...(origin && allowedOrigins.has(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    ...(origin && isAllowedOrigin(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
     "Vary": "Origin",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -110,8 +113,24 @@ Deno.serve(async (request) => {
     .maybeSingle();
 
   if (membershipError) return fail(500, "Impossible de vérifier les droits.");
-  if (!actorMembership || actorMembership.status !== "active" || actorMembership.role !== "admin") {
-    return fail(403, "Seul un administrateur actif de cette entreprise peut effectuer cette action.");
+  const historyRead = action === "list_audit_history";
+  if (!actorMembership || actorMembership.status !== "active" ||
+      (actorMembership.role !== "admin" && !(historyRead && actorMembership.role === "accountant"))) {
+    return fail(403, historyRead ? "L’historique est réservé à l’administrateur et au comptable." : "Seul un administrateur actif de cette entreprise peut effectuer cette action.");
+  }
+
+  if (action === "delete_company") {
+    const { data: result, error } = await adminClient.rpc("mizane_delete_company", {
+      p_company_id: companyId,
+      p_actor_user_id: actor.id,
+    });
+    if (error) {
+      if (error.code === "42501") return fail(403, "Seul un administrateur actif peut supprimer cette entreprise.");
+      if (error.code === "P0002") return fail(404, "Entreprise introuvable.");
+      console.error("mizane_delete_company:", error.message);
+      return fail(500, "Impossible de supprimer cette entreprise. Aucune autre entreprise n'a été modifiée.");
+    }
+    return json(200, { deleted: true, company_name: result?.company_name ?? null });
   }
 
   const audit = async (event: string, entityType: string, entityId: string, details = {}) => {
@@ -127,6 +146,31 @@ Deno.serve(async (request) => {
   };
 
   try {
+    if (action === "list_audit_history") {
+      const scope = body.scope === "mine" ? "mine" : "all";
+      let query = adminClient.from("audit_logs")
+        .select("id,actor_user_id,action,entity_type,entity_id,details,created_at")
+        .eq("company_id", companyId).order("created_at", { ascending: false }).limit(100);
+      if (scope === "mine") query = query.eq("actor_user_id", actor.id);
+      const { data: logs, error } = await query;
+      if (error) return fail(500, "Impossible de charger l’historique de l’entreprise.");
+      const actorIds = [...new Set((logs ?? []).map((row) => row.actor_user_id).filter((id): id is string => Boolean(id)))];
+      const { data: profiles, error: profilesError } = actorIds.length
+        ? await adminClient.from("profiles").select("id,display_name").in("id", actorIds)
+        : { data: [], error: null };
+      if (profilesError) return fail(500, "Impossible de charger les noms des collaborateurs.");
+      const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+      const actors: Array<[string, string | null]> = await Promise.all(actorIds.map(async (id) => {
+        const { data } = await adminClient.auth.admin.getUserById(id);
+        return [id, data.user?.email ?? null] as [string, string | null];
+      }));
+      const emailById = new Map(actors);
+      return json(200, { logs: (logs ?? []).map((row) => ({
+        ...row,
+        actor_name: row.actor_user_id ? profileById.get(row.actor_user_id)?.display_name ?? null : null,
+        actor_email: row.actor_user_id ? emailById.get(row.actor_user_id) ?? null : null,
+      })) });
+    }
     if (action === "list_company_members") {
       const { data: rows, error } = await adminClient.from("company_memberships")
         .select("user_id,role,status,created_at")

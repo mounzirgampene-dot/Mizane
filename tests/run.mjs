@@ -1,5 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
+import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -518,6 +519,485 @@ test("i18n : mêmes clés pour toutes les langues", async () => {
   assert.ok(counts.length >= 3, "au moins 3 langues");
   assert.equal(new Set(counts).size, 1, "toutes les langues ont le même nombre de clés");
   assert.ok(counts[0] > 100, "dictionnaire substantiel");
+});
+
+
+console.log("— Synchronisation comptable —");
+
+const sourceUid = "11111111-1111-4111-8111-111111111111";
+const reverseUid = "22222222-2222-4222-8222-222222222222";
+test("nettoyage des secrets : clés sensibles supprimées récursivement", () => {
+  const value = cleanSecrets({ settings: { apiKey: "secret", company: "MIZANE", nested: [{ accessToken: "token", label: "ok" }] } });
+  assert.deepEqual(value, { settings: { company: "MIZANE", nested: [{ label: "ok" }] } });
+});
+test("empreinte : indépendante de l'ordre des propriétés", () => {
+  assert.equal(fingerprint({ b: 2, a: 1 }), fingerprint({ a: 1, b: 2 }));
+  assert.notEqual(fingerprint({ a: 1 }), fingerprint({ a: 2 }));
+});
+test("instantané local : identifiants clients stables et secrets exclus", () => {
+  const store = {
+    settings: { plan: "syscohada", apiKey: "NE_DOIT_PAS_SORTIR", customAccounts: [{ code: "471", label: "Attente", type: "asset" }] },
+    thirds: [{ name: "Client test", type: "client", phone: "", email: "" }],
+    assets: [],
+    entries: [{ id: 1, date: "2025-01-01", journal: "OD", reference: "T1", lines: [{ account: "521", debit: 10, credit: 0 }, { account: "101", debit: 0, credit: 10 }] }]
+  };
+  const first = localSnapshot(store);
+  const ids = [store.settings.customAccounts[0].client_uid, store.thirds[0].client_uid, store.entries[0].client_uid];
+  const second = localSnapshot(store);
+  assert.deepEqual([store.settings.customAccounts[0].client_uid, store.thirds[0].client_uid, store.entries[0].client_uid], ids);
+  assert.deepEqual(Object.keys(first.custom_account), Object.keys(second.custom_account));
+  assert.ok(!JSON.stringify(first).includes("NE_DOIT_PAS_SORTIR"));
+  assert.ok(!JSON.stringify(first).includes("apiKey"));
+});
+test("validation sync : refuse les UUID clients dupliqués", () => {
+  const uid = "12121212-1212-4121-8121-121212121212", store = makeValidationStore();
+  store.thirds = [{ client_uid: uid, name: "Client A" }, { client_uid: uid, name: "Client B" }];
+  assert.ok(validateSyncStore(store).some(message => message.includes("Identifiant client en double")));
+});
+test("validation sync : refuse les numéros internes d'écriture dupliqués", () => {
+  const store = makeValidationStore(); store.entries = [makeValidEntry(1), makeValidEntry(1)];
+  assert.ok(validateSyncStore(store).some(message => message.includes("Numéro d'écriture en double")));
+});
+test("validation sync : bloque une écriture déséquilibrée", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[1].credit = 90; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("non équilibrée")));
+});
+test("validation sync : refuse un compte absent du plan comptable", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[0].account = "999999"; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("inconnu dans le plan")));
+});
+test("validation sync : refuse un tiers absent ou ambigu dans les lignes", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[0].third = "Tiers fantôme"; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("introuvable")));
+  store.thirds = [{ client_uid: "13131313-1313-4131-8131-131313131313", name: "Tiers fantôme" }, { client_uid: "14141414-1414-4141-8141-141414141414", name: "Tiers fantôme" }];
+  assert.ok(validateSyncStore(store).some(message => message.includes("ambigu")));
+});
+await testAsync("validation sync : aucune opération cloud si les données locales sont invalides", async () => {
+  const companyId = "company-invalid-before-push", store = makeSyncStore(), entry = makeValidEntry(1);
+  entry.lines[1].credit = 99; store.entries = [entry];
+  const storage = memoryStorage(); storage.setItem("mizane_v1", JSON.stringify(store)); seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId), previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Synchronisation bloquée/);
+    assert.equal(cloud.pushes, 0);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousStorage;
+  }
+});
+
+test("ordre des lots : écriture d'origine avant sa contrepassation", () => {
+  const operations = [
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } },
+    { entity_type: "third", operation: "upsert", client_uid: "33333333-3333-4333-8333-333333333333", data: {} },
+    { entity_type: "entry", operation: "upsert", client_uid: sourceUid, data: { reverse_of_client_uid: null } }
+  ];
+  const ordered = orderOperations(operations);
+  assert.equal(ordered[0].entity_type, "third");
+  assert.deepEqual(ordered.slice(1).map(x => x.client_uid), [sourceUid, reverseUid]);
+});
+test("ordre des lots : cycle de contrepassation refusé", () => {
+  assert.throws(() => orderOperations([
+    { entity_type: "entry", operation: "upsert", client_uid: sourceUid, data: { reverse_of_client_uid: reverseUid } },
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } }
+  ]), /dépendance circulaire/);
+});
+test("ordre des lots : contrepassation et suppression de l'origine refusées ensemble", () => {
+  assert.throws(() => orderOperations([
+    { entity_type: "entry", operation: "delete", client_uid: sourceUid, data: {} },
+    { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } }
+  ]), /écriture d'origine est supprimée/);
+});
+
+
+async function testAsync(name, fn) {
+  try { await fn(); passed++; console.log("  ✓ " + name); }
+  catch (e) { failed++; console.error("  ✗ " + name + "\\n    " + (e.stack || e.message)); }
+}
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+  };
+}
+function makeValidationStore() {
+  return { settings: { plan: "syscohada", customAccounts: [] }, thirds: [{ client_uid: "15151515-1515-4151-8151-151515151515", name: "Fournisseur Démo", type: "fournisseur" }], assets: [], entries: [], nextId: 2 };
+}
+function makeValidEntry(id = 1) {
+  return { client_uid: `16161616-1616-4161-8161-${String(id).padStart(12, "0")}`, id, date: "2026-02-01", journal: "ACH", reference: `ACH-${id}`, reversed: false, reverseOf: null, lines: [{ account: "601", label: "Achat", third: "Fournisseur Démo", debit: 125, credit: 0 }, { account: "401", label: "Fournisseur", third: "Fournisseur Démo", debit: 0, credit: 125 }] };
+}
+function makeSyncStore(thirds = []) {
+  return { settings: { plan: "syscohada", customAccounts: [] }, thirds: structuredClone(thirds), assets: [], entries: [], nextId: 1 };
+}
+function makeCloud(companyId, thirds = [], options = {}) {
+  const state = {
+    company_id: companyId,
+    settings: { settings: { plan: "syscohada" }, sync_version: 1 },
+    custom_accounts: [], thirds: structuredClone(thirds), assets: [], entries: [],
+    pagination: { has_more: false, next_offset: null },
+  };
+  let pushes = 0;
+  let failAfterApply = !!options.failAfterApply;
+  const client = { functions: { invoke: async (name, { body }) => {
+    if (name === "read-accounting") {
+      const response = structuredClone(state);
+      if (options.paginateEntries) {
+        const offset = Number(body.offset) || 0;
+        const limit = Number(body.limit) || 100;
+        response.entries = state.entries.slice(offset, offset + limit);
+        response.pagination = {
+          has_more: offset + response.entries.length < state.entries.length,
+          next_offset: offset + response.entries.length < state.entries.length ? offset + response.entries.length : null,
+        };
+      }
+      return { data: response, error: null };
+    }
+    if (name === "push-accounting-changes") {
+      pushes++;
+      for (const op of body.operations) {
+        if (op.entity_type === "third") {
+          const index = state.thirds.findIndex(x => x.client_uid === op.client_uid);
+          if (op.operation === "delete") { if (index >= 0) state.thirds.splice(index, 1); }
+          else {
+            const row = { client_uid: op.client_uid, name: op.data.name, third_type: op.data.third_type, phone: op.data.phone, email: op.data.email, sync_version: index >= 0 ? state.thirds[index].sync_version + 1 : 1 };
+            if (index >= 0) state.thirds[index] = row; else state.thirds.push(row);
+          }
+        } else if (op.entity_type === "entry") {
+          const index = state.entries.findIndex(x => x.client_uid === op.client_uid);
+          if (op.operation === "delete") { if (index >= 0) state.entries.splice(index, 1); }
+          else {
+            const source = op.data.reverse_of_client_uid
+              ? state.entries.find(x => x.client_uid === op.data.reverse_of_client_uid)
+              : null;
+            const row = {
+              id: index >= 0 ? state.entries[index].id : Math.max(0, ...state.entries.map(x => x.id)) + 1,
+              client_uid: op.client_uid, entry_date: op.data.entry_date, journal: op.data.journal,
+              reference: op.data.reference, is_reversed: !!op.data.is_reversed,
+              reverse_of_entry_id: source?.id ?? null,
+              lines: structuredClone(op.data.lines || []),
+              sync_version: index >= 0 ? state.entries[index].sync_version + 1 : 1,
+            };
+            if (index >= 0) state.entries[index] = row; else state.entries.push(row);
+          }
+        }
+      }
+      if (options.afterApply) await options.afterApply({ state, body });
+      if (failAfterApply) {
+        failAfterApply = false;
+        return { data: null, error: { message: "Connexion interrompue après acceptation du lot" } };
+      }
+      return { data: { ok: true }, error: null };
+    }
+    throw new Error("Fonction cloud inattendue : " + name);
+  } } };
+  return { state, client, get pushes() { return pushes; } };
+}
+function seedShadow(storage, companyId, thirdRecords = []) {
+  const data = {
+    settings: { settings: { data: { settings: { plan: "syscohada" } } } },
+    custom_account: {}, third: {}, asset: {}, entry: {},
+  };
+  for (const third of thirdRecords) {
+    data.third[third.client_uid] = { data: {
+      name: third.name, third_type: third.type, phone: third.phone || "", email: third.email || "",
+    } };
+  }
+  const shadow = {};
+  for (const kind of ["settings", "custom_account", "third", "asset", "entry"]) {
+    shadow[kind] = {};
+    for (const [uid, record] of Object.entries(data[kind])) {
+      shadow[kind][uid] = { hash: fingerprint(record.data), version: 1 };
+    }
+  }
+  storage.setItem("mizane_sync_shadow_v1:" + companyId, JSON.stringify(shadow));
+}
+await testAsync("deux appareils : une modification locale est envoyée puis récupérée", async () => {
+  const companyId = "company-sync-test";
+  const uid = "44444444-4444-4444-8444-444444444444";
+  const baseline = [];
+  const cloud = makeCloud(companyId);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId);
+  seedShadow(deviceB, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceB;
+    const changed = makeSyncStore([{ client_uid: uid, name: "Client ajouté sur B", type: "client", phone: "0600000000", email: "" }]);
+    deviceB.setItem("mizane_v1", JSON.stringify(changed));
+    const pushed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pushed.pushed, 1);
+    assert.equal(cloud.state.thirds.length, 1);
+    globalThis.localStorage = deviceA;
+    const pulled = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pulled.pulled, 1);
+    const recovered = JSON.parse(deviceA.getItem("mizane_v1"));
+    assert.equal(recovered.thirds[0].name, "Client ajouté sur B");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("deux appareils : les modifications simultanées sont signalées sans écrasement", async () => {
+  const companyId = "company-conflict-test";
+  const uid = "55555555-5555-4555-8555-555555555555";
+  const baseline = [{ client_uid: uid, name: "Client initial", type: "client", phone: "0600000000", email: "" }];
+  const cloud = makeCloud(companyId, [{ client_uid: uid, name: "Client initial", third_type: "client", phone: "0600000000", email: "", sync_version: 1 }]);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId, baseline);
+  seedShadow(deviceB, companyId, baseline);
+  const previousStorage = globalThis.localStorage;
+  try {
+    const editedA = makeSyncStore([{ ...baseline[0], name: "Nom modifié sur A" }]);
+    globalThis.localStorage = deviceA;
+    deviceA.setItem("mizane_v1", JSON.stringify(editedA));
+    await syncAccounting(cloud.client, companyId, "admin");
+    const pushCount = cloud.pushes;
+    const editedB = makeSyncStore([{ ...baseline[0], phone: "0611111111" }]);
+    globalThis.localStorage = deviceB;
+    deviceB.setItem("mizane_v1", JSON.stringify(editedB));
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Conflit simultané détecté/);
+    assert.equal(cloud.pushes, pushCount, "aucun push ne doit être tenté après le conflit");
+    assert.equal(cloud.state.thirds[0].name, "Nom modifié sur A");
+    assert.equal(JSON.parse(deviceB.getItem("mizane_v1")).thirds[0].phone, "0611111111");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+
+await testAsync("suppression : un tiers supprimé sur un appareil disparaît sur l'autre", async () => {
+  const companyId = "company-delete-test";
+  const uid = "66666666-6666-4666-8666-666666666666";
+  const baseline = [{ client_uid: uid, name: "Client à supprimer", type: "client", phone: "", email: "" }];
+  const cloud = makeCloud(companyId, [{ client_uid: uid, name: "Client à supprimer", third_type: "client", phone: "", email: "", sync_version: 1 }]);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId, baseline);
+  seedShadow(deviceB, companyId, baseline);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceB;
+    deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore([])));
+    const pushed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pushed.pushed, 1);
+    assert.equal(cloud.state.thirds.length, 0);
+    globalThis.localStorage = deviceA;
+    const pulled = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pulled.pulled, 1);
+    assert.deepEqual(JSON.parse(deviceA.getItem("mizane_v1")).thirds, []);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("reprise : une réponse réseau perdue après acceptation ne duplique pas le tiers", async () => {
+  const companyId = "company-retry-test";
+  const uid = "77777777-7777-4777-8777-777777777777";
+  const cloud = makeCloud(companyId, [], { failAfterApply: true });
+  const storage = memoryStorage();
+  const store = makeSyncStore([{ client_uid: uid, name: "Client reprise", type: "client", phone: "", email: "" }]);
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Connexion interrompue/);
+    assert.equal(cloud.state.thirds.length, 1, "le cloud a accepté le lot avant la perte de réponse");
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds.length, 1, "les données locales restent présentes");
+    const resumed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(resumed.pushed, 0, "la reprise reconnaît que le cloud possède déjà la même version");
+    assert.equal(cloud.pushes, 1, "aucun second envoi n'est nécessaire");
+    assert.equal(cloud.state.thirds.length, 1, "aucun doublon n'est créé");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("écritures liées : l'origine est créée avant la contrepassation", async () => {
+  const companyId = "company-entries-test";
+  const source = "88888888-8888-4888-8888-888888888888";
+  const reversal = "99999999-9999-4999-8999-999999999999";
+  const cloud = makeCloud(companyId);
+  const storage = memoryStorage();
+  const store = makeSyncStore();
+  store.entries = [
+    { client_uid: source, id: 1, date: "2026-01-10", journal: "OD", reference: "ECR-001", reversed: false, reverseOf: null,
+      lines: [{ account: "601", label: "Charge", third: "", debit: 250, credit: 0 }, { account: "401", label: "Fournisseur", third: "", debit: 0, credit: 250 }] },
+    { client_uid: reversal, id: 2, date: "2026-01-11", journal: "OD", reference: "CONTRE-ECR-001", reversed: true, reverseOf: 1,
+      lines: [{ account: "601", label: "Annulation charge", third: "", debit: 0, credit: 250 }, { account: "401", label: "Annulation fournisseur", third: "", debit: 250, credit: 0 }] },
+  ];
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(result.pushed, 2);
+    assert.equal(cloud.state.entries.length, 2);
+    const original = cloud.state.entries.find(x => x.client_uid === source);
+    const contra = cloud.state.entries.find(x => x.client_uid === reversal);
+    assert.ok(original && contra);
+    assert.equal(contra.reverse_of_entry_id, original.id, "la référence cloud de la contrepassation pointe vers l'origine");
+    assert.equal(contra.is_reversed, true);
+    for (const entry of cloud.state.entries) {
+      const debit = entry.lines.reduce((sum, line) => sum + line.debit, 0);
+      const credit = entry.lines.reduce((sum, line) => sum + line.credit, 0);
+      assert.equal(debit, credit, "chaque écriture reste équilibrée");
+    }
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("modification locale pendant l'envoi : la synchronisation s'arrête sans écraser le stockage", async () => {
+  const companyId = "company-concurrent-local-test";
+  const uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const storage = memoryStorage();
+  const store = makeSyncStore([{ client_uid: uid, name: "Client envoyé", type: "client", phone: "", email: "" }]);
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId, [], {
+    afterApply: async () => {
+      const changed = makeSyncStore([{ client_uid: uid, name: "Modification locale concurrente", type: "client", phone: "", email: "" }]);
+      storage.setItem("mizane_v1", JSON.stringify(changed));
+    },
+  });
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /modifiée dans un autre onglet/);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Modification locale concurrente");
+    assert.equal(cloud.state.thirds[0].name, "Client envoyé");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+
+await testAsync("gros volume : 250 tiers sont envoyés en trois lots sans doublon", async () => {
+  const companyId = "company-volume-thirds-test";
+  const thirds = Array.from({ length: 250 }, (_, index) => ({
+    client_uid: `b0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    name: `Tiers ${index + 1}`, type: index % 2 ? "fournisseur" : "client", phone: "", email: "",
+  }));
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore(thirds)));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const first = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(first.pushed, 250);
+    assert.equal(cloud.pushes, 3, "les 250 opérations sont réparties en lots de 100 maximum");
+    assert.equal(cloud.state.thirds.length, 250);
+    const second = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(second.pushed, 0);
+    assert.equal(cloud.state.thirds.length, 250, "une seconde synchronisation ne crée aucun doublon");
+    assert.equal(new Set(cloud.state.thirds.map(x => x.client_uid)).size, 250);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("pagination cloud : 250 écritures sont toutes récupérées sur trois pages", async () => {
+  const companyId = "company-pagination-entries-test";
+  const entries = Array.from({ length: 250 }, (_, index) => ({
+    id: index + 1,
+    client_uid: `c0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    entry_date: "2026-02-01", journal: "ACH", reference: `ACH-${index + 1}`,
+    is_reversed: false, reverse_of_entry_id: null, sync_version: 1,
+    lines: [
+      { account_code: "601", label: "Achat", third_name: "Fournisseur Démo", debit: 125, credit: 0 },
+      { account_code: "401", label: "Fournisseur", third_name: "Fournisseur Démo", debit: 0, credit: 125 },
+    ],
+  }));
+  const cloud = makeCloud(companyId, [], { paginateEntries: true });
+  cloud.state.entries = structuredClone(entries);
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore()));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await syncAccounting(cloud.client, companyId, "admin");
+    const recovered = JSON.parse(storage.getItem("mizane_v1"));
+    assert.equal(result.pulled, 250);
+    assert.equal(recovered.entries.length, 250, "aucune page n'est ignorée");
+    assert.equal(recovered.entries[249].reference, "ACH-250");
+    assert.deepEqual(recovered.entries[0].lines.map(line => ({
+      account: line.account, third: line.third, debit: line.debit, credit: line.credit,
+    })), [
+      { account: "601", third: "Fournisseur Démo", debit: 125, credit: 0 },
+      { account: "401", third: "Fournisseur Démo", debit: 0, credit: 125 },
+    ], "les comptes, tiers et montants des lignes sont conservés");
+    for (const entry of recovered.entries) {
+      const debit = entry.lines.reduce((sum, line) => sum + line.debit, 0);
+      const credit = entry.lines.reduce((sum, line) => sum + line.credit, 0);
+      assert.equal(debit, credit, "chaque écriture récupérée reste équilibrée");
+    }
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+
+await testAsync("séparation des entreprises : une réponse cloud d'une autre entreprise bloque la synchronisation", async () => {
+  const companyId = "company-alpha-test";
+  const uid = "d0000000-0000-4000-8000-000000000001";
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore([
+    { client_uid: uid, name: "Donnée entreprise Alpha", type: "client", phone: "", email: "" },
+  ])));
+  const cloud = makeCloud(companyId);
+  const isolatedClient = { functions: { invoke: async (name) => {
+    if (name === "read-accounting") {
+      return { data: { ...structuredClone(cloud.state), company_id: "company-beta-test" }, error: null };
+    }
+    throw new Error("Aucun envoi ne doit être tenté après une réponse cloud incohérente.");
+  } } };
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(isolatedClient, companyId, "admin"), /Réponse cloud incohérente/);
+    assert.equal(cloud.pushes, 0);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Donnée entreprise Alpha");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+await testAsync("rôle lecteur : les données locales en attente ne sont jamais envoyées au cloud", async () => {
+  const companyId = "company-reader-test";
+  const uid = "d0000000-0000-4000-8000-000000000002";
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore([
+    { client_uid: uid, name: "Modification en lecture seule", type: "client", phone: "", email: "" },
+  ])));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "reader"), /lecture seule/);
+    assert.equal(cloud.pushes, 0);
+    assert.equal(cloud.state.thirds.length, 0);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Modification en lecture seule");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

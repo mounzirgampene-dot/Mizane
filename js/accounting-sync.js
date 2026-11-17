@@ -1,4 +1,6 @@
 // MIZANE — Synchronisation bidirectionnelle locale/cloud avec résolution prudente des conflits.
+import { buildAccountCache, validateEntry } from "./accounting.js";
+import { allAccounts } from "./plans.js";
 const LOCAL_KEY = "mizane_v1";
 const SHADOW_PREFIX = "mizane_sync_shadow_v1:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -44,6 +46,58 @@ function ensureIds(store) {
   };
   assign(store.settings?.customAccounts); assign(store.thirds); assign(store.assets); assign(store.entries);
 }
+function validateSyncStore(store) {
+  const errors = [];
+  const collections = [["comptes personnalisés", store.settings.customAccounts || []], ["tiers", store.thirds || []], ["immobilisations", store.assets || []], ["écritures", store.entries || []]];
+  for (const [label, items] of collections) {
+    const seen = new Set();
+    for (const item of items) {
+      const uid = String(item.client_uid || "");
+      if (!UUID_RE.test(uid)) errors.push(`Identifiant client invalide dans ${label}.`);
+      else if (seen.has(uid)) errors.push(`Identifiant client en double dans ${label} : ${uid}.`);
+      seen.add(uid);
+    }
+  }
+  const planAccounts = allAccounts(store.settings.plan);
+  const planCodes = new Set(planAccounts.map(account => String(account.code)));
+  const customCodes = new Set();
+  for (const account of store.settings.customAccounts || []) {
+    const code = String(account.code || "").trim();
+    if (!code) errors.push("Un compte personnalisé ne possède aucun code.");
+    else if (customCodes.has(code)) errors.push(`Code de compte personnalisé en double : ${code}.`);
+    else if (planCodes.has(code)) errors.push(`Le compte personnalisé ${code} entre en conflit avec le plan comptable.`);
+    customCodes.add(code);
+  }
+  const thirdNames = new Map();
+  for (const third of store.thirds || []) {
+    const name = String(third.name || "").trim().toLocaleLowerCase();
+    if (name) thirdNames.set(name, (thirdNames.get(name) || 0) + 1);
+  }
+  const accountsStore = { ...store, settings: { ...store.settings, customAccounts: store.settings.customAccounts || [] } };
+  buildAccountCache(accountsStore, planAccounts);
+  const entryIds = new Set();
+  for (const entry of store.entries || []) {
+    const id = Number(entry.id);
+    if (!Number.isSafeInteger(id) || id <= 0) errors.push("Une écriture possède un numéro interne invalide.");
+    else if (entryIds.has(id)) errors.push(`Numéro d'écriture en double : ${id}.`);
+    entryIds.add(id);
+    const validation = validateEntry(accountsStore, entry);
+    if (!validation.ok) for (const message of validation.errors) errors.push(`Écriture #${entry.id ?? "?"} : ${message}`);
+    for (const line of entry.lines || []) {
+      const name = String(line.third || "").trim().toLocaleLowerCase();
+      if (!name) continue;
+      const count = thirdNames.get(name) || 0;
+      if (!count) errors.push(`Écriture #${entry.id ?? "?"} : le tiers « ${line.third} » est introuvable dans la liste des tiers.`);
+      else if (count > 1) errors.push(`Écriture #${entry.id ?? "?"} : le tiers « ${line.third} » est ambigu car son nom est en double.`);
+    }
+  }
+  for (const asset of store.assets || []) {
+    const code = String(asset.account || "").trim();
+    if (code && !accountsStore.settings.customAccounts.some(a => String(a.code) === code) && !planCodes.has(code)) errors.push(`Immobilisation « ${asset.name || "sans nom"} » : compte ${code} absent du plan comptable.`);
+  }
+  return [...new Set(errors)];
+}
+
 function localSnapshot(store) {
   ensureIds(store);
   const settings = cleanSecrets({...store.settings});
@@ -209,6 +263,8 @@ export async function syncAccounting(supabase, companyId, role) {
     if(!Array.isArray(store.assets))store.assets=[];
     if(!Array.isArray(store.settings.customAccounts))store.settings.customAccounts=[];
     ensureIds(store);
+    const validationErrors = validateSyncStore(store);
+    if (validationErrors.length) throw new Error("Synchronisation bloquée : corrigez les anomalies locales avant l’envoi. " + validationErrors.slice(0, 8).join(" "));
     // Les UUID doivent rester stables même si la lecture cloud ou un contrôle de conflit échoue.
     const expectedLocalRaw=JSON.stringify(store);
     localStorage.setItem(LOCAL_KEY,expectedLocalRaw);
@@ -329,4 +385,4 @@ export async function syncAccounting(supabase, companyId, role) {
   } finally { running=false; }
 }
 
-export { cleanSecrets, fingerprint, localSnapshot, orderOperations };
+export { cleanSecrets, fingerprint, localSnapshot, orderOperations, validateSyncStore };

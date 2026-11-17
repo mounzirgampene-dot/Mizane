@@ -38,5 +38,5 @@ jobs:
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          accountId: 34f4aa815d65717e8f6c894ff6e9e3a4
           command: pages deploy . --project-name=mizane-preview --branch=feat/cloud-accounting-dev

@@ -318,7 +318,7 @@ Le portail charge maintenant `js/accounting-sync.js` et propose le bouton « Syn
 Le client :
 - lit la comptabilité locale `mizane_v1` et conserve les identifiants `client_uid` ;
 - lit les paramètres, comptes, tiers, immobilisations et écritures cloud, avec pagination des écritures ;
-- conserve une base de comparaison par entreprise dans `localStorage` sous `mizane_sync_shadow_v1:<company_id>` ;
+- conserve une base de comparaison compacte (empreinte de contenu et version serveur, sans recopier les écritures) par entreprise dans `localStorage` sous `mizane_sync_shadow_v1:<company_id>` ;
 - envoie uniquement les créations, modifications et suppressions locales détectées, par lots de 100 opérations au maximum ;
 - récupère les changements cloud si la version locale n'a pas divergé depuis la dernière synchronisation ;
 - refuse les changements simultanés incompatibles sans écraser la version locale ou cloud ;
@@ -327,7 +327,7 @@ Le client :
 
 La première exécution après l'import initial établit une base de comparaison compacte. Les éléments présents uniquement en local sont envoyés et ceux présents uniquement dans le cloud sont récupérés. Si un même identifiant existe des deux côtés avec un contenu différent, ou si les paramètres diffèrent, la synchronisation s'arrête sans écrasement automatique. Les exécutions suivantes effectuent le push/pull à partir de cette base. Les numéros numériques d'écriture restent propres à chaque appareil ; les liens entre écritures sont synchronisés par `client_uid`.
 
-La lecture cloud renvoie les comptes personnalisés depuis leur table versionnée et retire leur copie historique des paramètres, afin d'éviter des divergences entre les deux représentations. L'import initial conserve également `nextId` dans `accounting_settings.next_entry_id`.
+La lecture cloud renvoie les comptes personnalisés depuis leur table versionnée et retire leur copie historique des paramètres, afin d'éviter des divergences entre les deux représentations. L'import initial conserve `nextId` dans `accounting_settings.next_entry_id`, mais les numéros numériques d'écriture restent locaux à chaque appareil et ne sont pas fusionnés entre appareils. Le client envoie uniquement les changements détectés ; pour la détection des changements distants, il lit actuellement le snapshot cloud complet, avec pagination des écritures.
 
 ### Tests client exécutés avec un serveur simulé
 

@@ -155,7 +155,7 @@ async function edge(action,payload={}){
 function auditActionLabel(action){
  const labels={"accounting.snapshot_imported":"Import initial de la comptabilité","accounting.incremental_sync":"Synchronisation comptable","invitation.created":"Invitation créée","invitation.revoked":"Invitation révoquée","member.role_changed":"Rôle du collaborateur modifié","member.suspended":"Collaborateur suspendu","member.reactivated":"Collaborateur réactivé","member.removed":"Collaborateur retiré"};
  if(labels[action])return labels[action];
- const match=String(action||"").match(/^accounting\\.(entry|third|asset|custom_account|settings)\\.(upsert|delete)$/);
+ const match=String(action||"").match(/^accounting\.(entry|third|asset|custom_account|settings)\.(upsert|delete)$/);
  if(match){const entities={entry:"Écriture comptable",third:"Tiers",asset:"Immobilisation",custom_account:"Compte personnalisé",settings:"Paramètres comptables"};return entities[match[1]]+(match[2]==="delete"?" supprimé(e)":" créé(e) ou modifié(e)");}
  return String(action||"Action").replaceAll("."," · ");
 }

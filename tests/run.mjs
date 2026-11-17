@@ -619,7 +619,7 @@ function makeCloud(companyId, thirds = []) {
 }
 function seedShadow(storage, companyId, thirdRecords = []) {
   const data = {
-    settings: { settings: { plan: "syscohada" } },
+    settings: { settings: { data: { settings: { plan: "syscohada" } } } },
     custom_account: {}, third: {}, asset: {}, entry: {},
   };
   for (const third of thirdRecords) {

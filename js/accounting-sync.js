@@ -194,15 +194,38 @@ export async function syncAccounting(supabase, companyId, role) {
     const shadow=getShadow(companyId);
     if(!shadow) {
       const kinds=["settings","custom_account","third","asset","entry"];
-      const same=kinds.every(kind=>{
-        const a=current[kind]||{},b=remote[kind]||{};
-        const keys=new Set([...Object.keys(a),...Object.keys(b)]);
-        return [...keys].every(uid=>equal(localObject(current,kind,uid),remoteObject(remote,kind,uid)));
-      });
-      if(!same)throw new Error("Première synchronisation : les données locales diffèrent déjà du cloud. Aucune modification n'a été envoyée ni téléchargée. Vérifiez que cet appareil contient bien la comptabilité ayant servi à l'import initial.");
-      saveShadow(companyId,remote);
+      const initialOperations=[];
+      let initialPulled=0;
+      for(const kind of kinds) {
+        const local=current[kind]||{}, cloudRecords=remote[kind]||{};
+        if(kind==="settings") {
+          if(!equal(local.settings?.data??null,cloudRecords.settings?.data??null)) {
+            throw new Error("Première synchronisation : les paramètres locaux diffèrent déjà des paramètres cloud. Aucune donnée n'a été écrasée.");
+          }
+          continue;
+        }
+        const keys=new Set([...Object.keys(local),...Object.keys(cloudRecords)]);
+        for(const uid of keys) {
+          const localRec=local[uid]||null, cloudRec=cloudRecords[uid]||null;
+          if(localRec&&cloudRec) {
+            if(!equal(localRec.data,cloudRec.data)) {
+              throw new Error("Première synchronisation : un élément existe des deux côtés avec des contenus différents ("+kind+":"+uid+"). Aucune donnée n'a été écrasée.");
+            }
+          } else if(localRec&&!cloudRec) {
+            if(role==="reader")throw new Error("Votre rôle est en lecture seule : des éléments locaux attendent leur premier envoi.");
+            initialOperations.push(makeOperation(kind,uid,"upsert",0,localRec.data));
+          } else if(!localRec&&cloudRec) {
+            installRemote(store,kind,uid,cloudRec,remote);
+            initialPulled++;
+          }
+        }
+      }
+      if(initialOperations.length)await pushBatches(supabase,companyId,initialOperations);
+      const initialCloud=await readCloud(supabase,companyId);
+      const initialRemote=remoteSnapshot(initialCloud,store);
+      saveShadow(companyId,initialRemote);
       localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
-      return {pushed:0,pulled:0,conflicts:0,initialized:true};
+      return {pushed:initialOperations.length,pulled:initialPulled,conflicts:0,initialized:true};
     }
     const operations=[];
     let pulled=0;

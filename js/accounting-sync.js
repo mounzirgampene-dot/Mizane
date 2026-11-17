@@ -254,7 +254,7 @@ export async function syncAccounting(supabase, companyId, role) {
       for(const uid of keys) {
         const before=kind==="settings"?(baseNow.settings||null):(baseNow[uid]||null);
         const after=kind==="settings"?(finalNow.settings||null):(finalNow[uid]||null);
-        const localAfter=kind==="settings"?(localNow.settings.settings||null):(localNow[kind]?.[uid]?.data||null);
+        const localAfter=kind==="settings"?(localNow.settings.settings?.data||null):(localNow[kind]?.[uid]?.data||null);
         if(!equal(localAfter,before?.data??null) && !equal(localAfter,after?.data??null)) {
           throw new Error("Les données locales ont changé pendant la synchronisation. Relancez-la après vérification.");
         }

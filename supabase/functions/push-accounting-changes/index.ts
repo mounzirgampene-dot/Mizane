@@ -5,6 +5,12 @@ const allowedOrigins = new Set([
   "https://mounzirgampene-dot.github.io",
   "http://localhost:8000",
 ]);
+
+// Autorise les URL de prévisualisation Cloudflare Pages du projet DEV,
+// sans ouvrir les fonctions à tous les sous-domaines pages.dev.
+const isAllowedOrigin = (origin: string) =>
+  allowedOrigins.has(origin) ||
+  /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(origin);
 const validUuid = (v: unknown): v is string =>
   typeof v === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
@@ -12,7 +18,7 @@ const validUuid = (v: unknown): v is string =>
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
   const headers = {
-    ...(origin && allowedOrigins.has(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    ...(origin && isAllowedOrigin(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
     "Vary": "Origin",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",

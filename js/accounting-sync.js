@@ -188,7 +188,13 @@ export async function syncAccounting(supabase, companyId, role) {
     if(!Array.isArray(store.settings.customAccounts))store.settings.customAccounts=[];
     ensureIds(store);
     // Les UUID doivent rester stables même si la lecture cloud ou un contrôle de conflit échoue.
-    localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
+    const expectedLocalRaw=JSON.stringify(store);
+    localStorage.setItem(LOCAL_KEY,expectedLocalRaw);
+    const assertLocalUnchanged=()=>{
+      if(localStorage.getItem(LOCAL_KEY)!==expectedLocalRaw) {
+        throw new Error("La comptabilité locale a été modifiée dans un autre onglet pendant la synchronisation. Aucune donnée n'a été écrasée ; relancez la synchronisation.");
+      }
+    };
     const cloud=await readCloud(supabase,companyId);
     if(!cloud.settings)throw new Error("La comptabilité cloud n'a pas encore été initialisée. Effectuez d'abord l'import initial.");
     const remote=remoteSnapshot(cloud,store);
@@ -225,6 +231,7 @@ export async function syncAccounting(supabase, companyId, role) {
       if(initialOperations.length)await pushBatches(supabase,companyId,initialOperations);
       const initialCloud=await readCloud(supabase,companyId);
       const initialRemote=remoteSnapshot(initialCloud,store);
+      assertLocalUnchanged();
       saveShadow(companyId,initialRemote);
       localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
       return {pushed:initialOperations.length,pulled:initialPulled,conflicts:0,initialized:true};
@@ -293,6 +300,7 @@ export async function syncAccounting(supabase, companyId, role) {
         if(!equal(localAfter,after?.data??null))installRemote(store,kind,uid,after,finalRemote);
       }
     }
+    assertLocalUnchanged();
     localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
     saveShadow(companyId,finalShadow);
     return {pushed:operations.length,pulled,conflicts:0,initialized:false};

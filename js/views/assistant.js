@@ -5,7 +5,7 @@ import { COUNTRIES, getCountry } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
-  configureCompanyAI,
+  configureCompanyAI, refreshCompanyAIStatus,
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
 import { LANGS } from "../i18n.js";

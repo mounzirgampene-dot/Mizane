@@ -284,3 +284,39 @@ La fonction Edge `read-accounting` version 3 accepte `changes_since` et renvoie 
 Les tables de paramètres, comptes personnalisés, tiers, immobilisations et écritures possèdent maintenant un champ `sync_version` initialisé à 1. Un déclencheur serveur incrémente cette version et actualise `updated_at` à chaque modification. La fonction `read-accounting` version 4 renvoie cette version pour chaque entité afin de permettre au futur endpoint d'écriture de comparer la version attendue par l'appareil avec la version actuelle du serveur.
 
 La règle prévue pour le futur push est un contrôle optimiste : une modification ne sera acceptée que si la version attendue correspond à la version serveur ; sinon le serveur renverra un conflit sans écraser les données. Ce contrôle n'est pas encore exposé par une API d'écriture.
+
+
+## Moteur d'écriture incrémentale cloud — 17 novembre 2026
+
+Le premier endpoint d'écriture incrémentale est désormais déployé sur MIZANE-DEV :
+
+- Edge Function `push-accounting-changes`, JWT obligatoire (`verify_jwt=true`), contrôle côté serveur de l'identité, de l'appartenance active et du rôle `admin` ou `accountant`.
+- RPC `apply_accounting_changes(company_id, actor_user_id, operation_id, changes)`, exécutable uniquement par `service_role`. PostgreSQL recontrôle lui-même le rôle actif de l'acteur.
+- Lots de 1 à 100 changements, avec opérations `upsert` et `delete` pour les paramètres, comptes personnalisés, tiers, immobilisations et écritures.
+- Contrôle optimiste par `expected_sync_version`. Une version périmée renvoie un statut `conflict` et ne remplace pas la valeur serveur.
+- Idempotence par `operation_id` et empreinte du contenu : le rejeu d'un même lot renvoie le résultat initial, tandis que la réutilisation de l'identifiant avec un contenu différent est refusée.
+- Une écriture et toutes ses lignes sont créées ou remplacées dans la même transaction SQL. Les lignes sont contrôlées et le total débit doit correspondre au total crédit. Les suppressions déclenchent les tombstones du journal de synchronisation.
+- Les clés fournisseur sont filtrées des paramètres avant enregistrement. Les opérations sont également inscrites dans `audit_logs`.
+
+La table privée `private.accounting_sync_operations` conserve les résultats d'idempotence ; elle n'est pas exposée par la Data API. Les utilisateurs `authenticated` ne disposent toujours d'aucun droit direct d'écriture sur les tables comptables, et le RPC d'écriture ne leur est pas exécutable.
+
+### Tests transactionnels effectués sur DEV
+
+Les tests ont été exécutés dans des transactions annulées par `ROLLBACK` :
+
+1. création d'un tiers avec version initiale 1 ;
+2. rejeu du même `operation_id`, avec retour identique sans doublon ;
+3. modification concurrente simulée, passage de version 1 à 2 ;
+4. envoi d'une version attendue périmée, conflit détecté et donnée serveur préservée ;
+5. création d'une écriture équilibrée avec ses deux lignes ;
+6. remplacement transactionnel des lignes et incrément de version ;
+7. suppression de l'écriture et de ses lignes ;
+8. rejet d'une écriture déséquilibrée, sans donnée partielle conservée.
+
+Les tests se sont terminés sans erreur et les transactions ont été annulées. Aucune donnée comptable de test n'a été conservée.
+
+### Limite fonctionnelle importante
+
+Ce moteur serveur est en place, mais le navigateur n'est pas encore raccordé au push/pull incrémental. Il ne faut donc pas présenter la synchronisation multi-appareils comme opérationnelle : le pont local, la récupération des changements cloud, la gestion des conflits dans l'interface et les essais navigateur restent à réaliser. L'assistant IA SaaS n'est pas encore connecté à ces données.
+
+Le conseiller de sécurité a également signalé une table `public.accounting_sync_operations` vide, avec RLS activée et aucune politique ; elle refuse donc les accès via RLS. Cette table n'est pas utilisée par le nouveau RPC, qui utilise la table privée. Les alertes préexistantes concernant `create_company` et la protection des mots de passe compromis restent à traiter avant production.

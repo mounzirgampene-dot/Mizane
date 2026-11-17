@@ -70,7 +70,8 @@ Deno.serve(async (req)=>{
      if(!response.ok){text=await response.text();return json(502,{error:`Erreur Gemini ${response.status} : ${text.slice(0,240)}`});}
      const data=await response.json();text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
    }else{
-     response=await fetch(providers[provider].endpoint,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model,temperature:Number(body.temperature??0.2),messages,...(body.json?{response_format:{type:"json_object"}}:{})})});
+     const openAiMessages=messages.map(m=>({...m,content:Array.isArray(m.content)?m.content.map(p=>p.type==="image_url"&&typeof p.image_url==="string"?{...p,image_url:{url:p.image_url}}:p):m.content}));
+     response=await fetch(providers[provider].endpoint,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model,temperature:Number(body.temperature??0.2),messages:openAiMessages,...(body.json?{response_format:{type:"json_object"}}:{})})});
      if(!response.ok){text=await response.text();return json(502,{error:`Erreur IA ${response.status} : ${text.slice(0,240)}`});}
      const data=await response.json();text=data.choices?.[0]?.message?.content||"";
    }

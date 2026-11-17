@@ -51,7 +51,7 @@ function localSnapshot(store) {
       entry_date:String(x.date||""),journal:String(x.journal||""),reference:String(x.reference||""),
       is_reversed:!!x.reversed,reverse_of_client_uid:x.reverseOf==null?null:(reverseUid.get(Number(x.reverseOf))||null),
       lines:(x.lines||[]).map(l=>({account_code:String(l.account||""),label:String(l.label||""),third_name:String(l.third||""),debit:Number(l.debit)||0,credit:Number(l.credit)||0}))
-    }}]}))
+    }}]))
   };
   return records;
 }

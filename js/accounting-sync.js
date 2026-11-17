@@ -166,14 +166,6 @@ function saveShadow(companyId, records) {
   }
   localStorage.setItem(SHADOW_PREFIX+companyId,JSON.stringify(clean));
 }
-function localObject(records,kind,uid) {
-  if(kind==="settings")return records.settings.settings?.data||null;
-  return records[kind]?.[uid]?.data||null;
-}
-function remoteObject(records,kind,uid) {
-  if(kind==="settings")return records.settings.settings?.data||null;
-  return records[kind]?.[uid]?.data||null;
-}
 export async function syncAccounting(supabase, companyId, role) {
   if(running)throw new Error("Une synchronisation est déjà en cours sur cet appareil.");
   running=true;

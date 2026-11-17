@@ -1,6 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
-import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting } from "../js/accounting-sync.js";
+import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -549,6 +549,43 @@ test("instantané local : identifiants clients stables et secrets exclus", () =>
   assert.ok(!JSON.stringify(first).includes("NE_DOIT_PAS_SORTIR"));
   assert.ok(!JSON.stringify(first).includes("apiKey"));
 });
+test("validation sync : refuse les UUID clients dupliqués", () => {
+  const uid = "12121212-1212-4121-8121-121212121212", store = makeValidationStore();
+  store.thirds = [{ client_uid: uid, name: "Client A" }, { client_uid: uid, name: "Client B" }];
+  assert.ok(validateSyncStore(store).some(message => message.includes("Identifiant client en double")));
+});
+test("validation sync : refuse les numéros internes d'écriture dupliqués", () => {
+  const store = makeValidationStore(); store.entries = [makeValidEntry(1), makeValidEntry(1)];
+  assert.ok(validateSyncStore(store).some(message => message.includes("Numéro d'écriture en double")));
+});
+test("validation sync : bloque une écriture déséquilibrée", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[1].credit = 90; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("non équilibrée")));
+});
+test("validation sync : refuse un compte absent du plan comptable", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[0].account = "999999"; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("inconnu dans le plan")));
+});
+test("validation sync : refuse un tiers absent ou ambigu dans les lignes", () => {
+  const store = makeValidationStore(), entry = makeValidEntry(1); entry.lines[0].third = "Tiers fantôme"; store.entries = [entry];
+  assert.ok(validateSyncStore(store).some(message => message.includes("introuvable")));
+  store.thirds = [{ client_uid: "13131313-1313-4131-8131-131313131313", name: "Tiers fantôme" }, { client_uid: "14141414-1414-4141-8141-141414141414", name: "Tiers fantôme" }];
+  assert.ok(validateSyncStore(store).some(message => message.includes("ambigu")));
+});
+await testAsync("validation sync : aucune opération cloud si les données locales sont invalides", async () => {
+  const companyId = "company-invalid-before-push", store = makeSyncStore(), entry = makeValidEntry(1);
+  entry.lines[1].credit = 99; store.entries = [entry];
+  const storage = memoryStorage(); storage.setItem("mizane_v1", JSON.stringify(store)); seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId), previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Synchronisation bloquée/);
+    assert.equal(cloud.pushes, 0);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousStorage;
+  }
+});
+
 test("ordre des lots : écriture d'origine avant sa contrepassation", () => {
   const operations = [
     { entity_type: "entry", operation: "upsert", client_uid: reverseUid, data: { reverse_of_client_uid: sourceUid } },
@@ -584,6 +621,12 @@ function memoryStorage() {
     setItem: (key, value) => values.set(key, String(value)),
     removeItem: key => values.delete(key),
   };
+}
+function makeValidationStore() {
+  return { settings: { plan: "syscohada", customAccounts: [] }, thirds: [{ client_uid: "15151515-1515-4151-8151-151515151515", name: "Fournisseur Démo", type: "fournisseur" }], assets: [], entries: [], nextId: 2 };
+}
+function makeValidEntry(id = 1) {
+  return { client_uid: `16161616-1616-4161-8161-${String(id).padStart(12, "0")}`, id, date: "2026-02-01", journal: "ACH", reference: `ACH-${id}`, reversed: false, reverseOf: null, lines: [{ account: "601", label: "Achat", third: "Fournisseur Démo", debit: 125, credit: 0 }, { account: "401", label: "Fournisseur", third: "Fournisseur Démo", debit: 0, credit: 125 }] };
 }
 function makeSyncStore(thirds = []) {
   return { settings: { plan: "syscohada", customAccounts: [] }, thirds: structuredClone(thirds), assets: [], entries: [], nextId: 1 };

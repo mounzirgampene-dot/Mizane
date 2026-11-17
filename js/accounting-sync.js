@@ -141,11 +141,41 @@ function installRemote(store, kind, uid, remote, cloud) {
 function makeOperation(kind,uid,action,version,data) {
   return {entity_type:kind,operation:action,client_uid:kind==="settings"?undefined:uid,expected_sync_version:Number(version)||0,data:data||{}};
 }
+function orderOperations(operations) {
+  // Une écriture de contrepassation doit être envoyée après l'écriture d'origine
+  // lorsque les deux éléments font partie de la même synchronisation.
+  const entryOperations = new Map(
+    operations.filter(op => op.entity_type === "entry").map(op => [op.client_uid, op])
+  );
+  const ordered = [];
+  const visiting = new Set();
+  const visited = new Set();
+  const visit = op => {
+    const uid = op.client_uid;
+    if (visited.has(uid)) return;
+    if (visiting.has(uid)) throw new Error("Les liens de contrepassation contiennent une dépendance circulaire.");
+    visiting.add(uid);
+    const sourceUid = op.operation === "upsert" ? op.data?.reverse_of_client_uid : null;
+    if (sourceUid && entryOperations.has(sourceUid)) {
+      const source = entryOperations.get(sourceUid);
+      if (source.operation === "delete") {
+        throw new Error("Une contrepassation ne peut pas être synchronisée si son écriture d'origine est supprimée dans le même lot.");
+      }
+      visit(source);
+    }
+    visiting.delete(uid);
+    visited.add(uid);
+    ordered.push(op);
+  };
+  for (const op of entryOperations.values()) visit(op);
+  return operations.filter(op => op.entity_type !== "entry").concat(ordered);
+}
 async function pushBatches(supabase,companyId,operations) {
-  for(let i=0;i<operations.length;i+=100) {
+  const orderedOperations = orderOperations(operations);
+  for(let i=0;i<orderedOperations.length;i+=100) {
     const operationUid=uuid();
     const {data,error}=await supabase.functions.invoke("push-accounting-changes",{body:{
-      company_id:companyId,operation_uid:operationUid,operations:operations.slice(i,i+100)
+      company_id:companyId,operation_uid:operationUid,operations:orderedOperations.slice(i,i+100)
     }});
     if(error)throw await edgeError(error,"Envoi cloud impossible.");
     if(data?.conflict||data?.ok===false) {

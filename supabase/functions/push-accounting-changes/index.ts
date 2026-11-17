@@ -86,7 +86,8 @@ Deno.serve(async (request) => {
   });
   if (error) {
     if (error.code === "42501") return json(403, { error: "Accès comptable refusé." });
-    if (["22023", "23514", "23503", "22P02", "23505"].includes(error.code)) {
+    if (error.code === "23505") return json(409, { error: error.message, code: error.code });
+    if (["22023", "23514", "23503", "22P02"].includes(error.code)) {
       return json(422, { error: error.message, code: error.code });
     }
     console.error("push-accounting-changes RPC:", error.code, error.message);

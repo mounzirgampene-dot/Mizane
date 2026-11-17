@@ -588,7 +588,7 @@ function memoryStorage() {
 function makeSyncStore(thirds = []) {
   return { settings: { plan: "syscohada", customAccounts: [] }, thirds: structuredClone(thirds), assets: [], entries: [], nextId: 1 };
 }
-function makeCloud(companyId, thirds = []) {
+function makeCloud(companyId, thirds = [], options = {}) {
   const state = {
     company_id: companyId,
     settings: { settings: { plan: "syscohada" }, sync_version: 1 },
@@ -596,18 +596,42 @@ function makeCloud(companyId, thirds = []) {
     pagination: { has_more: false, next_offset: null },
   };
   let pushes = 0;
+  let failAfterApply = !!options.failAfterApply;
   const client = { functions: { invoke: async (name, { body }) => {
     if (name === "read-accounting") return { data: structuredClone(state), error: null };
     if (name === "push-accounting-changes") {
       pushes++;
       for (const op of body.operations) {
-        if (op.entity_type !== "third") continue;
-        const index = state.thirds.findIndex(x => x.client_uid === op.client_uid);
-        if (op.operation === "delete") { if (index >= 0) state.thirds.splice(index, 1); }
-        else {
-          const row = { client_uid: op.client_uid, name: op.data.name, third_type: op.data.third_type, phone: op.data.phone, email: op.data.email, sync_version: index >= 0 ? state.thirds[index].sync_version + 1 : 1 };
-          if (index >= 0) state.thirds[index] = row; else state.thirds.push(row);
+        if (op.entity_type === "third") {
+          const index = state.thirds.findIndex(x => x.client_uid === op.client_uid);
+          if (op.operation === "delete") { if (index >= 0) state.thirds.splice(index, 1); }
+          else {
+            const row = { client_uid: op.client_uid, name: op.data.name, third_type: op.data.third_type, phone: op.data.phone, email: op.data.email, sync_version: index >= 0 ? state.thirds[index].sync_version + 1 : 1 };
+            if (index >= 0) state.thirds[index] = row; else state.thirds.push(row);
+          }
+        } else if (op.entity_type === "entry") {
+          const index = state.entries.findIndex(x => x.client_uid === op.client_uid);
+          if (op.operation === "delete") { if (index >= 0) state.entries.splice(index, 1); }
+          else {
+            const source = op.data.reverse_of_client_uid
+              ? state.entries.find(x => x.client_uid === op.data.reverse_of_client_uid)
+              : null;
+            const row = {
+              id: index >= 0 ? state.entries[index].id : Math.max(0, ...state.entries.map(x => x.id)) + 1,
+              client_uid: op.client_uid, entry_date: op.data.entry_date, journal: op.data.journal,
+              reference: op.data.reference, is_reversed: !!op.data.is_reversed,
+              reverse_of_entry_id: source?.id ?? null,
+              lines: structuredClone(op.data.lines || []),
+              sync_version: index >= 0 ? state.entries[index].sync_version + 1 : 1,
+            };
+            if (index >= 0) state.entries[index] = row; else state.entries.push(row);
+          }
         }
+      }
+      if (options.afterApply) await options.afterApply({ state, body });
+      if (failAfterApply) {
+        failAfterApply = false;
+        return { data: null, error: { message: "Connexion interrompue après acceptation du lot" } };
       }
       return { data: { ok: true }, error: null };
     }
@@ -686,6 +710,117 @@ await testAsync("deux appareils : les modifications simultanées sont signalées
     assert.equal(cloud.pushes, pushCount, "aucun push ne doit être tenté après le conflit");
     assert.equal(cloud.state.thirds[0].name, "Nom modifié sur A");
     assert.equal(JSON.parse(deviceB.getItem("mizane_v1")).thirds[0].phone, "0611111111");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+
+await testAsync("suppression : un tiers supprimé sur un appareil disparaît sur l'autre", async () => {
+  const companyId = "company-delete-test";
+  const uid = "66666666-6666-4666-8666-666666666666";
+  const baseline = [{ client_uid: uid, name: "Client à supprimer", type: "client", phone: "", email: "" }];
+  const cloud = makeCloud(companyId, [{ client_uid: uid, name: "Client à supprimer", third_type: "client", phone: "", email: "", sync_version: 1 }]);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId, baseline);
+  seedShadow(deviceB, companyId, baseline);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceB;
+    deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore([])));
+    const pushed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pushed.pushed, 1);
+    assert.equal(cloud.state.thirds.length, 0);
+    globalThis.localStorage = deviceA;
+    const pulled = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pulled.pulled, 1);
+    assert.deepEqual(JSON.parse(deviceA.getItem("mizane_v1")).thirds, []);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("reprise : une réponse réseau perdue après acceptation ne duplique pas le tiers", async () => {
+  const companyId = "company-retry-test";
+  const uid = "77777777-7777-4777-8777-777777777777";
+  const cloud = makeCloud(companyId, [], { failAfterApply: true });
+  const storage = memoryStorage();
+  const store = makeSyncStore([{ client_uid: uid, name: "Client reprise", type: "client", phone: "", email: "" }]);
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Connexion interrompue/);
+    assert.equal(cloud.state.thirds.length, 1, "le cloud a accepté le lot avant la perte de réponse");
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds.length, 1, "les données locales restent présentes");
+    const resumed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(resumed.pushed, 0, "la reprise reconnaît que le cloud possède déjà la même version");
+    assert.equal(cloud.pushes, 1, "aucun second envoi n'est nécessaire");
+    assert.equal(cloud.state.thirds.length, 1, "aucun doublon n'est créé");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("écritures liées : l'origine est créée avant la contrepassation", async () => {
+  const companyId = "company-entries-test";
+  const source = "88888888-8888-4888-8888-888888888888";
+  const reversal = "99999999-9999-4999-8999-999999999999";
+  const cloud = makeCloud(companyId);
+  const storage = memoryStorage();
+  const store = makeSyncStore();
+  store.entries = [
+    { client_uid: source, id: 1, date: "2026-01-10", journal: "OD", reference: "ECR-001", reversed: false, reverseOf: null,
+      lines: [{ account: "601", label: "Charge", third: "", debit: 250, credit: 0 }, { account: "401", label: "Fournisseur", third: "", debit: 0, credit: 250 }] },
+    { client_uid: reversal, id: 2, date: "2026-01-11", journal: "OD", reference: "CONTRE-ECR-001", reversed: true, reverseOf: 1,
+      lines: [{ account: "601", label: "Annulation charge", third: "", debit: 0, credit: 250 }, { account: "401", label: "Annulation fournisseur", third: "", debit: 250, credit: 0 }] },
+  ];
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(result.pushed, 2);
+    assert.equal(cloud.state.entries.length, 2);
+    const original = cloud.state.entries.find(x => x.client_uid === source);
+    const contra = cloud.state.entries.find(x => x.client_uid === reversal);
+    assert.ok(original && contra);
+    assert.equal(contra.reverse_of_entry_id, original.id, "la référence cloud de la contrepassation pointe vers l'origine");
+    assert.equal(contra.is_reversed, true);
+    for (const entry of cloud.state.entries) {
+      const debit = entry.lines.reduce((sum, line) => sum + line.debit, 0);
+      const credit = entry.lines.reduce((sum, line) => sum + line.credit, 0);
+      assert.equal(debit, credit, "chaque écriture reste équilibrée");
+    }
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("modification locale pendant l'envoi : la synchronisation s'arrête sans écraser le stockage", async () => {
+  const companyId = "company-concurrent-local-test";
+  const uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const storage = memoryStorage();
+  const store = makeSyncStore([{ client_uid: uid, name: "Client envoyé", type: "client", phone: "", email: "" }]);
+  storage.setItem("mizane_v1", JSON.stringify(store));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId, [], {
+    afterApply: async () => {
+      const changed = makeSyncStore([{ client_uid: uid, name: "Modification locale concurrente", type: "client", phone: "", email: "" }]);
+      storage.setItem("mizane_v1", JSON.stringify(changed));
+    },
+  });
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /modifiée dans un autre onglet/);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Modification locale concurrente");
+    assert.equal(cloud.state.thirds[0].name, "Client envoyé");
   } finally {
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;

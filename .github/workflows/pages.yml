@@ -32,7 +32,8 @@ jobs:
         run: npm test
 
   deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # La publication est volontaire : elle ne se lance que par déclenchement manuel sur main.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     environment:

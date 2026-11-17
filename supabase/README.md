@@ -338,3 +338,6 @@ La lecture cloud renvoie les comptes personnalisés depuis leur table versionné
 - détection d'une modification simultanée différente, en conservant la valeur locale.
 
 Ces tests valident le moteur client et ses règles de comparaison. Ils ne remplacent pas encore un essai navigateur connecté à un compte réel. La synchronisation est actuellement déclenchée manuellement par le bouton du portail ; aucune synchronisation automatique en arrière-plan n'est activée.
+
+
+L'application comptable locale écoute également les événements `storage` : lorsqu'une synchronisation du portail met à jour `mizane_v1` dans un autre onglet, l'état en mémoire de l'application est rechargé avant la prochaine sauvegarde. Le client compare en outre la valeur locale au début et à la fin de l'opération ; si un autre onglet a modifié les données pendant l'échange réseau, il interrompt la synchronisation au lieu d'écraser ces modifications.

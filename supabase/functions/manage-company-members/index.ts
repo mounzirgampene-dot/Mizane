@@ -154,21 +154,21 @@ Deno.serve(async (request) => {
       if (scope === "mine") query = query.eq("actor_user_id", actor.id);
       const { data: logs, error } = await query;
       if (error) return fail(500, "Impossible de charger l’historique de l’entreprise.");
-      const actorIds = [...new Set((logs ?? []).map((row) => row.actor_user_id).filter(Boolean))];
+      const actorIds = [...new Set((logs ?? []).map((row) => row.actor_user_id).filter((id): id is string => Boolean(id)))];
       const { data: profiles, error: profilesError } = actorIds.length
         ? await adminClient.from("profiles").select("id,display_name").in("id", actorIds)
         : { data: [], error: null };
       if (profilesError) return fail(500, "Impossible de charger les noms des collaborateurs.");
       const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
-      const actors = await Promise.all(actorIds.map(async (id) => {
+      const actors: Array<[string, string | null]> = await Promise.all(actorIds.map(async (id) => {
         const { data } = await adminClient.auth.admin.getUserById(id);
-        return [id, data.user?.email ?? null];
+        return [id, data.user?.email ?? null] as [string, string | null];
       }));
       const emailById = new Map(actors);
       return json(200, { logs: (logs ?? []).map((row) => ({
         ...row,
-        actor_name: profileById.get(row.actor_user_id)?.display_name ?? null,
-        actor_email: emailById.get(row.actor_user_id) ?? null,
+        actor_name: row.actor_user_id ? profileById.get(row.actor_user_id)?.display_name ?? null : null,
+        actor_email: row.actor_user_id ? emailById.get(row.actor_user_id) ?? null : null,
       })) });
     }
     if (action === "list_company_members") {

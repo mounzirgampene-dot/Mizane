@@ -66,8 +66,18 @@ Deno.serve(async (req)=>{
    if(provider==="gemini"){
      const contents=messages.filter(m=>m.role!=="system").map(m=>({role:m.role==="assistant"?"model":"user",parts:(typeof m.content==="string"?[{text:m.content}]:(m.content||[]).map(p=>p.type==="text"?{text:p.text}:{inline_data:{mime_type:(p.image_url?.url||p.image_url||"").match(/^data:([^;]+);/)?.[1]||"image/jpeg",data:(p.image_url?.url||p.image_url||"").split(",")[1]||""}}))}));
      const system=messages.filter(m=>m.role==="system").map(m=>typeof m.content==="string"?m.content:"").join("\n");
-     response=await fetch(`${providers.gemini.endpoint}/models/${model}:generateContent`,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},signal:AbortSignal.timeout(25000),body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,generationConfig:{temperature:Number(body.temperature??0.2),...(body.json?{response_mime_type:"application/json"}:{})}})});
-     if(!response.ok){text=await response.text();return json(502,{error:`Erreur Gemini ${response.status} : ${text.slice(0,240)}`});}
+     const geminiPayload=JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,generationConfig:{temperature:Number(body.temperature??0.2),...(body.json?{response_mime_type:"application/json"}:{})}});
+     for(let attempt=0;attempt<3;attempt++){
+       response=await fetch(`${providers.gemini.endpoint}/models/${model}:generateContent`,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},signal:AbortSignal.timeout(25000),body:geminiPayload});
+       if(response.ok)break;
+       const retryable=[500,502,503,504].includes(response.status);
+       if(!retryable||attempt===2){
+         text=await response.text();
+         if(response.status===503)return new Response(JSON.stringify({error:"Gemini est temporairement saturé. MIZANE a effectué plusieurs tentatives ; réessayez dans quelques instants.",retryable:true,provider,model}),{status:503,headers:{...cors,"Content-Type":"application/json; charset=utf-8","Retry-After":"3"}});
+         return json(502,{error:`Erreur Gemini ${response.status} : ${text.slice(0,240)}`});
+       }
+       await new Promise(resolve=>setTimeout(resolve,1000*(2**attempt)+Math.floor(Math.random()*500)));
+     }
      const data=await response.json();text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
    }else{
      const openAiMessages=messages.map(m=>({...m,content:Array.isArray(m.content)?m.content.map(p=>p.type==="image_url"&&typeof p.image_url==="string"?{...p,image_url:{url:p.image_url}}:p):m.content}));

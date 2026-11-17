@@ -328,3 +328,5 @@ export async function syncAccounting(supabase, companyId, role) {
     return {pushed:operations.length,pulled,conflicts:0,initialized:false};
   } finally { running=false; }
 }
+
+export { cleanSecrets, fingerprint, localSnapshot, orderOperations };

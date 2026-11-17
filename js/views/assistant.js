@@ -5,7 +5,7 @@ import { COUNTRIES, getCountry } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
-  configureCompanyAI, refreshCompanyAIStatus,
+  configureCompanyAI, deleteCompanyAI, refreshCompanyAIStatus,
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
 import { LANGS } from "../i18n.js";
@@ -179,33 +179,14 @@ export function viewSettings() {
       <p class="muted" id="s-vat"></p>
     </div>
 
-    <div class="card">
-      <h2>🤖 Assistant IA</h2>
-      <div class="row">
-        <div><label>Fournisseur</label>
-          <select id="s-aiprovider">
-            ${Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}" ${pid === id ? "selected" : ""}>${p.label} — gratuit</option>`).join("")}
-          </select>
-        </div>
-        <div><label>Clé API</label><input id="s-aikey" type="password" placeholder="Collez votre clé API" value="" ${s.aiKeyEnc ? "data-enc=\"1\"" : ""}></div>
-        ${pid === "custom"
-          ? `<div><label>Modèle</label><input id="s-aimodel-text" value="${esc(s.aiModel || "")}" placeholder="nom-du-modèle"></div>`
-          : `<div><label>Modèle</label>
-          <select id="s-aimodel">
-            ${(PROVIDERS[pid].models.includes(s.aiModel) ? PROVIDERS[pid].models : [s.aiModel, ...PROVIDERS[pid].models]).map((m) => `<option ${m === s.aiModel ? "selected" : ""}>${m}</option>`).join("")}
-          </select>
-        </div>`}
-      </div>
-      <div class="row" ${pid === "custom" ? "" : "hidden"}>
-        <div><label>Endpoint (compatible OpenAI)</label><input id="s-aiendpoint" placeholder="https://…/v1/chat/completions" value="${esc(s.aiEndpoint || "")}"></div>
-      </div>
-      <p class="muted" id="s-aikey-status">La clé sera conservée dans le coffre sécurisé du serveur, séparément pour chaque entreprise. Elle ne sera pas enregistrée dans la sauvegarde locale.</p>
+    <div class="card" id="ai-settings-card">
+      <h2>Assistant IA — fournisseurs et clés API</h2>
+      <div id="ai-settings-panel"><p class="muted">Vérification des autorisations de votre entreprise…</p></div>
     </div>
 
     <div class="card">
       <h2>🔐 Confidentialité</h2>
-      <p class="muted">Toutes vos données comptables restent sur votre appareil (stockage local). Rien n'est envoyé sur Internet, sauf : les textes/photos que vous soumettez à l'assistant IA (envoyés au fournisseur choisi dans les Paramètres : Mistral, Groq ou Google), et les sauvegardes que vous exportez vous-même.</p>
-      <p class="muted">La clé API est chiffrée localement (AES-GCM, Web Crypto) avant d'être stockée. Attention : ce chiffrement protège contre une lecture directe du stockage, mais si votre appareil est compromis (logiciel malveillant, accès physique non verrouillé), la clé pourrait être récupérée. Utilisez le verrouillage de l'appareil et ne le partagez pas.</p>
+      <p class="muted">Les textes et photos envoyés à l'assistant sont transmis au fournisseur IA sélectionné. La clé API est conservée côté serveur dans Supabase Vault, séparément pour chaque entreprise. Elle n'est pas enregistrée dans le stockage local ni dans les sauvegardes comptables.</p>
     </div>
 
     <div class="card">
@@ -269,34 +250,80 @@ export function viewSettings() {
     router.render();
   });
 
-  document.getElementById("s-aikey").addEventListener("change", async (e) => {
-    const value = e.target.value.trim();
-    if (!value) return;
-    const status = document.getElementById("s-aikey-status");
-    status.textContent = "Enregistrement sécurisé en cours…";
-    try {
-      await configureCompanyAI(s.aiProvider || pid, value);
-      s.aiKey = ""; s.aiKeyEnc = "";
-      saveStore(store);
-      status.textContent = "✓ Clé enregistrée dans Supabase Vault pour l’entreprise active.";
-      toast("✓ Clé IA enregistrée de manière sécurisée.");
-    } catch (err) { status.textContent = err.message; toast(err.message); }
-    finally { e.target.value = ""; }
-  });
-  document.getElementById("s-aiprovider").addEventListener("change", (e) => {
-    const id = e.target.value;
-    s.aiProvider = id;
-    if (id !== "custom") {
-      s.aiEndpoint = PROVIDERS[id].endpoint;
-      s.aiModel = PROVIDERS[id].models.includes(s.aiModel) ? s.aiModel : PROVIDERS[id].models[0];
+  const aiPanel = document.getElementById("ai-settings-panel");
+  const providerLinks = {
+    groq: "https://console.groq.com/keys",
+    gemini: "https://aistudio.google.com/apikey",
+    mistral: "https://console.mistral.ai/api-keys",
+  };
+  const providerNames = { groq: "Groq", gemini: "Google Gemini", mistral: "Mistral AI" };
+  const renderAISettings = async () => {
+    aiPanel.innerHTML = '<p class="muted">Vérification des autorisations de votre entreprise…</p>';
+    let access;
+    try { access = await refreshCompanyAIStatus(pid); }
+    catch (err) {
+      aiPanel.innerHTML = '<p class="errors">' + esc(err.message) + '</p>';
+      return;
     }
-    saveStore(store);
-    toast(id === "custom" ? "Fournisseur personnalisé : saisissez l'endpoint." : "Fournisseur : " + PROVIDERS[id].label + ".");
-    router.render();
-  });
-  document.getElementById("s-aimodel")?.addEventListener("change", (e) => { s.aiModel = e.target.value; saveStore(store); });
-  document.getElementById("s-aimodel-text")?.addEventListener("change", (e) => { s.aiModel = e.target.value.trim(); saveStore(store); });
-  document.getElementById("s-aiendpoint")?.addEventListener("change", (e) => { s.aiEndpoint = e.target.value.trim(); saveStore(store); toast("✓ Endpoint enregistré."); });
+    if (!["admin", "accountant"].includes(access.role)) {
+      aiPanel.innerHTML = '<p class="warn">La gestion des clés IA est réservée aux administrateurs et aux comptables de cette entreprise.</p>';
+      return;
+    }
+    const selected = s.aiProvider || pid;
+    const links = Object.entries(providerLinks).map(([id, url]) =>
+      '<a class="button secondary" href="' + url + '" target="_blank" rel="noopener noreferrer">Créer une clé ' + providerNames[id] + '</a>'
+    ).join(" ");
+    aiPanel.innerHTML = `
+      <p class="muted">Accès autorisé : ${access.role === "admin" ? "Administrateur" : "Comptable"}. Choisissez un fournisseur, ouvrez son portail officiel pour créer gratuitement une clé selon ses quotas, puis revenez ici pour l'enregistrer.</p>
+      <div class="row">
+        <div><label>Fournisseur IA</label><select id="s-aiprovider">${Object.entries(PROVIDERS).map(([id,p]) => `<option value="${id}" ${selected===id?"selected":""}>${p.label}</option>`).join("")}</select></div>
+        <div><label>Modèle</label><select id="s-aimodel">${PROVIDERS[selected].models.map(m => `<option value="${m}" ${m===(s.aiModel||PROVIDERS[selected].models[0])?"selected":""}>${m}</option>`).join("")}</select></div>
+      </div>
+      <p class="actions">${links}</p>
+      <label for="s-aikey">Clé API fournie par le fournisseur</label>
+      <input id="s-aikey" type="password" autocomplete="off" placeholder="Collez ici votre clé API">
+      <div class="actions">
+        <button id="s-ai-save">Enregistrer la clé dans MIZANE</button>
+        <button class="secondary" id="s-ai-test">Tester la connexion</button>
+        <button class="danger" id="s-ai-delete">Supprimer la clé</button>
+      </div>
+      <p id="s-aikey-status" class="muted">${access.providers.includes(selected) ? "Une clé est déjà configurée pour ce fournisseur." : "Aucune clé enregistrée pour ce fournisseur."} La clé ne sera jamais affichée à nouveau.</p>
+    `;
+    document.getElementById("s-aiprovider").addEventListener("change", e => {
+      s.aiProvider=e.target.value;
+      s.aiModel=PROVIDERS[s.aiProvider].models[0];
+      s.aiEndpoint=PROVIDERS[s.aiProvider].endpoint;
+      saveStore(store); renderAISettings();
+    });
+    document.getElementById("s-aimodel").addEventListener("change", e => { s.aiModel=e.target.value; saveStore(store); });
+    document.getElementById("s-ai-save").addEventListener("click", async () => {
+      const input=document.getElementById("s-aikey"), value=input.value.trim(), status=document.getElementById("s-aikey-status");
+      if(!value) { status.textContent="Collez d'abord la clé API."; return; }
+      status.textContent="Enregistrement sécurisé en cours…";
+      try {
+        await configureCompanyAI(selected,value);
+        input.value="";
+        status.textContent="Clé enregistrée dans le coffre sécurisé de cette entreprise.";
+        toast("Clé IA enregistrée.");
+        renderAISettings();
+      } catch(err) { status.textContent=err.message; }
+    });
+    document.getElementById("s-ai-test").addEventListener("click", async () => {
+      const status=document.getElementById("s-aikey-status");
+      status.textContent="Test de connexion en cours…";
+      try {
+        const reply=await chat(store,[],"Réponds uniquement par : Connexion MIZANE réussie.");
+        status.textContent="Connexion réussie : "+reply.slice(0,160);
+      } catch(err) { status.textContent="Échec du test : "+err.message; }
+    });
+    document.getElementById("s-ai-delete").addEventListener("click", async () => {
+      if(!confirm("Supprimer la clé API de "+providerNames[selected]+" pour cette entreprise ?")) return;
+      const status=document.getElementById("s-aikey-status");
+      try { await deleteCompanyAI(selected); status.textContent="Clé supprimée."; toast("Clé IA supprimée."); renderAISettings(); }
+      catch(err) { status.textContent=err.message; }
+    });
+  };
+  renderAISettings();
 
   document.getElementById("ca-add").addEventListener("click", () => {
     const code = document.getElementById("ca-code").value.trim();

@@ -646,10 +646,16 @@ function makeCloud(companyId, thirds = [], options = {}) {
       if (options.paginateEntries) {
         const offset = Number(body.offset) || 0;
         const limit = Number(body.limit) || 100;
+        response.custom_accounts = state.custom_accounts.slice(offset, offset + limit);
+        response.thirds = state.thirds.slice(offset, offset + limit);
+        response.assets = state.assets.slice(offset, offset + limit);
         response.entries = state.entries.slice(offset, offset + limit);
+        const hasMore = [
+          state.custom_accounts, state.thirds, state.assets, state.entries,
+        ].some(items => offset + items.slice(offset, offset + limit).length < items.length);
         response.pagination = {
-          has_more: offset + response.entries.length < state.entries.length,
-          next_offset: offset + response.entries.length < state.entries.length ? offset + response.entries.length : null,
+          has_more: hasMore,
+          next_offset: hasMore ? offset + limit : null,
         };
       }
       return { data: response, error: null };
@@ -951,6 +957,48 @@ await testAsync("pagination cloud : 250 écritures sont toutes récupérées sur
   }
 });
 
+
+await testAsync("pagination cloud : comptes, tiers et immobilisations dépassant 100 éléments sont tous récupérés", async () => {
+  const companyId = "company-pagination-collections-test";
+  const customAccounts = Array.from({ length: 250 }, (_, index) => ({
+    client_uid: `e0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    code: String(9000 + index), label: `Compte personnalisé ${index + 1}`,
+    account_type: "expense", sync_version: 1,
+  }));
+  const thirds = Array.from({ length: 250 }, (_, index) => ({
+    client_uid: `f0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    name: `Tiers pagination ${index + 1}`, third_type: "client",
+    phone: "", email: "", sync_version: 1,
+  }));
+  const assets = Array.from({ length: 250 }, (_, index) => ({
+    client_uid: `a1000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    name: `Immobilisation ${index + 1}`, account_code: "2455", amount: 1000,
+    years: 5, method: "lineaire", service_date: "2026-01-01", amortized: 0, sync_version: 1,
+  }));
+  const cloud = makeCloud(companyId, [], { paginateEntries: true });
+  cloud.state.custom_accounts = structuredClone(customAccounts);
+  cloud.state.thirds = structuredClone(thirds);
+  cloud.state.assets = structuredClone(assets);
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore()));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await syncAccounting(cloud.client, companyId, "admin");
+    const recovered = JSON.parse(storage.getItem("mizane_v1"));
+    assert.equal(result.pulled, 750);
+    assert.equal(recovered.settings.customAccounts.length, 250, "tous les comptes personnalisés sont récupérés");
+    assert.equal(recovered.thirds.length, 250, "tous les tiers sont récupérés");
+    assert.equal(recovered.assets.length, 250, "toutes les immobilisations sont récupérées");
+    assert.equal(recovered.settings.customAccounts[249].code, "9249");
+    assert.equal(recovered.thirds[249].name, "Tiers pagination 250");
+    assert.equal(recovered.assets[249].name, "Immobilisation 250");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
 
 await testAsync("séparation des entreprises : une réponse cloud d'une autre entreprise bloque la synchronisation", async () => {
   const companyId = "company-alpha-test";

@@ -174,7 +174,7 @@ root.addEventListener("click",async(e)=>{
    try{
     const result=await syncAccounting(supabase,activeCompanyId,memberships.find(m=>m.company.id===activeCompanyId)?.role);
     await refresh();
-    if(result.initialized)toast("Base de comparaison initialisée. Les prochaines synchronisations transféreront les changements.");
+    if(result.initialized)toast("Première synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
     else toast("Synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
    }finally{busy(button,false)}
    return;

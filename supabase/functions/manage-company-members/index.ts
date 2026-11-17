@@ -30,8 +30,11 @@ const makeToken = () => {
 
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
+  const isAllowedOrigin = (value: string) =>
+    allowedOrigins.has(value) ||
+    /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(value);
   const corsHeaders = {
-    ...(origin && allowedOrigins.has(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
+    ...(origin && isAllowedOrigin(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
     "Vary": "Origin",
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -112,6 +115,20 @@ Deno.serve(async (request) => {
   if (membershipError) return fail(500, "Impossible de vérifier les droits.");
   if (!actorMembership || actorMembership.status !== "active" || actorMembership.role !== "admin") {
     return fail(403, "Seul un administrateur actif de cette entreprise peut effectuer cette action.");
+  }
+
+  if (action === "delete_company") {
+    const { data: result, error } = await adminClient.rpc("mizane_delete_company", {
+      p_company_id: companyId,
+      p_actor_user_id: actor.id,
+    });
+    if (error) {
+      if (error.code === "42501") return fail(403, "Seul un administrateur actif peut supprimer cette entreprise.");
+      if (error.code === "P0002") return fail(404, "Entreprise introuvable.");
+      console.error("mizane_delete_company:", error.message);
+      return fail(500, "Impossible de supprimer cette entreprise. Aucune autre entreprise n'a été modifiée.");
+    }
+    return json(200, { deleted: true, company_name: result?.company_name ?? null });
   }
 
   const audit = async (event: string, entityType: string, entityId: string, details = {}) => {

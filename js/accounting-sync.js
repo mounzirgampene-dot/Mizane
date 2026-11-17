@@ -43,7 +43,7 @@ function localSnapshot(store) {
   delete settings.customAccounts;
   const reverseUid = new Map((store.entries||[]).map(e=>[Number(e.id),e.client_uid]));
   const records = {
-    settings: { "settings": { data: settings, next_entry_id: Number(store.nextId)||1 } },
+    settings: { "settings": { data: { settings, next_entry_id: Number(store.nextId)||1 } } },
     custom_account: Object.fromEntries((store.settings.customAccounts||[]).map(x=>[x.client_uid,{data:{code:String(x.code||""),label:String(x.label||""),account_type:String(x.type||"")}}])),
     third: Object.fromEntries((store.thirds||[]).map(x=>[x.client_uid,{data:{name:String(x.name||""),third_type:String(x.type||"autre"),phone:String(x.phone||""),email:String(x.email||"")}}])),
     asset: Object.fromEntries((store.assets||[]).map(x=>[x.client_uid,{data:{name:String(x.name||""),account_code:String(x.account||""),amount:Number(x.amount)||0,years:Number(x.years)||0,method:String(x.method||"lineaire"),service_date:String(x.date||""),amortized:Number(x.amortized)||0}}])),
@@ -85,7 +85,7 @@ function remoteSnapshot(cloud, store) {
     nextIds.set(e.client_uid,id);
   }
   const out={settings:{},custom_account:{},third:{},asset:{},entry:{}};
-  if(cloud.settings)out.settings.settings={data:cleanSecrets(cloud.settings.settings||{}),next_entry_id:Number(cloud.settings.next_entry_id)||1,version:Number(cloud.settings.sync_version)||1};
+  if(cloud.settings)out.settings.settings={data:{settings:cleanSecrets(cloud.settings.settings||{}),next_entry_id:Number(cloud.settings.next_entry_id)||1},version:Number(cloud.settings.sync_version)||1};
   for(const x of cloud.custom_accounts||[])out.custom_account[x.client_uid]={data:{code:x.code,label:x.label,account_type:x.account_type},version:Number(x.sync_version)||1};
   for(const x of cloud.thirds||[])out.third[x.client_uid]={data:{name:x.name,third_type:x.third_type,phone:x.phone||"",email:x.email||""},version:Number(x.sync_version)||1};
   for(const x of cloud.assets||[])out.asset[x.client_uid]={data:{name:x.name,account_code:x.account_code,amount:Number(x.amount)||0,years:Number(x.years)||0,method:x.method||"lineaire",service_date:x.service_date,amortized:Number(x.amortized)||0},version:Number(x.sync_version)||1};
@@ -102,8 +102,8 @@ function installRemote(store, kind, uid, remote, cloud) {
     if(!remote){return;}
     const localSecrets={};
     for(const [k,v] of Object.entries(store.settings||{})) if(/^(aiKey|aiKeyEnc|apiKey|apiKeyEnc|providerApiKey|providerApiKeyEnc)$/i.test(k))localSecrets[k]=v;
-    store.settings={...clone(remote.data),...localSecrets,customAccounts:store.settings.customAccounts||[]};
-    store.nextId=Math.max(Number(store.nextId)||1,Number(remote.next_entry_id)||1);
+    store.settings={...clone(remote.data.settings||{}),...localSecrets,customAccounts:store.settings.customAccounts||[]};
+    store.nextId=Math.max(Number(store.nextId)||1,Number(remote.data.next_entry_id)||1);
     return;
   }
   const map={custom_account:store.settings.customAccounts,third:store.thirds,asset:store.assets,entry:store.entries};
@@ -158,7 +158,7 @@ function saveShadow(companyId, records) {
   localStorage.setItem(SHADOW_PREFIX+companyId,JSON.stringify(clean));
 }
 function localObject(records,kind,uid) {
-  if(kind==="settings")return records.settings.settings||null;
+  if(kind==="settings")return records.settings.settings?.data||null;
   return records[kind]?.[uid]?.data||null;
 }
 function remoteObject(records,kind,uid) {

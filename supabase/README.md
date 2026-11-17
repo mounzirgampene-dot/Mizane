@@ -320,3 +320,16 @@ Les tests se sont terminés sans erreur et les transactions ont été annulées.
 Ce moteur serveur est en place, mais le navigateur n'est pas encore raccordé au push/pull incrémental. Il ne faut donc pas présenter la synchronisation multi-appareils comme opérationnelle : le pont local, la récupération des changements cloud, la gestion des conflits dans l'interface et les essais navigateur restent à réaliser. L'assistant IA SaaS n'est pas encore connecté à ces données.
 
 Le conseiller de sécurité a également signalé une table `public.accounting_sync_operations` vide, avec RLS activée et aucune politique ; elle refuse donc les accès via RLS. Cette table n'est pas utilisée par le nouveau RPC, qui utilise la table privée. Les alertes préexistantes concernant `create_company` et la protection des mots de passe compromis restent à traiter avant production.
+
+
+## Moteur d'écriture incrémentale — 17 novembre 2026
+
+La migration `20261117092000_accounting_incremental_write_engine.sql` ajoute le RPC `push_accounting_changes` et le registre privé d'idempotence `accounting_sync_operations`. L'Edge Function `push-accounting-changes` exige un JWT valide, vérifie l'appartenance active et le rôle `admin` ou `accountant`, puis appelle le RPC avec l'identité Auth vérifiée.
+
+Le protocole accepte des lots de 1 à 100 opérations et prend en charge les entités `settings`, `custom_account`, `third`, `asset` et `entry`. Chaque opération porte un `client_uid` (sauf les paramètres), un `expected_sync_version`, un type `upsert` ou `delete` et les données de l'entité. Chaque lot porte un `operation_uid` UUID stable : le rejeu du même lot renvoie le résultat enregistré, sans appliquer deux fois les modifications.
+
+Le serveur sérialise les lots d'une entreprise, vérifie toutes les versions avant toute écriture et renvoie un résultat de conflit sans appliquer le lot si une version est périmée. Les écritures et leurs lignes sont traitées dans la même transaction ; la partie double, les journaux, les comptes, les montants et les références de contrepassation sont contrôlés. Les suppressions physiques génèrent des tombstones via les déclencheurs du journal. Toute erreur SQL annule le lot complet.
+
+Le registre d'idempotence n'est pas lisible par les utilisateurs authentifiés : RLS est activée et forcée, aucun accès n'est accordé à `anon` ou `authenticated`, et seuls les appels serveur utilisent `service_role`. Le RPC recontrôle lui-même l'identité et le rôle transmis.
+
+**Limite actuelle :** ce moteur fournit l'API serveur de push, mais le client local n'est pas encore raccordé à ce protocole. La synchronisation bidirectionnelle, le rapprochement automatique des conflits et l'assistant IA SaaS ne sont donc pas encore activés. Les tests exécutés sur DEV utilisent des entreprises temporaires et sont annulés par rollback ; aucune donnée comptable réelle n'a été transférée.

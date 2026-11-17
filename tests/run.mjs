@@ -574,5 +574,125 @@ test("ordre des lots : contrepassation et suppression de l'origine refusées ens
   ]), /écriture d'origine est supprimée/);
 });
 
+
+async function testAsync(name, fn) {
+  try { await fn(); passed++; console.log("  ✓ " + name); }
+  catch (e) { failed++; console.error("  ✗ " + name + "\\n    " + e.message); }
+}
+function memoryStorage() {
+  const values = new Map();
+  return {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+  };
+}
+function makeSyncStore(thirds = []) {
+  return { settings: { plan: "syscohada", customAccounts: [] }, thirds: structuredClone(thirds), assets: [], entries: [], nextId: 1 };
+}
+function makeCloud(companyId, thirds = []) {
+  const state = {
+    company_id: companyId,
+    settings: { settings: { plan: "syscohada" }, sync_version: 1 },
+    custom_accounts: [], thirds: structuredClone(thirds), assets: [], entries: [],
+    pagination: { has_more: false, next_offset: null },
+  };
+  let pushes = 0;
+  const client = { functions: { invoke: async (name, { body }) => {
+    if (name === "read-accounting") return { data: structuredClone(state), error: null };
+    if (name === "push-accounting-changes") {
+      pushes++;
+      for (const op of body.operations) {
+        if (op.entity_type !== "third") continue;
+        const index = state.thirds.findIndex(x => x.client_uid === op.client_uid);
+        if (op.operation === "delete") { if (index >= 0) state.thirds.splice(index, 1); }
+        else {
+          const row = { client_uid: op.client_uid, name: op.data.name, third_type: op.data.third_type, phone: op.data.phone, email: op.data.email, sync_version: index >= 0 ? state.thirds[index].sync_version + 1 : 1 };
+          if (index >= 0) state.thirds[index] = row; else state.thirds.push(row);
+        }
+      }
+      return { data: { ok: true }, error: null };
+    }
+    throw new Error("Fonction cloud inattendue : " + name);
+  } } };
+  return { state, client, get pushes() { return pushes; } };
+}
+function seedShadow(storage, companyId, thirdRecords = []) {
+  const data = {
+    settings: { settings: { plan: "syscohada" } },
+    custom_account: {}, third: {}, asset: {}, entry: {},
+  };
+  for (const third of thirdRecords) {
+    data.third[third.client_uid] = { data: {
+      name: third.name, third_type: third.type, phone: third.phone || "", email: third.email || "",
+    } };
+  }
+  const shadow = {};
+  for (const kind of ["settings", "custom_account", "third", "asset", "entry"]) {
+    shadow[kind] = {};
+    for (const [uid, record] of Object.entries(data[kind])) {
+      shadow[kind][uid] = { hash: fingerprint(record.data), version: 1 };
+    }
+  }
+  storage.setItem("mizane_sync_shadow_v1:" + companyId, JSON.stringify(shadow));
+}
+await testAsync("deux appareils : une modification locale est envoyée puis récupérée", async () => {
+  const companyId = "company-sync-test";
+  const uid = "44444444-4444-4444-8444-444444444444";
+  const baseline = [];
+  const cloud = makeCloud(companyId);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId);
+  seedShadow(deviceB, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceB;
+    const changed = makeSyncStore([{ client_uid: uid, name: "Client ajouté sur B", type: "client", phone: "0600000000", email: "" }]);
+    deviceB.setItem("mizane_v1", JSON.stringify(changed));
+    const pushed = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pushed.pushed, 1);
+    assert.equal(cloud.state.thirds.length, 1);
+    globalThis.localStorage = deviceA;
+    const pulled = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(pulled.pulled, 1);
+    const recovered = JSON.parse(deviceA.getItem("mizane_v1"));
+    assert.equal(recovered.thirds[0].name, "Client ajouté sur B");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("deux appareils : les modifications simultanées sont signalées sans écrasement", async () => {
+  const companyId = "company-conflict-test";
+  const uid = "55555555-5555-4555-8555-555555555555";
+  const baseline = [{ client_uid: uid, name: "Client initial", type: "client", phone: "0600000000", email: "" }];
+  const cloud = makeCloud(companyId, [{ client_uid: uid, name: "Client initial", third_type: "client", phone: "0600000000", email: "", sync_version: 1 }]);
+  const deviceA = memoryStorage(), deviceB = memoryStorage();
+  deviceA.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  deviceB.setItem("mizane_v1", JSON.stringify(makeSyncStore(baseline)));
+  seedShadow(deviceA, companyId, baseline);
+  seedShadow(deviceB, companyId, baseline);
+  const previousStorage = globalThis.localStorage;
+  try {
+    const editedA = makeSyncStore([{ ...baseline[0], name: "Nom modifié sur A" }]);
+    globalThis.localStorage = deviceA;
+    deviceA.setItem("mizane_v1", JSON.stringify(editedA));
+    await syncAccounting(cloud.client, companyId, "admin");
+    const pushCount = cloud.pushes;
+    const editedB = makeSyncStore([{ ...baseline[0], phone: "0611111111" }]);
+    globalThis.localStorage = deviceB;
+    deviceB.setItem("mizane_v1", JSON.stringify(editedB));
+    await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /Conflit simultané détecté/);
+    assert.equal(cloud.pushes, pushCount, "aucun push ne doit être tenté après le conflit");
+    assert.equal(cloud.state.thirds[0].name, "Nom modifié sur A");
+    assert.equal(JSON.parse(deviceB.getItem("mizane_v1")).thirds[0].phone, "0611111111");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

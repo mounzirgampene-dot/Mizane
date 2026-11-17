@@ -1,5 +1,7 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
+import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -522,7 +524,8 @@ test("i18n : mêmes clés pour toutes les langues", async () => {
 
 
 console.log("— Synchronisation comptable —");
-const { cleanSecrets, fingerprint, localSnapshot, orderOperations } = await import("../js/accounting-sync.js");
+const syncModuleUrl = pathToFileURL(resolve("js/accounting-sync.js")).href;
+const { cleanSecrets, fingerprint, localSnapshot, orderOperations } = await import(syncModuleUrl);
 const sourceUid = "11111111-1111-4111-8111-111111111111";
 const reverseUid = "22222222-2222-4222-8222-222222222222";
 test("nettoyage des secrets : clés sensibles supprimées récursivement", () => {

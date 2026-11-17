@@ -51,7 +51,7 @@ function dashboardView(){
 async function importAccountingSnapshot(button){
  const active=memberships.find(m=>m.company.id===activeCompanyId);
  if(!active||!["admin","accountant"].includes(active.role))throw new Error("Droits administrateur ou comptable requis.");
- const raw=localStorage.getItem("mizane_v1");
+ let raw=localStorage.getItem("mizane_v1");
  if(!raw)throw new Error("Aucune comptabilité locale n'a été trouvée sur cet appareil.");
  let snapshot;
  try{snapshot=JSON.parse(raw)}catch{throw new Error("Les données comptables locales sont illisibles. Exportez une sauvegarde et vérifiez-la avant de continuer.")}
@@ -60,6 +60,11 @@ async function importAccountingSnapshot(button){
  }
  if(snapshot.thirds!=null&&!Array.isArray(snapshot.thirds))throw new Error("La liste des tiers locaux est invalide.");
  if(snapshot.assets!=null&&!Array.isArray(snapshot.assets))throw new Error("La liste des immobilisations locales est invalide.");
+ const makeUid=()=>globalThis.crypto?.randomUUID?globalThis.crypto.randomUUID():([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,c=>(c^crypto.getRandomValues(new Uint8Array(1))[0]&15>>c/4).toString(16));
+ const ensureIds=items=>{for(const item of items||[])if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(item.client_uid||"")))item.client_uid=makeUid();};
+ ensureIds(snapshot.settings.customAccounts);ensureIds(snapshot.thirds);ensureIds(snapshot.assets);ensureIds(snapshot.entries);
+ raw=JSON.stringify(snapshot);
+ localStorage.setItem("mizane_v1",raw);
  const localName=String(snapshot.settings.companyName||"Entreprise locale");
  const cloudName=active.company.legal_name;
  const mismatch=localName.trim().toLowerCase()!==cloudName.trim().toLowerCase();

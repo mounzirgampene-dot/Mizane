@@ -100,22 +100,6 @@ export function toGeminiBody(messages, { json = false, temperature = 0.2 } = {})
   return { systemInstruction: { parts: [{ text: system.join("\n") }] }, contents, generationConfig: { temperature, ...(json ? { response_mime_type: "application/json" } : {}) } };
 }
 
-const TIMEOUT_MS = 60000;
-
-async function fetchTimeout(url, opts) {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
-  } catch (e) {
-    if (e && e.name === "AbortError") throw new Error(`Délai dépassé : l'IA n'a pas répondu en ${TIMEOUT_MS / 1000} s. Vérifiez votre connexion Internet puis réessayez.`);
-    if (e instanceof TypeError) throw new Error("Connexion au serveur de l'IA impossible. Vérifiez votre connexion Internet, désactivez l'économiseur de données ou les bloqueurs, puis réessayez.");
-    throw e;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function aiChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
   const companyId = activeCompanyId();
   if (!companyId) throw new Error("Sélectionnez une entreprise cloud dans votre espace MIZANE.");

@@ -325,7 +325,7 @@ Le client :
 - conserve les clés IA locales et ne les transmet pas au cloud ;
 - n'autorise pas les comptes ayant le rôle `reader` à envoyer des changements.
 
-La première exécution après l'import initial compare l'intégralité des données locales et cloud. Si elles correspondent, elle établit la base de comparaison ; si elles diffèrent, elle s'arrête sans fusion automatique. Les exécutions suivantes effectuent le push/pull incrémental à partir de cette base.
+La première exécution après l'import initial établit une base de comparaison compacte. Les éléments présents uniquement en local sont envoyés et ceux présents uniquement dans le cloud sont récupérés. Si un même identifiant existe des deux côtés avec un contenu différent, ou si les paramètres diffèrent, la synchronisation s'arrête sans écrasement automatique. Les exécutions suivantes effectuent le push/pull à partir de cette base. Les numéros numériques d'écriture restent propres à chaque appareil ; les liens entre écritures sont synchronisés par `client_uid`.
 
 La lecture cloud renvoie les comptes personnalisés depuis leur table versionnée et retire leur copie historique des paramètres, afin d'éviter des divergences entre les deux représentations. L'import initial conserve également `nextId` dans `accounting_settings.next_entry_id`.
 

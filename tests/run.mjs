@@ -951,5 +951,54 @@ await testAsync("pagination cloud : 250 écritures sont toutes récupérées sur
   }
 });
 
+
+await testAsync("séparation des entreprises : une réponse cloud d'une autre entreprise bloque la synchronisation", async () => {
+  const companyId = "company-alpha-test";
+  const uid = "d0000000-0000-4000-8000-000000000001";
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore([
+    { client_uid: uid, name: "Donnée entreprise Alpha", type: "client", phone: "", email: "" },
+  ])));
+  const cloud = makeCloud(companyId);
+  const isolatedClient = { functions: { invoke: async (name) => {
+    if (name === "read-accounting") {
+      return { data: { ...structuredClone(cloud.state), company_id: "company-beta-test" }, error: null };
+    }
+    throw new Error("Aucun envoi ne doit être tenté après une réponse cloud incohérente.");
+  } } };
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(isolatedClient, companyId, "admin"), /Réponse cloud incohérente/);
+    assert.equal(cloud.pushes, 0);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Donnée entreprise Alpha");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+await testAsync("rôle lecteur : les données locales en attente ne sont jamais envoyées au cloud", async () => {
+  const companyId = "company-reader-test";
+  const uid = "d0000000-0000-4000-8000-000000000002";
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore([
+    { client_uid: uid, name: "Modification en lecture seule", type: "client", phone: "", email: "" },
+  ])));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    await assert.rejects(syncAccounting(cloud.client, companyId, "reader"), /lecture seule/);
+    assert.equal(cloud.pushes, 0);
+    assert.equal(cloud.state.thirds.length, 0);
+    assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Modification en lecture seule");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

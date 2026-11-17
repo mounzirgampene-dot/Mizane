@@ -187,6 +187,8 @@ export async function syncAccounting(supabase, companyId, role) {
     if(!Array.isArray(store.assets))store.assets=[];
     if(!Array.isArray(store.settings.customAccounts))store.settings.customAccounts=[];
     ensureIds(store);
+    // Les UUID doivent rester stables même si la lecture cloud ou un contrôle de conflit échoue.
+    localStorage.setItem(LOCAL_KEY,JSON.stringify(store));
     const cloud=await readCloud(supabase,companyId);
     if(!cloud.settings)throw new Error("La comptabilité cloud n'a pas encore été initialisée. Effectuez d'abord l'import initial.");
     const remote=remoteSnapshot(cloud,store);

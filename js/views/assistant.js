@@ -14,6 +14,7 @@ import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, 
 export function viewAssistant() {
   const audit = localAuditSummary(store);
   const configured = aiConfigured(store);
+  refreshCompanyAIStatus(providerOf(store)).then(() => { if (aiConfigured(store) !== configured) router.render(); }).catch(() => {});
   $app.innerHTML = `
     <h1>Assistant IA</h1>
     ${configured
@@ -184,7 +185,6 @@ export function viewSettings() {
         <div><label>Fournisseur</label>
           <select id="s-aiprovider">
             ${Object.entries(PROVIDERS).map(([id, p]) => `<option value="${id}" ${pid === id ? "selected" : ""}>${p.label} — gratuit</option>`).join("")}
-            <option value="custom" ${pid === "custom" ? "selected" : ""}>Personnalisé (compatible OpenAI)</option>
           </select>
         </div>
         <div><label>Clé API</label><input id="s-aikey" type="password" placeholder="Collez votre clé API" value="" ${s.aiKeyEnc ? "data-enc=\"1\"" : ""}></div>

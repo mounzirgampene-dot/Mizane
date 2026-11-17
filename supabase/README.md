@@ -277,3 +277,10 @@ La migration `20261117090000_accounting_sync_change_log.sql` ajoute `accounting_
 La fonction Edge `read-accounting` version 3 accepte `changes_since` et renvoie jusqu'à 500 événements après ce curseur, avec `changes_pagination.next_cursor` et `has_more`. L'adhésion active est vérifiée avant lecture. Les événements de suppression sont conservés comme tombstones afin que les appareils puissent apprendre qu'un élément a été supprimé.
 
 **Limites actuelles :** le journal ne transporte pas les lignes de données elles-mêmes et aucun endpoint d'écriture incrémentale n'est encore disponible. Les lignes d'écritures sont synchronisées avec leur écriture parent dans une future transaction serveur. Le client ne doit pas encore considérer le journal comme une synchronisation opérationnelle complète.
+
+
+### Versions de synchronisation et prévention des écrasements — 17 novembre 2026
+
+Les tables de paramètres, comptes personnalisés, tiers, immobilisations et écritures possèdent maintenant un champ `sync_version` initialisé à 1. Un déclencheur serveur incrémente cette version et actualise `updated_at` à chaque modification. La fonction `read-accounting` version 4 renvoie cette version pour chaque entité afin de permettre au futur endpoint d'écriture de comparer la version attendue par l'appareil avec la version actuelle du serveur.
+
+La règle prévue pour le futur push est un contrôle optimiste : une modification ne sera acceptée que si la version attendue correspond à la version serveur ; sinon le serveur renverra un conflit sans écraser les données. Ce contrôle n'est pas encore exposé par une API d'écriture.

@@ -2,9 +2,9 @@ name: Déployer MIZANE sur GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/cloud-accounting-dev, fix/sync-pagination-dev]
   pull_request:
-    branches: [main]
+    branches: [main, feat/cloud-accounting-dev]
   workflow_dispatch:
 
 permissions:

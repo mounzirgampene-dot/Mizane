@@ -123,10 +123,15 @@ async function readCloud(supabase, companyId) {
     const {data,error}=await supabase.functions.invoke("read-accounting",{body:{company_id:companyId,limit:100,offset,changes_since:0}});
     if(error) throw await edgeError(error,"Lecture cloud impossible.");
     if(!data||data.company_id!==companyId) throw new Error("Réponse cloud incohérente.");
-    if(first){all.settings=data.settings;all.custom_accounts=data.custom_accounts||[];all.thirds=data.thirds||[];all.assets=data.assets||[];first=false;}
+    if(first){all.settings=data.settings;first=false;}
+    all.custom_accounts.push(...(data.custom_accounts||[]));
+    all.thirds.push(...(data.thirds||[]));
+    all.assets.push(...(data.assets||[]));
     all.entries.push(...(data.entries||[]));
-    if(data.pagination?.has_more){offset=data.pagination.next_offset;if(!Number.isInteger(offset))throw new Error("Pagination cloud invalide.");}
-    else break;
+    if(data.pagination?.has_more){
+      offset=data.pagination.next_offset;
+      if(!Number.isInteger(offset)||offset<=0)throw new Error("Pagination cloud invalide.");
+    } else break;
   } while(true);
   return all;
 }

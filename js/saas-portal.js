@@ -34,9 +34,13 @@ function dashboardView(){
  const active=memberships.find(x=>x.company.id===activeCompanyId);
  root.innerHTML=`<section class="panel"><div class="topline"><div><p class="eyebrow">Espace personnel</p><h1>Bonjour, ${esc(session.user.user_metadata?.display_name||session.user.email)}</h1><p class="muted">${esc(session.user.email)}</p></div><button class="secondary" data-action="logout">Déconnexion</button></div><p>Vos entreprises et vos autorisations sont gérées séparément. Changer d'entreprise ne nécessite pas de déconnexion.</p></section>
  <section class="panel"><div class="topline"><h2>Mes entreprises</h2><button data-action="show-create">＋ Créer une entreprise</button></div><div class="company-list">${memberships.length?memberships.map(({company,role,status})=>`<article class="company ${company.id===activeCompanyId?"active":""}"><div class="topline"><h3>${esc(company.legal_name)}</h3><span class="role">${esc(roleLabel(role))}</span></div><p class="company-meta">${esc(company.country_code)} · ${esc(company.base_currency)} · ${esc(company.accounting_standard)}</p><p class="company-meta">Statut : ${esc(status==="active"?"Actif":"Suspendu")}</p><button class="${company.id===activeCompanyId?"":"secondary"}" data-action="select-company" data-id="${company.id}" ${status!=="active"?"disabled":""}>${company.id===activeCompanyId?"Entreprise active":"Ouvrir cet espace"}</button></article>`).join(""):`<div class="empty">Aucune entreprise associée à ce compte. Créez votre premier espace ou acceptez une invitation.</div>`}</div></section>
- ${active?`<section class="panel"><p class="eyebrow">Espace sélectionné</p><h2>${esc(active.company.legal_name)}</h2><p>Votre rôle : <strong>${esc(roleLabel(active.role))}</strong>. La sélection est mémorisée sur cet appareil.</p><div class="actions"><a class="button" href="index.html">Ouvrir la comptabilité locale</a><button class="secondary" data-action="show-invite" ${active.role!=="admin"?"disabled":""}>Inviter un collaborateur</button></div><p class="muted">${accountingCloudReady ? "Comptabilité cloud initialisée. Utilisez la synchronisation pour envoyer vos changements locaux et récupérer ceux des autres appareils." : "Aucun import comptable initial n'a encore été effectué pour cette entreprise."}</p>
- ${accountingCloudReady && ["admin","accountant","reader"].includes(active.role) ? `<div class="actions"><button class="secondary" data-action="sync-accounting">⇄ Synchroniser maintenant</button></div><p class="muted">La synchronisation compare les versions locales et cloud. Les modifications simultanées sont signalées sans écrasement automatique.</p>` : ""}
- ${!accountingCloudReady && ["admin","accountant"].includes(active.role) ? `<div class="actions"><button class="secondary" data-action="import-accounting">Préparer l'import initial de cette comptabilité</button></div>` : ""}</section>`: ""}
+ ${active?`<section class="panel"><p class="eyebrow">Espace sélectionné</p><h2>${esc(active.company.legal_name)}</h2><p>Votre rôle : <strong>${esc(roleLabel(active.role))}</strong>. La sélection est mémorisée sur cet appareil.</p><div class="actions"><a class="button" href="index.html">Ouvrir la comptabilité locale</a><button class="secondary" data-action="show-invite" ${active.role!=="admin"?"disabled":""}>Inviter un collaborateur</button></div><section class="sync-panel" aria-labelledby="sync-heading"><div class="topline"><h3 id="sync-heading">Synchronisation comptable</h3><span class="role">${accountingCloudReady ? "Cloud initialisé" : "Import initial requis"}</span></div>
+ <p class="muted">${accountingCloudReady ? "Votre comptabilité est reliée au cloud. Vous pouvez envoyer vos changements locaux et récupérer ceux des autres appareils." : "L'espace cloud existe, mais il ne contient pas encore votre comptabilité. Lancez l'import initial depuis l'appareil qui contient vos données."}</p>
+ ${accountingCloudReady && ["admin","accountant","reader"].includes(active.role) ? `<div class="actions"><button data-action="sync-accounting">⇄ Synchroniser maintenant</button></div><p class="muted">Les modifications simultanées sont signalées sans écrasement automatique.</p>` : ""}
+ ${!accountingCloudReady && ["admin","accountant"].includes(active.role) ? `<div class="actions"><button data-action="import-accounting">Préparer l'import initial de cette comptabilité</button></div>` : ""}
+ ${!accountingCloudReady && active.role==="reader" ? `<p class="muted">Un administrateur ou un comptable doit effectuer le premier import.</p>` : ""}
+ </section>
+ ${active.role==="admin" ? `<div class="danger-zone"><h3>Zone de danger</h3><p class="muted">Supprimer cette entreprise effacera définitivement ses écritures, tiers, immobilisations, paramètres, invitations et accès des collaborateurs. Les autres entreprises et les comptes utilisateurs ne seront pas supprimés.</p><button class="danger" data-action="delete-company">Supprimer cette entreprise</button></div>` : ""}</section>`: ""}
  <section class="panel"><h2>Accepter une invitation</h2><form id="accept-form"><div class="field"><label for="invite-token">Jeton d'invitation</label><input id="invite-token" autocomplete="off" minlength="64" maxlength="64" required placeholder="Coller le jeton reçu de l'administrateur"></div><button type="submit">Accepter l'invitation</button><p class="muted">Vous devez être connecté avec l'adresse e-mail à laquelle l'invitation a été envoyée.</p></form></section>
  <section id="create-panel" class="panel hidden"><h2>Créer une entreprise</h2><form id="create-form" class="form-grid">
  <div class="field full"><label for="legal-name">Raison sociale</label><input id="legal-name" required minlength="2" maxlength="180"></div>
@@ -176,6 +180,25 @@ root.addEventListener("click",async(e)=>{
     await refresh();
     if(result.initialized)toast("Première synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
     else toast("Synchronisation terminée : "+result.pushed+" opération(s) envoyée(s), "+result.pulled+" élément(s) récupéré(s).");
+   }finally{busy(button,false)}
+   return;
+  }
+  if(action==="delete-company"){
+   const active=memberships.find(m=>m.company.id===activeCompanyId);
+   if(!active||active.role!=="admin")throw new Error("Seul un administrateur actif peut supprimer cette entreprise.");
+   const expected=active.company.legal_name;
+   const typed=prompt("ATTENTION : cette opération effacera définitivement toutes les données de l'entreprise, y compris les écritures comptables.\n\nPour confirmer, saisissez exactement le nom suivant :\n"+expected);
+   if(typed===null)return;
+   if(typed.trim()!==expected)throw new Error("Le nom saisi ne correspond pas. Aucune suppression n'a été effectuée.");
+   if(!confirm("Dernière confirmation : supprimer définitivement « "+expected+" » et toutes ses données ?"))return;
+   busy(button,true);
+   try{
+    await edge("delete_company",{company_id:activeCompanyId});
+    activeCompanyId="";
+    localStorage.removeItem(ACTIVE_COMPANY_KEY);
+    accountingCloudReady=false;
+    await refresh();
+    toast("Entreprise supprimée définitivement.");
    }finally{busy(button,false)}
    return;
   }

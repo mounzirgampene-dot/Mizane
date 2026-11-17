@@ -14,7 +14,7 @@ button,.button{border:0;border-radius:9px;padding:11px 16px;background:#0f766e;c
 /* Navigation verticale des travaux et du journal d'activité */
 .portal-main{width:min(1200px,calc(100% - 28px))}
 .portal-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:20px;align-items:start}
-.portal-layout:not(:has(.portal-sidebar)){display:block}
+.portal-layout.no-sidebar{display:block}
 .portal-sidebar{position:sticky;top:18px;display:flex;flex-direction:column;gap:8px;padding:16px 12px;background:#fff;border:1px solid #dce7e8;border-radius:16px;box-shadow:0 8px 24px #163b440a}
 .portal-sidebar-label{margin:4px 8px 8px;color:#0f766e;font-size:.7rem;font-weight:800;letter-spacing:.12em}
 .portal-side-link{width:100%;justify-content:flex-start;text-align:left;background:transparent;color:#31545a;border:1px solid transparent}

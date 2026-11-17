@@ -32,6 +32,12 @@ function stable(value) {
 }
 const signature = value => JSON.stringify(stable(value));
 const equal = (a,b) => signature(a) === signature(b);
+function fingerprint(value) {
+  const input=signature(value);
+  let hash=14695981039346656037n;
+  for(let i=0;i<input.length;i++){hash^=BigInt(input.charCodeAt(i));hash=BigInt.asUintN(64,hash*1099511628211n);}
+  return hash.toString(16);
+}
 function ensureIds(store) {
   const assign = items => {
     for (const item of items || []) if (!UUID_RE.test(String(item.client_uid || ""))) item.client_uid = uuid();
@@ -157,7 +163,7 @@ function saveShadow(companyId, records) {
   const clean={};
   for(const kind of ["settings","custom_account","third","asset","entry"]) {
     clean[kind]={};
-    for(const [uid,item] of Object.entries(records[kind]||{}))clean[kind][uid]={data:clone(item.data),version:Number(item.version)||1};
+    for(const [uid,item] of Object.entries(records[kind]||{}))clean[kind][uid]={hash:fingerprint(item.data),version:Number(item.version)||1};
   }
   localStorage.setItem(SHADOW_PREFIX+companyId,JSON.stringify(clean));
 }
@@ -211,9 +217,10 @@ export async function syncAccounting(supabase, companyId, role) {
         const base=kind==="settings"?(old.settings||null):(old[uid]||null);
         const localRec=kind==="settings"?(local.settings||null):(local[uid]||null);
         const cloudRec=kind==="settings"?(cloudRecords.settings||null):(cloudRecords[uid]||null);
-        const baseData=base?.data??null, localData=localRec?.data??null, cloudData=cloudRec?.data??null;
-        const localChanged=!equal(localData,baseData);
-        const cloudChanged=!equal(cloudData,baseData);
+        const localData=localRec?.data??null, cloudData=cloudRec?.data??null;
+        const baseHash=base?.hash??fingerprint(base?.data??null);
+        const localChanged=fingerprint(localData)!==baseHash;
+        const cloudChanged=fingerprint(cloudData)!==baseHash;
         if(localChanged&&cloudChanged&&!equal(localData,cloudData)) {
           throw new Error("Conflit simultané détecté ("+kind+(kind==="settings"?"":":"+uid)+"). Les deux versions sont conservées ; choisissez manuellement laquelle garder avant de relancer.");
         }
@@ -256,7 +263,7 @@ export async function syncAccounting(supabase, companyId, role) {
         const before=kind==="settings"?(baseNow.settings||null):(baseNow[uid]||null);
         const after=kind==="settings"?(finalNow.settings||null):(finalNow[uid]||null);
         const localAfter=kind==="settings"?(localNow.settings.settings?.data||null):(localNow[kind]?.[uid]?.data||null);
-        if(!equal(localAfter,before?.data??null) && !equal(localAfter,after?.data??null)) {
+        if(fingerprint(localAfter)!==(before?.hash??fingerprint(before?.data??null)) && !equal(localAfter,after?.data??null)) {
           throw new Error("Les données locales ont changé pendant la synchronisation. Relancez-la après vérification.");
         }
         if(!equal(localAfter,after?.data??null))installRemote(store,kind,uid,after,finalRemote);

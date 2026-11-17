@@ -598,7 +598,19 @@ function makeCloud(companyId, thirds = [], options = {}) {
   let pushes = 0;
   let failAfterApply = !!options.failAfterApply;
   const client = { functions: { invoke: async (name, { body }) => {
-    if (name === "read-accounting") return { data: structuredClone(state), error: null };
+    if (name === "read-accounting") {
+      const response = structuredClone(state);
+      if (options.paginateEntries) {
+        const offset = Number(body.offset) || 0;
+        const limit = Number(body.limit) || 100;
+        response.entries = state.entries.slice(offset, offset + limit);
+        response.pagination = {
+          has_more: offset + response.entries.length < state.entries.length,
+          next_offset: offset + response.entries.length < state.entries.length ? offset + response.entries.length : null,
+        };
+      }
+      return { data: response, error: null };
+    }
     if (name === "push-accounting-changes") {
       pushes++;
       for (const op of body.operations) {
@@ -821,6 +833,75 @@ await testAsync("modification locale pendant l'envoi : la synchronisation s'arr�
     await assert.rejects(syncAccounting(cloud.client, companyId, "admin"), /modifiée dans un autre onglet/);
     assert.equal(JSON.parse(storage.getItem("mizane_v1")).thirds[0].name, "Modification locale concurrente");
     assert.equal(cloud.state.thirds[0].name, "Client envoyé");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+
+await testAsync("gros volume : 250 tiers sont envoyés en trois lots sans doublon", async () => {
+  const companyId = "company-volume-thirds-test";
+  const thirds = Array.from({ length: 250 }, (_, index) => ({
+    client_uid: `b0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    name: `Tiers ${index + 1}`, type: index % 2 ? "fournisseur" : "client", phone: "", email: "",
+  }));
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore(thirds)));
+  seedShadow(storage, companyId);
+  const cloud = makeCloud(companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const first = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(first.pushed, 250);
+    assert.equal(cloud.pushes, 3, "les 250 opérations sont réparties en lots de 100 maximum");
+    assert.equal(cloud.state.thirds.length, 250);
+    const second = await syncAccounting(cloud.client, companyId, "admin");
+    assert.equal(second.pushed, 0);
+    assert.equal(cloud.state.thirds.length, 250, "une seconde synchronisation ne crée aucun doublon");
+    assert.equal(new Set(cloud.state.thirds.map(x => x.client_uid)).size, 250);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("pagination cloud : 250 écritures sont toutes récupérées sur trois pages", async () => {
+  const companyId = "company-pagination-entries-test";
+  const entries = Array.from({ length: 250 }, (_, index) => ({
+    id: index + 1,
+    client_uid: `c0000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    entry_date: "2026-02-01", journal: "ACH", reference: `ACH-${index + 1}`,
+    is_reversed: false, reverse_of_entry_id: null, sync_version: 1,
+    lines: [
+      { account_code: "601", label: "Achat", third_name: "Fournisseur Démo", debit: 125, credit: 0 },
+      { account_code: "401", label: "Fournisseur", third_name: "Fournisseur Démo", debit: 0, credit: 125 },
+    ],
+  }));
+  const cloud = makeCloud(companyId, [], { paginateEntries: true });
+  cloud.state.entries = structuredClone(entries);
+  const storage = memoryStorage();
+  storage.setItem("mizane_v1", JSON.stringify(makeSyncStore()));
+  seedShadow(storage, companyId);
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await syncAccounting(cloud.client, companyId, "admin");
+    const recovered = JSON.parse(storage.getItem("mizane_v1"));
+    assert.equal(result.pulled, 250);
+    assert.equal(recovered.entries.length, 250, "aucune page n'est ignorée");
+    assert.equal(recovered.entries[249].reference, "ACH-250");
+    assert.deepEqual(recovered.entries[0].lines.map(line => ({
+      account: line.account, third: line.third, debit: line.debit, credit: line.credit,
+    })), [
+      { account: "601", third: "Fournisseur Démo", debit: 125, credit: 0 },
+      { account: "401", third: "Fournisseur Démo", debit: 0, credit: 125 },
+    ], "les comptes, tiers et montants des lignes sont conservés");
+    for (const entry of recovered.entries) {
+      const debit = entry.lines.reduce((sum, line) => sum + line.debit, 0);
+      const credit = entry.lines.reduce((sum, line) => sum + line.credit, 0);
+      assert.equal(debit, credit, "chaque écriture récupérée reste équilibrée");
+    }
   } finally {
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;

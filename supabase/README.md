@@ -238,3 +238,20 @@ Le conseiller de sécurité Supabase ne signale plus les helpers d'appartenance 
 - La protection des mots de passe compromis (Have I Been Pwned) est désactivée dans la configuration Auth du projet. Elle devra être activée dans les paramètres Auth avant la production.
 
 Les tests RLS après déplacement des helpers confirment qu'un membre actif voit les écritures de son entreprise et qu'un utilisateur non membre ne voit aucune écriture.
+
+
+## Lecture sécurisée de la comptabilité cloud
+
+La fonction Edge `read-accounting` expose une lecture paginée des données comptables d'une entreprise :
+- JWT obligatoire et identité résolue auprès de Supabase Auth ;
+- vérification d'une adhésion active au périmètre de l'entreprise ;
+- rôles autorisés : `admin`, `accountant` et `reader` (lecture seule) ;
+- aucun identifiant d'entreprise fourni ne suffit à contourner le contrôle d'adhésion ;
+- paramètres, comptes personnalisés, tiers, immobilisations, écritures et lignes sont renvoyés ;
+- pagination des écritures par `limit` (1 à 200) et `offset`, avec indicateur `has_more` ;
+- les champs de secrets et clés API sont retirés récursivement des paramètres renvoyés ;
+- la clé `service_role` reste exclusivement côté serveur.
+
+Requête : `POST /functions/v1/read-accounting` avec le corps JSON `{"company_id":"<uuid>","limit":100,"offset":0}`.
+
+Cette fonction fournit une lecture cloud sécurisée ; elle ne réalise pas encore la synchronisation continue, ne donne aucun droit d'écriture au rôle lecteur et ne connecte pas encore l'assistant IA SaaS.

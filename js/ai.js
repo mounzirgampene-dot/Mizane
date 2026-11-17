@@ -25,12 +25,12 @@ export async function deleteCompanyAI(provider) {
 }
 export async function refreshCompanyAIStatus(provider) {
   const companyId = activeCompanyId();
-  if (!companyId) return false;
+  if (!companyId) throw new Error("Sélectionnez une entreprise active.");
   const { data, error } = await aiSupabase.functions.invoke("company-ai", { body: { action: "status", company_id: companyId, provider } });
   if (error) throw new Error(data?.error || "État IA indisponible.");
   const configured = Array.isArray(data?.providers) && data.providers.includes(provider);
   localStorage.setItem(aiStatusKey(companyId, provider), configured ? "1" : "0");
-  return configured;
+  return { configured, role: data?.role || null, providers: data?.providers || [] };
 }
 
 export const PROVIDERS = {

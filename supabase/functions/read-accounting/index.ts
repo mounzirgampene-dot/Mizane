@@ -138,10 +138,17 @@ Deno.serve(async (request) => {
   const hasMoreChanges = fetchedChanges.length > 500;
   const changes = fetchedChanges.slice(0, 500);
 
+  const cloudSettings = settingsRes.data ? redactSecrets(settingsRes.data) as Record<string, unknown> : null;
+  // Les comptes personnalisés ont leur propre table et leur propre version.
+  // Ne pas exposer la copie historique intégrée aux paramètres importés.
+  if (cloudSettings?.settings && typeof cloudSettings.settings === "object" && !Array.isArray(cloudSettings.settings)) {
+    delete (cloudSettings.settings as Record<string, unknown>).customAccounts;
+  }
+
   return json(200, {
     company_id: companyId,
     role: membership.role,
-    settings: settingsRes.data ? redactSecrets(settingsRes.data) : null,
+    settings: cloudSettings,
     custom_accounts: accountsRes.data ?? [],
     thirds: thirdsRes.data ?? [],
     assets: assetsRes.data ?? [],

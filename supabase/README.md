@@ -309,3 +309,32 @@ Un contrôle complémentaire a été ajouté après examen du format réel de st
 La fonction privée `private.strip_accounting_secrets(jsonb)` retire maintenant récursivement les clés API et jetons connus, y compris leurs variantes chiffrées (`aiKeyEnc`, `apiKeyEnc`, `providerApiKeyEnc`, etc.), même lorsqu'elles sont imbriquées dans un objet ou un tableau. Elle est utilisée par l'import initial et par le moteur d'écriture incrémentale. La fonction `read-accounting` version 6 applique le filtrage correspondant avant de renvoyer les paramètres au navigateur. Une contrainte PostgreSQL interdit également plusieurs noms de secrets au premier niveau des paramètres.
 
 Tests transactionnels annulés : l'import initial et le push incrémental ont reçu des clés fictives en clair chiffré et imbriquées ; les clés ont été retirées, tandis que les paramètres non sensibles ont été conservés. Aucune donnée de test n'a été persistée.
+
+
+## Client de synchronisation locale/cloud — 17 novembre 2026
+
+Le portail charge maintenant `js/accounting-sync.js` et propose le bouton « Synchroniser maintenant » lorsque l'entreprise cloud a déjà reçu son import initial.
+
+Le client :
+- lit la comptabilité locale `mizane_v1` et conserve les identifiants `client_uid` ;
+- lit les paramètres, comptes, tiers, immobilisations et écritures cloud, avec pagination des écritures ;
+- conserve une base de comparaison par entreprise dans `localStorage` sous `mizane_sync_shadow_v1:<company_id>` ;
+- envoie uniquement les créations, modifications et suppressions locales détectées, par lots de 100 opérations au maximum ;
+- récupère les changements cloud si la version locale n'a pas divergé depuis la dernière synchronisation ;
+- refuse les changements simultanés incompatibles sans écraser la version locale ou cloud ;
+- conserve les clés IA locales et ne les transmet pas au cloud ;
+- n'autorise pas les comptes ayant le rôle `reader` à envoyer des changements.
+
+La première exécution après l'import initial compare l'intégralité des données locales et cloud. Si elles correspondent, elle établit la base de comparaison ; si elles diffèrent, elle s'arrête sans fusion automatique. Les exécutions suivantes effectuent le push/pull incrémental à partir de cette base.
+
+La lecture cloud renvoie les comptes personnalisés depuis leur table versionnée et retire leur copie historique des paramètres, afin d'éviter des divergences entre les deux représentations. L'import initial conserve également `nextId` dans `accounting_settings.next_entry_id`.
+
+### Tests client exécutés avec un serveur simulé
+
+- initialisation de la base de comparaison sur un cloud identique ;
+- envoi d'une modification de paramètres, d'un compte personnalisé et d'un tiers ;
+- vérification qu'une seconde synchronisation sans changement n'envoie aucune opération ;
+- récupération d'une modification cloud dans le stockage local ;
+- détection d'une modification simultanée différente, en conservant la valeur locale.
+
+Ces tests valident le moteur client et ses règles de comparaison. Ils ne remplacent pas encore un essai navigateur connecté à un compte réel. La synchronisation est actuellement déclenchée manuellement par le bouton du portail ; aucune synchronisation automatique en arrière-plan n'est activée.

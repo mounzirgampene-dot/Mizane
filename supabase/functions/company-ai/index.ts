@@ -66,12 +66,12 @@ Deno.serve(async (req)=>{
    if(provider==="gemini"){
      const contents=messages.filter(m=>m.role!=="system").map(m=>({role:m.role==="assistant"?"model":"user",parts:(typeof m.content==="string"?[{text:m.content}]:(m.content||[]).map(p=>p.type==="text"?{text:p.text}:{inline_data:{mime_type:(p.image_url?.url||p.image_url||"").match(/^data:([^;]+);/)?.[1]||"image/jpeg",data:(p.image_url?.url||p.image_url||"").split(",")[1]||""}}))}));
      const system=messages.filter(m=>m.role==="system").map(m=>typeof m.content==="string"?m.content:"").join("\n");
-     response=await fetch(`${providers.gemini.endpoint}/models/${model}:generateContent?key=${encodeURIComponent(key)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,generationConfig:{temperature:Number(body.temperature??0.2),...(body.json?{response_mime_type:"application/json"}:{})}})});
+     response=await fetch(`${providers.gemini.endpoint}/models/${model}:generateContent`,{method:"POST",headers:{"Content-Type":"application/json","x-goog-api-key":key},signal:AbortSignal.timeout(25000),body:JSON.stringify({systemInstruction:{parts:[{text:system}]},contents,generationConfig:{temperature:Number(body.temperature??0.2),...(body.json?{response_mime_type:"application/json"}:{})}})});
      if(!response.ok){text=await response.text();return json(502,{error:`Erreur Gemini ${response.status} : ${text.slice(0,240)}`});}
      const data=await response.json();text=(data.candidates?.[0]?.content?.parts||[]).map(p=>p.text||"").join("");
    }else{
      const openAiMessages=messages.map(m=>({...m,content:Array.isArray(m.content)?m.content.map(p=>p.type==="image_url"&&typeof p.image_url==="string"?{...p,image_url:{url:p.image_url}}:p):m.content}));
-     response=await fetch(providers[provider].endpoint,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},body:JSON.stringify({model,temperature:Number(body.temperature??0.2),messages:openAiMessages,...(body.json?{response_format:{type:"json_object"}}:{})})});
+     response=await fetch(providers[provider].endpoint,{method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},signal:AbortSignal.timeout(25000),body:JSON.stringify({model,temperature:Number(body.temperature??0.2),messages:openAiMessages,...(body.json?{response_format:{type:"json_object"}}:{})})});
      if(!response.ok){text=await response.text();return json(502,{error:`Erreur IA ${response.status} : ${text.slice(0,240)}`});}
      const data=await response.json();text=data.choices?.[0]?.message?.content||"";
    }

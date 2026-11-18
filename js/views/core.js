@@ -1,5 +1,5 @@
 // MIZANE — Écrans : tableau de bord, saisie, écritures, grand livre.
-import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, accountType } from "../accounting.js";
+import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, accountType, validDate } from "../accounting.js";
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
@@ -284,8 +284,7 @@ function parseEntryDate(value, format) {
 }
 
 function isRealEntryDate(iso) {
-  const date = new Date(iso + "T00:00:00");
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso;
+  return validDate(iso);
 }
 
 function formatEntryDate(iso, format) {

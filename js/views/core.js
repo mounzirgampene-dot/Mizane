@@ -110,14 +110,15 @@ export function viewEntry() {
       if (inp.dataset.f === "debit" || inp.dataset.f === "credit") updateEntryTotals();
     });
     if (inp.dataset.f === "account" || inp.dataset.f === "label") {
+      const isDescription = inp.dataset.f === "label";
       attachAccountAutocomplete(inp, searchableAccounts, (account) => {
         draftLines[lineIndex].account = String(account.code);
-        draftLines[lineIndex].label = String(account.label);
         const accountInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="account"]`);
         const labelInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="label"]`);
         if (accountInput) accountInput.value = account.code;
-        if (labelInput) labelInput.value = account.label;
-      }, inp.dataset.f === "label" ? "label" : "code");
+        // Le libellé de l'opération reste intact : seule la référence du compte est choisie.
+        if (labelInput) labelInput.value = draftLines[lineIndex].label;
+      }, isDescription ? "label" : "code", isDescription ? "description" : "account");
     }
   });
   ["e-date", "e-journal", "e-ref"].forEach((id) => {

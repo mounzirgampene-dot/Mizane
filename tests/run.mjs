@@ -6,6 +6,7 @@ import {
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
+import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 
@@ -36,6 +37,36 @@ test("findAccount : correspondance exacte puis par préfixe", () => {
 test("searchAccounts par mot-clé", () => {
   const res = searchAccounts("syscohada", "client");
   assert.ok(res.length > 0 && res.some((a) => a.code === "411"));
+});
+
+test("recherche par libellé d'opération : vocabulaire courant", () => {
+  const accounts = allAccounts("syscohada");
+  const cases = [
+    ["règlement fournisseur", "401"],
+    ["paiement des salaires", "661"],
+    ["facture internet", "628"],
+    ["achat de carburant", "61"],
+    ["réparation du véhicule", "624"],
+    ["assurance du local", "625"],
+    ["vente de marchandises", "701"],
+    ["frais bancaires", "631"],
+    ["achat de matériel informatique", "6055"],
+  ];
+  for (const [query, expectedCode] of cases) {
+    const results = searchAccountsByDescription(accounts, query);
+    assert.ok(results.some((account) => account.code === expectedCode),
+      `le libellé "${query}" doit proposer le compte ${expectedCode}; reçus : ${results.map((a) => a.code).join(", ")}`);
+  }
+});
+
+test("recherche par libellé d'opération sur les quatre plans", () => {
+  for (const planId of Object.keys(PLANS)) {
+    const accounts = allAccounts(planId);
+    for (const query of ["paiement du loyer", "achat de fournitures", "facture internet", "paiement des salaires"]) {
+      assert.ok(searchAccountsByDescription(accounts, query).length > 0,
+        `aucune suggestion pour "${query}" dans le plan ${planId}`);
+    }
+  }
 });
 
 console.log("— Pays —");

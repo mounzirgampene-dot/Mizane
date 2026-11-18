@@ -1,5 +1,5 @@
 // MIZANE — Autocomplétion accessible des comptes par numéro ou libellé.
-export function attachAccountAutocomplete(input, accounts, onSelect) {
+export function attachAccountAutocomplete(input, accounts, onSelect, displayField = "code") {
   if (!input) return;
   const wrapper = document.createElement("div");
   wrapper.className = "account-autocomplete";
@@ -13,7 +13,7 @@ export function attachAccountAutocomplete(input, accounts, onSelect) {
   let active = -1;
 
   const close = () => { menu.classList.add("hidden"); menu.replaceChildren(); active = -1; };
-  const choose = (account) => { onSelect(account); close(); };
+  const choose = (account) => { input.value = String(account[displayField] ?? account.code); onSelect(account); close(); };
   const render = () => {
     const query = input.value.trim().toLocaleLowerCase("fr");
     if (!query) return close();

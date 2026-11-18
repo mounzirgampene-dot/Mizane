@@ -427,7 +427,9 @@ export async function restoreAccountingFromCloud(supabase, companyId) {
 
     const finalCloud = await readCloud(supabase, companyId);
     const finalRemote = remoteSnapshot(finalCloud, store);
-    // Aucun changement local n'a été écrit avant la fin des lectures cloud.
+    if (localStorage.getItem(LOCAL_KEY) !== raw) {
+      throw new Error("Les données locales ont changé pendant la récupération. Aucune donnée n'a été remplacée ; relancez l'opération.");
+    }
     localStorage.setItem(LOCAL_KEY, JSON.stringify(store));
     saveShadow(companyId, finalRemote);
     return {

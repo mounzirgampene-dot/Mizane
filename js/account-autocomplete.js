@@ -86,7 +86,6 @@ function normalize(value) {
     .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 function singular(word) {
-  if (word.length > 5 && word.endsWith("es")) return word.slice(0,-2);
   if (word.length > 4 && word.endsWith("s")) return word.slice(0,-1);
   return word;
 }

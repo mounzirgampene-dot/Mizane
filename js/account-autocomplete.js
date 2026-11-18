@@ -173,9 +173,25 @@ export function attachAccountAutocomplete(input, accounts, onSelect, displayFiel
   const menu = document.createElement("div");
   menu.className = "account-suggestions hidden";
   menu.setAttribute("role", "listbox");
-  wrapper.append(menu);
+  // Le menu est placé dans body pour éviter qu'il soit coupé par
+  // le conteneur du tableau (défilement horizontal sur mobile).
+  document.body.append(menu);
   let matches = [];
   let active = -1;
+  const positionMenu = () => {
+    const rect = input.getBoundingClientRect();
+    const width = Math.min(rect.width, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const roomBelow = window.innerHeight - rect.bottom;
+    const maxHeight = Math.min(260, Math.max(120, window.innerHeight - 24));
+    const placeAbove = roomBelow < Math.min(220, maxHeight) && rect.top > roomBelow;
+    menu.style.position = "fixed";
+    menu.style.left = left + "px";
+    menu.style.width = width + "px";
+    menu.style.maxHeight = maxHeight + "px";
+    menu.style.top = placeAbove ? "auto" : (rect.bottom + 4) + "px";
+    menu.style.bottom = placeAbove ? (window.innerHeight - rect.top + 4) + "px" : "auto";
+  };
   const close = () => { menu.classList.add("hidden"); menu.replaceChildren(); active = -1; };
   const choose = (account) => {
     input.value = String(account[displayField] ?? account.code);
@@ -196,6 +212,7 @@ export function attachAccountAutocomplete(input, accounts, onSelect, displayFiel
     }
     menu.replaceChildren();
     if (!matches.length) return close();
+    positionMenu();
     matches.forEach((account,index) => {
       const option = document.createElement("button");
       option.type = "button";
@@ -221,7 +238,7 @@ export function attachAccountAutocomplete(input, accounts, onSelect, displayFiel
     else if(event.key==="Enter"&&active>=0&&matches[active]){event.preventDefault();choose(matches[active]);}
     else if(event.key==="Escape") close();
   });
-  input.addEventListener("blur",()=>setTimeout(close,120));
+  input.addEventListener("blur",()=>setTimeout(close,160));
   function renderActive(){
     [...menu.children].forEach((node,index)=>{
       node.classList.toggle("active",index===active);

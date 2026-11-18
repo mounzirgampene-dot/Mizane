@@ -65,7 +65,15 @@ export function viewEntry() {
     <h1>Saisie d'écriture</h1>
     <div class="card">
       <div class="row">
-        <div><label>Date</label><input type="date" id="e-date" value="${esc(currentHeader.date)}"></div>
+        <div><label for="e-date">Date</label>
+          <div class="row" style="gap:6px">
+            <input type="text" id="e-date" value="${esc(formatEntryDate(currentHeader.date, "DMY"))}" placeholder="JJ/MM/AAAA" inputmode="numeric" autocomplete="off" style="flex:1;min-width:125px">
+            <select id="e-date-format" aria-label="Format de date" style="max-width:145px">
+              <option value="DMY" selected>JJ/MM/AAAA</option>
+              <option value="YMD">AAAA-MM-JJ</option>
+            </select>
+          </div>
+        </div>
         <div><label>Journal</label>
           <select id="e-journal">${JOURNALS.map((j) => `<option value="${j.id}" ${currentHeader.journal === j.id ? "selected" : ""}>${j.id} — ${esc(j.name)}</option>`).join("")}</select>
         </div>
@@ -121,14 +129,27 @@ export function viewEntry() {
       }, isDescription ? "label" : "code", isDescription ? "description" : "account");
     }
   });
-  ["e-date", "e-journal", "e-ref"].forEach((id) => {
+  const dateInput = document.getElementById("e-date");
+  const dateFormat = document.getElementById("e-date-format");
+  const readEntryDate = () => parseEntryDate(dateInput.value, dateFormat.value);
+  const syncEntryDate = () => {
+    const iso = readEntryDate();
+    if (iso) setDraftHeader({ date: iso });
+  };
+  dateInput.addEventListener("input", syncEntryDate);
+  dateInput.addEventListener("change", syncEntryDate);
+  dateFormat.addEventListener("change", () => {
+    const iso = parseEntryDate(dateInput.value, dateFormat.value === "DMY" ? "YMD" : "DMY");
+    if (iso) dateInput.value = formatEntryDate(iso, dateFormat.value);
+    dateInput.placeholder = dateFormat.value === "DMY" ? "JJ/MM/AAAA" : "AAAA-MM-JJ";
+    syncEntryDate();
+  });
+  ["e-journal", "e-ref"].forEach((id) => {
     document.getElementById(id).addEventListener("input", (e) => {
-      const field = id === "e-date" ? "date" : id === "e-journal" ? "journal" : "reference";
-      setDraftHeader({ [field]: e.target.value });
+      setDraftHeader({ [id === "e-journal" ? "journal" : "reference"]: e.target.value });
     });
     document.getElementById(id).addEventListener("change", (e) => {
-      const field = id === "e-date" ? "date" : id === "e-journal" ? "journal" : "reference";
-      setDraftHeader({ [field]: e.target.value });
+      setDraftHeader({ [id === "e-journal" ? "journal" : "reference"]: e.target.value });
     });
   });
   $app.querySelectorAll("[data-del-line]").forEach((btn) => {
@@ -143,8 +164,15 @@ export function viewEntry() {
     viewEntry();
   });
   document.getElementById("post-entry").addEventListener("click", () => {
+    const entryDate = readEntryDate();
+    if (!entryDate) {
+      document.getElementById("entry-errors").innerHTML = '<ul class="errors"><li>Date invalide. Utilisez le format sélectionné et une date réelle.</li></ul>';
+      toast("Date invalide : vérifiez le format et le calendrier.");
+      return;
+    }
+    setDraftHeader({ date: entryDate });
     const entry = {
-      date: document.getElementById("e-date").value,
+      date: entryDate,
       journal: document.getElementById("e-journal").value,
       reference: document.getElementById("e-ref").value,
       lines: draftLines.map((l) => ({ account: l.account, label: l.label, third: l.third, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
@@ -239,6 +267,31 @@ function loadDraftFromSuggestion(s, note) {
   setDraftHeader({ date: s.date || new Date().toISOString().slice(0, 10), journal: s.journal || "ACH", reference: s.reference || "" });
   router.go("entry");
   toast(note);
+}
+
+function parseEntryDate(value, format) {
+  const raw = String(value || "").trim();
+  let match;
+  if (format === "DMY") {
+    match = raw.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})$/);
+    if (!match) return "";
+    const [, day, month, year] = match;
+    const iso = `${year}-${month}-${day}`;
+    return isRealEntryDate(iso) ? iso : "";
+  }
+  match = raw.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  return match && isRealEntryDate(raw) ? raw : "";
+}
+
+function isRealEntryDate(iso) {
+  const date = new Date(iso + "T00:00:00");
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === iso;
+}
+
+function formatEntryDate(iso, format) {
+  if (!isRealEntryDate(iso)) return "";
+  const [year, month, day] = iso.split("-");
+  return format === "DMY" ? `${day}/${month}/${year}` : iso;
 }
 
 export function viewEntries() {

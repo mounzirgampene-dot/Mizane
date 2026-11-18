@@ -321,49 +321,86 @@ export function viewLedger() {
     <h1>Grand livre</h1>
     <div class="card">
       <div class="row">
-        <div><label>Compte</label><input id="gl-account" placeholder="Numéro ou libellé du compte" value="" autocomplete="off"></div>
-        <div><label>Du</label><input type="date" id="gl-start" value="${exerciceStart}"></div>
-        <div><label>Au</label><input type="date" id="gl-end" value="${exerciceEnd}"></div>
+        <div>
+          <label for="gl-account">Compte</label>
+          <input id="gl-account" placeholder="Tapez le numéro ou le nom du compte" autocomplete="off" aria-describedby="gl-account-help">
+          <p id="gl-account-help" class="muted">Choisissez un compte dans les suggestions pour afficher immédiatement ses mouvements.</p>
+          <div id="gl-account-selected" class="muted" aria-live="polite"></div>
+        </div>
+        <div><label for="gl-start">Du</label><input type="date" id="gl-start" value="${exerciceStart}"></div>
+        <div><label for="gl-end">Au</label><input type="date" id="gl-end" value="${exerciceEnd}"></div>
         <div class="nogrow"><button id="gl-run">Afficher</button></div>
         <div class="nogrow"><button class="secondary" id="gl-csv">⬇ CSV</button></div>
         <div class="nogrow"><button class="secondary" id="gl-print">🖨 Imprimer</button></div>
       </div>
-      <div id="gl-result"></div>
+      <div id="gl-result" aria-live="polite"></div>
     </div>
   `;
   const ledgerAccounts = [...planAccounts, ...(store.settings.customAccounts || [])]
     .filter((account, index, all) => all.findIndex((item) => String(item.code) === String(account.code)) === index);
-  attachAccountAutocomplete(document.getElementById("gl-account"), ledgerAccounts, (account) => {
-    document.getElementById("gl-account").value = account.code;
-  });
+  const accountInput = document.getElementById("gl-account");
+  const resultBox = document.getElementById("gl-result");
+  const selectedLabel = document.getElementById("gl-account-selected");
+
   const run = () => {
-    const code = document.getElementById("gl-account").value.trim();
+    const code = accountInput.value.trim();
     const start = document.getElementById("gl-start").value;
     const end = document.getElementById("gl-end").value;
-    const box = document.getElementById("gl-result");
-    if (!code) { box.innerHTML = `<p class="muted">Saisissez un numéro de compte.</p>`; return; }
+    if (!code) {
+      resultBox.innerHTML = `<p class="muted">Choisissez un compte pour afficher son grand livre.</p>`;
+      selectedLabel.textContent = "";
+      return false;
+    }
+    const account = ledgerAccounts.find((item) => String(item.code) === code);
+    if (!account) {
+      resultBox.innerHTML = `<p class="warn">Compte introuvable dans le plan comptable actif. Choisissez un compte proposé dans la liste.</p>`;
+      selectedLabel.textContent = "";
+      return false;
+    }
+    selectedLabel.textContent = account.code + " — " + account.label;
     const { rows, totals } = ledger(store, code, start, end);
-    if (!rows.length) { box.innerHTML = `<p class="muted">Aucun mouvement pour ce compte sur la période.</p>`; return; }
-    box.innerHTML = `
-      <h2>${esc(code)} — ${esc(accountType(store, code) ? planLabel(code) : "Compte inconnu")}</h2>
+    if (!rows.length) {
+      resultBox.innerHTML = `<p class="muted">Aucun mouvement pour ce compte sur la période sélectionnée.</p>`;
+      return true;
+    }
+    resultBox.innerHTML = `
+      <h2>${esc(account.code)} — ${esc(account.label)}</h2>
       <table>
         <thead><tr><th>Date</th><th>Journal</th><th>Réf.</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td>${esc(r.date)}</td><td>${esc(r.journal)}</td><td>${esc(r.reference)}</td><td>${esc(r.label)}</td><td class="num">${r.debit ? money(r.debit) : ""}</td><td class="num">${r.credit ? money(r.credit) : ""}</td></tr>`).join("")}
         <tr class="total"><td colspan="4">Totaux — Solde : ${money(totals.solde)}</td><td class="num">${money(totals.debit)}</td><td class="num">${money(totals.credit)}</td></tr></tbody>
       </table>`;
-    box.dataset.code = code;
+    return true;
   };
+
+  attachAccountAutocomplete(accountInput, ledgerAccounts, (account) => {
+    accountInput.value = String(account.code);
+    run();
+  });
   document.getElementById("gl-run").addEventListener("click", run);
+  accountInput.addEventListener("change", () => {
+    if (ledgerAccounts.some((account) => String(account.code) === accountInput.value.trim())) run();
+  });
+  ["gl-start", "gl-end"].forEach((id) => {
+    document.getElementById(id).addEventListener("change", () => {
+      if (ledgerAccounts.some((account) => String(account.code) === accountInput.value.trim())) run();
+    });
+  });
+  accountInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.defaultPrevented) {
+      event.preventDefault();
+      run();
+    }
+  });
   document.getElementById("gl-print").addEventListener("click", () => {
-    const box = document.getElementById("gl-result");
-    const code = document.getElementById("gl-account").value.trim();
-    if (!code || !box.innerHTML.trim()) return toast("Affichez d'abord un compte.");
-    printHTML(`Grand livre ${code} — ${store.settings.companyName}`, box.innerHTML);
+    if (!resultBox.querySelector("table")) return toast("Affichez d'abord les mouvements d'un compte.");
+    printHTML(`Grand livre ${accountInput.value.trim()} — ${store.settings.companyName}`, resultBox.innerHTML);
   });
   document.getElementById("gl-csv").addEventListener("click", () => {
-    const code = document.getElementById("gl-account").value.trim();
-    if (!code) return toast("Saisissez d'abord un compte.");
+    const code = accountInput.value.trim();
+    if (!ledgerAccounts.some((account) => String(account.code) === code)) return toast("Sélectionnez d'abord un compte valide.");
     const { rows } = ledger(store, code, document.getElementById("gl-start").value, document.getElementById("gl-end").value);
-    downloadBlob(new Blob(["\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), `mizane-grandlivre-${code}.csv`);
+    if (!rows.length) return toast("Aucun mouvement à exporter pour cette période.");
+    downloadBlob(new Blob(["\\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), `mizane-grandlivre-${code}.csv`);
   });
 }

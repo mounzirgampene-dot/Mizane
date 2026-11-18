@@ -113,7 +113,6 @@ export function viewEntry() {
       attachAccountAutocomplete(inp, searchableAccounts, (account) => {
         draftLines[lineIndex].account = String(account.code);
         const accountInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="account"]`);
-        const labelInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="label"]`);
         if (accountInput) accountInput.value = account.code;
       });
     }

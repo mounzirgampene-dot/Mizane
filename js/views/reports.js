@@ -8,17 +8,31 @@ import { syncCloudIfReady } from "../cloud-sync.js";
 export function viewBalance() {
   const { exerciceStart, exerciceEnd } = store.settings;
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
+  const balanced = Math.abs(tb.totals.debit - tb.totals.credit) < 0.01;
   const table = `
     <p class="muted">Période : ${esc(exerciceStart)} → ${esc(exerciceEnd)}</p>
-    ${tb.rows.length === 0 ? `<p class="muted">Aucune écriture.</p>` : `
-    <table>
-      <thead><tr><th>Compte</th><th>Libellé</th><th class="num">Total débit</th><th class="num">Total crédit</th><th class="num">Solde débiteur</th><th class="num">Solde créditeur</th></tr></thead>
-      <tbody>
-        ${tb.rows.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.label)}</td><td class="num">${money(r.debit)}</td><td class="num">${money(r.credit)}</td><td class="num">${r.soldeDebit ? money(r.soldeDebit) : ""}</td><td class="num">${r.soldeCredit ? money(r.soldeCredit) : ""}</td></tr>`).join("")}
-        <tr class="total"><td colspan="2">Totaux</td><td class="num">${money(tb.totals.debit)}</td><td class="num">${money(tb.totals.credit)}</td><td class="num">${money(tb.totals.soldeDebit)}</td><td class="num">${money(tb.totals.soldeCredit)}</td></tr>
-      </tbody>
-    </table>
-    <p class="${tb.totals.debit === tb.totals.credit ? "ok-msg" : "errors"}">${tb.totals.debit === tb.totals.credit ? "✓ Balance équilibrée." : "⚠ Balance déséquilibrée !"}</p>`}`;
+    <div class="grid cols-2">
+      <div class="card kpi"><div class="value">${money(tb.totals.debit)}</div><div class="label">Total débit</div></div>
+      <div class="card kpi"><div class="value">${money(tb.totals.credit)}</div><div class="label">Total crédit</div></div>
+    </div>
+    <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée : total débit égal au total crédit." : "⚠ Balance déséquilibrée — Écart : " + money(Math.abs(tb.totals.debit - tb.totals.credit))}</p>
+    <div class="row" style="margin:12px 0">
+      <div style="flex:2;min-width:220px"><label for="bal-search">Rechercher un compte</label><input id="bal-search" placeholder="Numéro ou intitulé du compte"></div>
+      <div class="nogrow"><button class="secondary" id="bal-reset">Réinitialiser</button></div>
+    </div>
+    ${tb.rows.length === 0 ? `<p class="muted">Aucune écriture sur cette période.</p>` : `
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Compte</th><th>Libellé</th><th class="num">Total débit</th><th class="num">Total crédit</th><th class="num">Solde débiteur</th><th class="num">Solde créditeur</th></tr></thead>
+        <tbody>
+          ${tb.rows.map((r) => `<tr data-bal-row data-search="${esc((r.code + " " + r.label).toLocaleLowerCase("fr"))}"><td>${esc(r.code)}</td><td>${esc(r.label)}</td><td class="num">${money(r.debit)}</td><td class="num">${money(r.credit)}</td><td class="num">${r.soldeDebit ? money(r.soldeDebit) : ""}</td><td class="num">${r.soldeCredit ? money(r.soldeCredit) : ""}</td></tr>`).join("")}
+          <tr class="total" id="bal-filtered-total"><td colspan="2">Totaux des comptes affichés</td><td class="num" id="bal-sum-debit"></td><td class="num" id="bal-sum-credit"></td><td class="num" id="bal-sum-sd"></td><td class="num" id="bal-sum-sc"></td></tr>
+        </tbody>
+      </table>
+      <p id="bal-no-match" class="muted" hidden>Aucun compte ne correspond à cette recherche.</p>
+      <p class="muted">Le contrôle d'équilibre ci-dessus porte toujours sur la balance complète, même lorsque la recherche masque certains comptes.</p>
+    </div>`}
+  `;
   $app.innerHTML = `
     <h1>Balance générale</h1>
     <div class="card table-wrap">${table}
@@ -29,18 +43,59 @@ export function viewBalance() {
       </div>
     </div>
   `;
-  document.getElementById("bal-print").addEventListener("click", () =>
-    printHTML(`Balance générale — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, table));
+  const normalize = (value) => String(value || "").toLocaleLowerCase("fr").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").trim();
+  const filteredRows = () => {
+    const query = normalize(document.getElementById("bal-search")?.value);
+    return tb.rows.filter((row) => !query || normalize(row.code + " " + row.label).includes(query));
+  };
+  const applySearch = () => {
+    const query = normalize(document.getElementById("bal-search")?.value);
+    let debit = 0, credit = 0, soldeDebit = 0, soldeCredit = 0, count = 0;
+    $app.querySelectorAll("[data-bal-row]").forEach((row) => {
+      const show = !query || normalize(row.dataset.search).includes(query);
+      row.hidden = !show;
+      if (!show) return;
+      count++;
+      const data = tb.rows.find((item) => item.code === row.cells[0].textContent);
+      if (!data) return;
+      debit += data.debit; credit += data.credit; soldeDebit += data.soldeDebit; soldeCredit += data.soldeCredit;
+    });
+    const set = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = money(value); };
+    set("bal-sum-debit", debit); set("bal-sum-credit", credit); set("bal-sum-sd", soldeDebit); set("bal-sum-sc", soldeCredit);
+    const total = document.getElementById("bal-filtered-total");
+    if (total) total.hidden = count === 0;
+    const empty = document.getElementById("bal-no-match");
+    if (empty) empty.hidden = count !== 0;
+  };
+  document.getElementById("bal-search")?.addEventListener("input", applySearch);
+  document.getElementById("bal-reset")?.addEventListener("click", () => {
+    const input = document.getElementById("bal-search");
+    if (input) input.value = "";
+    applySearch();
+  });
+  applySearch();
+  document.getElementById("bal-print").addEventListener("click", () => {
+    const printable = $app.querySelector(".card.table-wrap").innerHTML;
+    printHTML(`Balance générale — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, printable);
+  });
   document.getElementById("bal-csv").addEventListener("click", () => {
-    downloadBlob(new Blob(["\ufeff" + toCSV(tb.rows)], { type: "text/csv;charset=utf-8" }), "mizane-balance.csv");
+    const rows = filteredRows();
+    if (!rows.length) return toast("Aucun compte à exporter.");
+    downloadBlob(new Blob(["\\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-balance.csv");
   });
   document.getElementById("bal-xls").addEventListener("click", () => {
+    const rows = filteredRows();
+    if (!rows.length) return toast("Aucun compte à exporter.");
     const card = $app.querySelector(".card.table-wrap table");
     if (!card) return toast("Aucune donnée à exporter.");
-    exportXLS(`Balance générale — ${store.settings.companyName}`, card.outerHTML, "mizane-balance.xls");
+    const clone = card.cloneNode(true);
+    clone.querySelectorAll("[data-bal-row]").forEach((row) => {
+      const query = normalize(document.getElementById("bal-search")?.value);
+      if (query && !normalize(row.dataset.search).includes(query)) row.remove();
+    });
+    exportXLS(`Balance générale — ${store.settings.companyName}`, clone.outerHTML, "mizane-balance.xls");
   });
 }
-
 export function viewIncome() {
   const { exerciceStart, exerciceEnd } = store.settings;
   const is = incomeStatement(store, exerciceStart, exerciceEnd);

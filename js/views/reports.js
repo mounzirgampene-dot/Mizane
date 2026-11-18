@@ -3,6 +3,7 @@ import { trialBalance, incomeStatement, balanceSheet, toCSV } from "../accountin
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { printHTML } from "../print.js";
 import { store, $app, router, toast, esc, money } from "../state.js";
+import { syncCloudIfReady } from "../cloud-sync.js";
 
 export function viewBalance() {
   const { exerciceStart, exerciceEnd } = store.settings;
@@ -109,6 +110,19 @@ export function viewSheet() {
     printHTML(`Bilan — ${store.settings.companyName} au ${exerciceEnd}`, body));
 }
 
+async function syncThirdsChange(action) {
+  try {
+    const result = await syncCloudIfReady();
+    if (result.skipped) {
+      toast(`Tiers ${action} localement. Effectuez la première synchronisation depuis l’espace SaaS pour activer le cloud.`, 5500);
+      return;
+    }
+    toast(`✓ Tiers ${action} et synchronisé avec le cloud.`);
+  } catch (error) {
+    toast(`Tiers ${action} localement, mais synchronisation cloud impossible : ${error?.message || "erreur inconnue"}`, 6000);
+  }
+}
+
 export function viewThirds() {
   const rows = store.thirds.map((t) => {
     let solde = 0;
@@ -134,16 +148,16 @@ export function viewThirds() {
       ${store.thirds.length ? `<div class="actions"><button class="secondary" id="t-print">🖨 Imprimer</button></div>` : ""}
     </div>
   `;
-  document.getElementById("t-add").addEventListener("click", () => {
+  document.getElementById("t-add").addEventListener("click", async () => {
     const name = document.getElementById("t-name").value.trim();
     if (!name) return toast("Le nom est obligatoire.");
     store.thirds.push({ name, type: document.getElementById("t-type").value, phone: document.getElementById("t-phone").value, email: document.getElementById("t-email").value });
     saveStore(store);
-    toast("✓ Tiers ajouté.");
+    await syncThirdsChange("ajouté");
     router.render();
   });
   $app.querySelectorAll("[data-del-third]").forEach((b) => {
-    b.addEventListener("click", () => {
+    b.addEventListener("click", async () => {
       const index = Number(b.dataset.delThird);
       const third = store.thirds[index];
       if (!third) return;
@@ -156,7 +170,7 @@ export function viewThirds() {
       if (!window.confirm(`Confirmer la suppression du tiers « ${third.name} » ?`)) return;
       store.thirds.splice(index, 1);
       saveStore(store);
-      toast("✓ Tiers supprimé.");
+      await syncThirdsChange("supprimé");
       router.render();
     });
   });

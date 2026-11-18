@@ -425,13 +425,13 @@ export async function restoreAccountingFromCloud(supabase, companyId) {
       }
     }
 
-    const finalCloud = await readCloud(supabase, companyId);
-    const finalRemote = remoteSnapshot(finalCloud, store);
     if (localStorage.getItem(LOCAL_KEY) !== raw) {
       throw new Error("Les données locales ont changé pendant la récupération. Aucune donnée n'a été remplacée ; relancez l'opération.");
     }
     localStorage.setItem(LOCAL_KEY, JSON.stringify(store));
-    saveShadow(companyId, finalRemote);
+    // Le shadow doit correspondre exactement aux données effectivement installées.
+    // Les changements cloud ultérieurs seront récupérés lors de la synchronisation suivante.
+    saveShadow(companyId, remote);
     return {
       restored: true,
       thirds: store.thirds.length,

@@ -85,9 +85,15 @@ export const MAX_AMOUNT = 999999999999;
 
 // Date réellement calendaire (rejette 2026-99-99, 2025-02-29…).
 export function validDate(s) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ""))) return false;
-  const d = new Date(s + "T00:00:00");
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  const match = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const date = new Date(0);
+  date.setUTCHours(0, 0, 0, 0);
+  date.setUTCFullYear(year, month - 1, day);
+  return date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day;
 }
 
 export function validateEntry(store, entry) {

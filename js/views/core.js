@@ -3,6 +3,7 @@ import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatemen
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
+import { attachAccountAutocomplete } from "../account-autocomplete.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -42,8 +43,8 @@ export function viewDashboard() {
 function lineRowHTML(l, i) {
   return `
     <tr>
-      <td style="min-width:140px"><input list="accounts-list" data-i="${i}" data-f="account" value="${esc(l.account)}" placeholder="Compte" autocomplete="off"></td>
-      <td><input data-i="${i}" data-f="label" value="${esc(l.label)}" placeholder="Libellé"></td>
+      <td style="min-width:160px"><input data-i="${i}" data-f="account" value="${esc(l.account)}" placeholder="N° ou nom du compte" autocomplete="off"></td>
+      <td style="min-width:180px"><input data-i="${i}" data-f="label" value="${esc(l.label)}" placeholder="Ex. achat de fournitures"></td>
       <td style="min-width:110px"><input type="number" step="0.01" min="0" data-i="${i}" data-f="debit" value="${l.debit}" placeholder="Débit"></td>
       <td style="min-width:110px"><input type="number" step="0.01" min="0" data-i="${i}" data-f="credit" value="${l.credit}" placeholder="Crédit"></td>
       <td><input data-i="${i}" data-f="third" value="${esc(l.third || "")}" placeholder="Tiers (opt.)"></td>
@@ -62,9 +63,6 @@ export function viewEntry() {
   const balanced = Math.abs(diff) < 0.001 && totals.debit > 0;
   $app.innerHTML = `
     <h1>Saisie d'écriture</h1>
-    <datalist id="accounts-list">
-      ${planAccounts.map((a) => `<option value="${a.code}">${esc(a.code)} — ${esc(a.label)}</option>`).join("")}
-    </datalist>
     <div class="card">
       <div class="row">
         <div><label>Date</label><input type="date" id="e-date" value="${esc(currentHeader.date)}"></div>
@@ -75,7 +73,7 @@ export function viewEntry() {
       </div>
       <div class="table-wrap" style="margin-top:12px">
         <table>
-          <thead><tr><th>Compte</th><th>Libellé</th><th class="num">Débit</th><th class="num">Crédit</th><th>Tiers</th><th></th></tr></thead>
+          <thead><tr><th>Compte (numéro ou nom)</th><th>Libellé de l’opération</th><th class="num">Débit</th><th class="num">Crédit</th><th>Tiers</th><th></th></tr></thead>
           <tbody id="lines-body">${draftLines.map(lineRowHTML).join("")}</tbody>
         </table>
       </div>
@@ -103,11 +101,24 @@ export function viewEntry() {
     </details>
   `;
 
+  const searchableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])]
+    .filter((account, index, all) => all.findIndex((item) => String(item.code) === String(account.code)) === index);
   $app.querySelectorAll("[data-i]").forEach((inp) => {
+    const lineIndex = Number(inp.dataset.i);
     inp.addEventListener("input", () => {
-      draftLines[Number(inp.dataset.i)][inp.dataset.f] = inp.value;
+      draftLines[lineIndex][inp.dataset.f] = inp.value;
       if (inp.dataset.f === "debit" || inp.dataset.f === "credit") updateEntryTotals();
     });
+    if (inp.dataset.f === "account" || inp.dataset.f === "label") {
+      attachAccountAutocomplete(inp, searchableAccounts, (account) => {
+        draftLines[lineIndex].account = String(account.code);
+        draftLines[lineIndex].label = String(account.label);
+        const accountInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="account"]`);
+        const labelInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="label"]`);
+        if (accountInput) accountInput.value = account.code;
+        if (labelInput) labelInput.value = account.label;
+      }, inp.dataset.f === "label" ? "label" : "code");
+    }
   });
   ["e-date", "e-journal", "e-ref"].forEach((id) => {
     document.getElementById(id).addEventListener("input", (e) => {
@@ -309,8 +320,7 @@ export function viewLedger() {
     <h1>Grand livre</h1>
     <div class="card">
       <div class="row">
-        <div><label>Compte</label><input id="gl-account" list="gl-accounts" placeholder="Ex. 411" value=""></div>
-        <datalist id="gl-accounts">${planAccounts.map((a) => `<option value="${a.code}">${esc(a.label)}</option>`).join("")}</datalist>
+        <div><label>Compte</label><input id="gl-account" placeholder="Numéro ou libellé du compte" value="" autocomplete="off"></div>
         <div><label>Du</label><input type="date" id="gl-start" value="${exerciceStart}"></div>
         <div><label>Au</label><input type="date" id="gl-end" value="${exerciceEnd}"></div>
         <div class="nogrow"><button id="gl-run">Afficher</button></div>
@@ -320,6 +330,11 @@ export function viewLedger() {
       <div id="gl-result"></div>
     </div>
   `;
+  const ledgerAccounts = [...planAccounts, ...(store.settings.customAccounts || [])]
+    .filter((account, index, all) => all.findIndex((item) => String(item.code) === String(account.code)) === index);
+  attachAccountAutocomplete(document.getElementById("gl-account"), ledgerAccounts, (account) => {
+    document.getElementById("gl-account").value = account.code;
+  });
   const run = () => {
     const code = document.getElementById("gl-account").value.trim();
     const start = document.getElementById("gl-start").value;

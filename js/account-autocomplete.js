@@ -121,12 +121,10 @@ const CONCEPTS = {
   regularisations:["regularisation","regul","avance","charge","produit","periode"],
   constatee:["constatees","avance","regularisation","periode"],
   constatees:["constatee","avance","regularisation","periode"],
-  d avance:["avance","regularisation","periode"],
   charge:["charges","depense","depenses","exploitation","sociale","constatee"],
   produit:["produits","revenu","revenus","exploitation","constate"],
   amortissements:["amortissement","dotation","dotations","immobilisation"],
   dotations:["dotation","amortissement","amortissements"],
-  roulant:["vehicule","transport","automobile","materiel"] 
 };
 
 function normalize(value) {

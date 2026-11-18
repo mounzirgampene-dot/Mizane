@@ -59,6 +59,66 @@ test("recherche par libellé d'opération : vocabulaire courant", () => {
   }
 });
 
+test("opérations comptables complémentaires : charges, immobilisations, trésorerie et régularisations", () => {
+  const accounts = allAccounts("syscohada");
+  const cases = [
+    ["charges sociales patronales", "664"],
+    ["cotisations sociales part salariale", "431"],
+    ["impôt sur les salaires ITS IRPP", "441"],
+    ["achat de fournitures de bureau", "6052"],
+    ["entretien et réparations des biens immobiliers", "624"],
+    ["primes d'assurance multirisque véhicule", "625"],
+    ["publicité et relations publiques", "627"],
+    ["transport sur achats", "611"],
+    ["transport sur ventes", "612"],
+    ["intérêts d'emprunt", "671"],
+    ["perte de change", "675"],
+    ["escompte accordé", "673"],
+    ["achat de matériel roulant véhicule", "2455"],
+    ["acquisition de logiciel", "213"],
+    ["paiement fournisseur par chèque", "402"],
+    ["virement interne banque vers caisse", "58"],
+    ["dotations aux amortissements", "681"],
+  ];
+  for (const [query, expectedCode] of cases) {
+    const results = searchAccountsByDescription(accounts, query);
+    assert.ok(results.some((account) => account.code === expectedCode),
+      `le libellé "${query}" doit proposer le compte ${expectedCode}; reçus : ${results.map((a) => a.code).join(", ")}`);
+  }
+});
+
+test("opérations complémentaires : suggestions disponibles sur les quatre plans", () => {
+  for (const planId of Object.keys(PLANS)) {
+    const accounts = allAccounts(planId);
+    for (const query of [
+      "charges sociales patronales",
+      "cotisations sociales part salariale",
+      "impôt sur les salaires ITS IRPP",
+      "achat de fournitures de bureau",
+      "entretien des biens immobiliers",
+      "assurance multirisque véhicule",
+      "publicité relations publiques",
+      "transport sur achats",
+      "transport sur ventes",
+      "intérêts d'emprunt",
+      "perte de change",
+      "escompte accordé",
+      "achat de matériel roulant",
+      "achat de mobilier de bureau",
+      "acquisition de logiciel",
+      "encaissement client par Mobile Money",
+      "paiement fournisseur par chèque",
+      "virement interne banque vers caisse",
+      "charges constatées d'avance",
+      "produits constatés d'avance",
+      "dotations aux amortissements",
+    ]) {
+      assert.ok(searchAccountsByDescription(accounts, query).length > 0,
+        `aucune suggestion pour "${query}" dans le plan ${planId}`);
+    }
+  }
+});
+
 test("recherche par libellé d'opération sur les quatre plans", () => {
   for (const planId of Object.keys(PLANS)) {
     const accounts = allAccounts(planId);

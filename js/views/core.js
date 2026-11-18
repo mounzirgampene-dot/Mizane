@@ -273,13 +273,13 @@ function parseEntryDate(value, format) {
   const raw = String(value || "").trim();
   let match;
   if (format === "DMY") {
-    match = raw.match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})$/);
+    match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!match) return "";
     const [, day, month, year] = match;
     const iso = `${year}-${month}-${day}`;
     return isRealEntryDate(iso) ? iso : "";
   }
-  match = raw.match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return match && isRealEntryDate(raw) ? raw : "";
 }
 

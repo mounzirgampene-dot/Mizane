@@ -109,12 +109,15 @@ export function viewEntry() {
       draftLines[lineIndex][inp.dataset.f] = inp.value;
       if (inp.dataset.f === "debit" || inp.dataset.f === "credit") updateEntryTotals();
     });
-    if (inp.dataset.f === "account") {
+    if (inp.dataset.f === "account" || inp.dataset.f === "label") {
       attachAccountAutocomplete(inp, searchableAccounts, (account) => {
         draftLines[lineIndex].account = String(account.code);
+        draftLines[lineIndex].label = String(account.label);
         const accountInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="account"]`);
+        const labelInput = $app.querySelector(`[data-i="${lineIndex}"][data-f="label"]`);
         if (accountInput) accountInput.value = account.code;
-      });
+        if (labelInput) labelInput.value = account.label;
+      }, inp.dataset.f === "label" ? "label" : "code");
     }
   });
   ["e-date", "e-journal", "e-ref"].forEach((id) => {

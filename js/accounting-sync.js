@@ -427,7 +427,6 @@ export async function restoreAccountingFromCloud(supabase, companyId) {
 
     const finalCloud = await readCloud(supabase, companyId);
     const finalRemote = remoteSnapshot(finalCloud, store);
-    const currentRaw = localStorage.getItem(LOCAL_KEY);
     // Aucun changement local n'a été écrit avant la fin des lectures cloud.
     localStorage.setItem(LOCAL_KEY, JSON.stringify(store));
     saveShadow(companyId, finalRemote);

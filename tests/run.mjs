@@ -9,6 +9,7 @@ import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js"
 import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
+import { parseBankCSV, matchBankLines } from "../js/finance.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -1179,6 +1180,37 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;
   }
+});
+
+
+test("rapprochement bancaire : import des dates et montants signés", () => {
+  const rows = parseBankCSV("date;libellé;montant\\n10/01/2026;Virement client;1250,50\\n2026-01-11;Fournisseur;-500");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].date, "2026-01-10");
+  assert.equal(rows[0].amount, 1250.5);
+  assert.equal(rows[1].amount, -500);
+});
+test("rapprochement bancaire : une écriture de trésorerie n'est utilisée qu'une fois", () => {
+  const store = { entries: [
+    { id: 7, date: "2026-01-10", reference: "BAN-7", lines: [{ account: "521", label: "Virement client", debit: 1000, credit: 0 }] },
+  ] };
+  const bankLines = [
+    { date: "2026-01-10", label: "Virement client", amount: 1000 },
+    { date: "2026-01-10", label: "Virement client en double", amount: 1000 },
+  ];
+  const result = matchBankLines(store, bankLines, 4);
+  assert.equal(result[0].match, 7);
+  assert.equal(result[0].status, "matched");
+  assert.equal(result[1].match, null);
+  assert.equal(result[1].status, "unmatched");
+  assert.deepEqual(result[1].candidates, [7]);
+});
+test("rapprochement bancaire : la tolérance de date est respectée", () => {
+  const store = { entries: [
+    { id: 8, date: "2026-01-10", lines: [{ account: "521", debit: 0, credit: 250 }] },
+  ] };
+  assert.equal(matchBankLines(store, [{ date: "2026-01-14", amount: -250 }], 4)[0].match, 8);
+  assert.equal(matchBankLines(store, [{ date: "2026-01-15", amount: -250 }], 4)[0].match, null);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

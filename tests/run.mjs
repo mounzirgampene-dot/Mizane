@@ -1,6 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
-import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
+import { cleanSecrets, fingerprint, localSnapshot, orderOperations, restoreAccountingFromCloud, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -719,6 +719,48 @@ function seedShadow(storage, companyId, thirdRecords = []) {
   }
   storage.setItem("mizane_sync_shadow_v1:" + companyId, JSON.stringify(shadow));
 }
+
+await testAsync("restauration cloud : remplace les données locales invalides sans aucun envoi", async () => {
+  const companyId = "company-cloud-restore-test";
+  const cloudUid = "abababab-abab-4bab-8bab-abababababab";
+  const thirdUid = "bcbcbcbc-bcbc-4bcb-8bcb-bcbcbcbcbcbc";
+  const cloud = makeCloud(companyId, [
+    { client_uid: thirdUid, name: "Diallo & Fils", third_type: "fournisseur", phone: "", email: "", sync_version: 1 },
+  ]);
+  cloud.state.entries = [{
+    id: 1, client_uid: cloudUid, entry_date: "2026-01-15", journal: "ACH",
+    reference: "ACH-RESTORE", is_reversed: false, reverse_of_entry_id: null,
+    lines: [
+      { account_code: "601", label: "Achat", third_name: "Diallo & Fils", debit: 125, credit: 0 },
+      { account_code: "401", label: "Fournisseur", third_name: "Diallo & Fils", debit: 0, credit: 125 },
+    ],
+    sync_version: 1,
+  }];
+  const storage = memoryStorage();
+  const local = makeSyncStore([{ client_uid: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", name: "Ancien tiers local", type: "client" }]);
+  local.entries = [{
+    client_uid: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", id: 1, date: "2026-02-31",
+    journal: "ACH", reference: "LOCAL-INVALID", reversed: false, reverseOf: null,
+    lines: [{ account: "601", debit: 125, credit: 0 }, { account: "401", debit: 0, credit: 125 }],
+  }];
+  storage.setItem("mizane_v1", JSON.stringify(local));
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const result = await restoreAccountingFromCloud(cloud.client, companyId);
+    const restored = JSON.parse(storage.getItem("mizane_v1"));
+    assert.equal(result.restored, true);
+    assert.equal(cloud.pushes, 0, "la restauration ne doit jamais pousser de données locales");
+    assert.deepEqual(restored.thirds.map(x => x.name), ["Diallo & Fils"]);
+    assert.equal(restored.entries.length, 1);
+    assert.equal(restored.entries[0].date, "2026-01-15");
+    assert.equal(restored.entries[0].lines[0].third, "Diallo & Fils");
+    assert.ok(storage.getItem("mizane_sync_shadow_v1:" + companyId), "le shadow initial est créé");
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
 await testAsync("deux appareils : une modification locale est envoyée puis récupérée", async () => {
   const companyId = "company-sync-test";
   const uid = "44444444-4444-4444-8444-444444444444";

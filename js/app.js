@@ -7,6 +7,7 @@ import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools } from "./views/ops.js";
+import { syncCloudIfReady } from "./cloud-sync.js";
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -93,6 +94,11 @@ async function start() {
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("sw.js"); } catch (_e) { /* PWA optionnel */ }
   }
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
 }
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,
@@ -108,5 +114,28 @@ window.addEventListener("storage", (event) => {
     toast("Mise à jour cloud reçue, mais le rechargement local a échoué : " + (error?.message || "erreur inconnue"), 5000);
   }
 });
+
+window.addEventListener("mizane:cloud-synced", (event) => {
+  if (!(Number(event.detail?.pulled) > 0)) return;
+  try {
+    initStore(loadStore(allAccounts("syscohada")));
+    renderNav();
+    render();
+    toast("Comptabilité actualisée depuis le cloud.");
+  } catch (error) {
+    toast("Données cloud reçues, mais actualisation impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+});
+
+async function syncWhenActive() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+}
+window.addEventListener("focus", syncWhenActive);
+document.addEventListener("visibilitychange", syncWhenActive);
 
 start();

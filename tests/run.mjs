@@ -490,7 +490,9 @@ test("validateBackup rejette date impossible, déséquilibre et montants excessi
   assert.throws(() => validateBackup({ ...base, entries: [{ ...base.entries[0], lines: [{ account: "521", debit: 1e15, credit: 0 }, { account: "101", debit: 0, credit: 1e15 }] }] }), /montant invalide/);
 });
 
-test("validDate rejette les dates calendaires impossibles", () => {
+test("validDate vérifie le calendrier sans dépendre du fuseau horaire", () => {
+  assert.equal(validDate("2026-01-10"), true);
+  assert.equal(validDate("2026-11-18"), true);
   assert.equal(validDate("2026-99-99"), false);
   assert.equal(validDate("2025-02-29"), false);
   assert.equal(validDate("2024-02-29"), true);

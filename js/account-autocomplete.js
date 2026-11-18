@@ -239,9 +239,6 @@ export function attachAccountAutocomplete(input, accounts, onSelect, displayFiel
     else if(event.key==="Escape") close();
   });
   input.addEventListener("blur",()=>setTimeout(close,160));
-  const reposition = () => { if (!menu.classList.contains("hidden")) positionMenu(); };
-  window.addEventListener("scroll", reposition, true);
-  window.addEventListener("resize", reposition);
   function renderActive(){
     [...menu.children].forEach((node,index)=>{
       node.classList.toggle("active",index===active);

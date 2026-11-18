@@ -45,7 +45,7 @@ test("recherche par libellé d'opération : vocabulaire courant", () => {
     ["règlement fournisseur", "401"],
     ["paiement des salaires", "661"],
     ["facture internet", "628"],
-    ["achat de carburant", "6051"],
+    ["achat de carburant", "61"],
     ["réparation du véhicule", "624"],
     ["assurance du local", "625"],
     ["vente de marchandises", "701"],

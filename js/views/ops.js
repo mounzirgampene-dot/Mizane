@@ -174,7 +174,7 @@ export function viewTools() {
       out.querySelectorAll("[data-bk-row]").forEach((row) => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
     });
     document.getElementById("bk-csv").addEventListener("click", () => {
-      downloadBlob(new Blob(["\\ufeff" + toCSV(matched.map((m) => ({
+      downloadBlob(new Blob(["\ufeff" + toCSV(matched.map((m) => ({
         date: m.date, libelle: m.label, montant: m.amount, ecriture: m.match || "",
         compte: m.matchAccount || "", etat: m.status === "matched" ? "Rapprochée" : "À vérifier",
       })))], { type: "text/csv;charset=utf-8" }), "mizane-rapprochement.csv");

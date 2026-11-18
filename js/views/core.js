@@ -244,7 +244,16 @@ function loadDraftFromSuggestion(s, note) {
 export function viewEntries() {
   const rows = [...store.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   $app.innerHTML = `
-    <h1>Écritures (${rows.length})</h1>
+    <h1>Écritures (<span id="entries-count">${rows.length}</span> / ${rows.length})</h1>
+    <div class="card">
+      <div class="row">
+        <div style="flex:2;min-width:220px"><label for="entries-search">Rechercher</label><input id="entries-search" placeholder="Référence, libellé, compte, tiers…"></div>
+        <div><label for="entries-journal">Journal</label><select id="entries-journal"><option value="">Tous les journaux</option>${JOURNALS.map((j) => `<option value="${esc(j.id)}">${esc(j.id)} — ${esc(j.name)}</option>`).join("")}</select></div>
+        <div><label for="entries-start">Du</label><input type="date" id="entries-start"></div>
+        <div><label for="entries-end">Au</label><input type="date" id="entries-end"></div>
+        <div class="nogrow"><button class="secondary" id="entries-reset">Réinitialiser</button></div>
+      </div>
+    </div>
     <div class="card table-wrap">
       ${rows.length === 0 ? `<p class="muted">Aucune écriture. <button class="small" data-act="demo">Charger la démo</button></p>` : `
       <table>
@@ -269,7 +278,32 @@ export function viewEntries() {
       <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
-  $app.querySelectorAll("[data-reverse]").forEach((b) => {
+  const applyEntryFilters = () => {
+    const query = String(document.getElementById("entries-search")?.value || "").toLocaleLowerCase("fr").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").trim();
+    const journal = document.getElementById("entries-journal")?.value || "";
+    const start = document.getElementById("entries-start")?.value || "";
+    const end = document.getElementById("entries-end")?.value || "";
+    let visible = 0;
+    $app.querySelectorAll(".card.table-wrap tbody tr").forEach((row) => {
+      const date = row.cells[1]?.textContent.trim() || "";
+      const rowJournal = row.cells[2]?.textContent.trim() || "";
+      const text = row.textContent.toLocaleLowerCase("fr").normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+      const show = (!query || text.includes(query)) && (!journal || rowJournal === journal) && (!start || date >= start) && (!end || date <= end);
+      row.hidden = !show;
+      if (show) visible++;
+    });
+    const count = document.getElementById("entries-count");
+    if (count) count.textContent = String(visible);
+  };
+  ["entries-search", "entries-journal", "entries-start", "entries-end"].forEach((id) => {
+    const input = document.getElementById(id);
+    input?.addEventListener(id === "entries-search" ? "input" : "change", applyEntryFilters);
+  });
+  document.getElementById("entries-reset")?.addEventListener("click", () => {
+    ["entries-search", "entries-journal", "entries-start", "entries-end"].forEach((id) => { const input = document.getElementById(id); if (input) input.value = ""; });
+    applyEntryFilters();
+  });
+    $app.querySelectorAll("[data-reverse]").forEach((b) => {
     b.addEventListener("click", () => {
       const id = Number(b.dataset.reverse);
       const defaultDate = new Date().toISOString().slice(0, 10);

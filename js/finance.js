@@ -79,6 +79,8 @@ export function parseBankCSV(text) {
 export function matchBankLines(store, bankLines, days = 4) {
   const cash = [];
   for (const e of store.entries || []) {
+    // Exclure les écritures contrepassées et leurs contrepassations du rapprochement.
+    if (e.reversed || e.reverseOf) continue;
     for (const l of e.lines || []) {
       if (!String(l.account).startsWith("5")) continue;
       const amount = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));

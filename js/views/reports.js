@@ -116,9 +116,9 @@ export function viewThirds() {
     return { t, solde };
   });
   const table = store.thirds.length === 0 ? `<p class="muted">Aucun tiers enregistré.</p>` : `
-    <table><thead><tr><th>Nom</th><th>Type</th><th>Téléphone</th><th>Email</th><th class="num">Solde</th><th></th></tr></thead>
+    <table><thead><tr><th>Nom</th><th>Type</th><th>Téléphone</th><th>Email</th><th class="num">Solde</th><th>Actions</th></tr></thead>
     <tbody>${rows.map(({ t, solde }, i) => `<tr><td>${esc(t.name)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.phone || "")}</td><td>${esc(t.email || "")}</td><td class="num">${money(solde)}</td>
-    <td><button class="danger small" data-del-third="${i}">✕</button></td></tr>`).join("")}</tbody></table>`;
+    <td><button class="danger small" data-del-third="${i}" aria-label="Supprimer le tiers ${esc(t.name)}">Supprimer</button></td></tr>`).join("")}</tbody></table>`;
   $app.innerHTML = `
     <h1>Tiers (clients & fournisseurs)</h1>
     <div class="card">
@@ -127,7 +127,7 @@ export function viewThirds() {
         <div><label>Type</label><select id="t-type"><option value="client">Client</option><option value="fournisseur">Fournisseur</option><option value="autre">Autre</option></select></div>
         <div><label>Téléphone</label><input id="t-phone"></div>
         <div><label>Email</label><input id="t-email"></div>
-        <div class="nogrow"><button id="t-add">Ajouter</button></div>
+        <div class="nogrow"><button id="t-add">Ajouter le tiers</button></div>
       </div>
     </div>
     <div class="card table-wrap">${table}
@@ -144,8 +144,19 @@ export function viewThirds() {
   });
   $app.querySelectorAll("[data-del-third]").forEach((b) => {
     b.addEventListener("click", () => {
-      store.thirds.splice(Number(b.dataset.delThird), 1);
+      const index = Number(b.dataset.delThird);
+      const third = store.thirds[index];
+      if (!third) return;
+      const usedInEntries = (store.entries || []).some((entry) =>
+        (entry.lines || []).some((line) => String(line.third || "").trim() === String(third.name || "").trim())
+      );
+      if (usedInEntries) {
+        return toast("Suppression impossible : ce tiers est déjà utilisé dans une ou plusieurs écritures comptables.");
+      }
+      if (!window.confirm(`Confirmer la suppression du tiers « ${third.name} » ?`)) return;
+      store.thirds.splice(index, 1);
       saveStore(store);
+      toast("✓ Tiers supprimé.");
       router.render();
     });
   });

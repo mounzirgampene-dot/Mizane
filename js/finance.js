@@ -78,19 +78,36 @@ export function parseBankCSV(text) {
 
 export function matchBankLines(store, bankLines, days = 4) {
   const cash = [];
-  for (const e of store.entries) {
-    for (const l of e.lines) {
+  for (const e of store.entries || []) {
+    for (const l of e.lines || []) {
       if (!String(l.account).startsWith("5")) continue;
-      const amt = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));
-      if (amt) cash.push({ entryId: e.id, date: e.date, label: l.label, amount: amt });
+      const amount = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));
+      if (amount) cash.push({
+        entryId: e.id, date: e.date, label: l.label || e.reference || "",
+        account: String(l.account), amount,
+      });
     }
   }
-  return bankLines.map((bl) => {
-    const bt = Date.parse(bl.date);
-    const ids = cash
-      .filter((c) => Math.abs(c.amount - bl.amount) < 0.001 && Math.abs(Date.parse(c.date) - bt) <= days * 86400000)
-      .map((c) => c.entryId);
-    return { ...bl, match: ids.length ? ids[0] : null, candidates: [...new Set(ids)] };
+
+  // Une ligne de trésorerie ne peut être affectée qu'à une seule opération bancaire.
+  const used = new Set();
+  return bankLines.map((bankLine) => {
+    const bankTime = Date.parse(bankLine.date);
+    const candidates = cash
+      .map((line, index) => ({ ...line, index, delta: Math.abs(Date.parse(line.date) - bankTime) }))
+      .filter((line) => line.amount === round2(Number(bankLine.amount)) &&
+        Number.isFinite(line.delta) && line.delta <= days * 86400000)
+      .sort((a, b) => a.delta - b.delta || a.index - b.index);
+    const selected = candidates.find((candidate) => !used.has(candidate.index));
+    if (selected) used.add(selected.index);
+    return {
+      ...bankLine,
+      match: selected ? selected.entryId : null,
+      matchAccount: selected ? selected.account : null,
+      matchDate: selected ? selected.date : null,
+      candidates: [...new Set(candidates.map((candidate) => candidate.entryId))],
+      status: selected ? "matched" : "unmatched",
+    };
   });
 }
 

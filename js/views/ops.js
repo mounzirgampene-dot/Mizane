@@ -50,9 +50,12 @@ export function viewTools() {
 
     <div class="card">
       <h2>🏦 Rapprochement bancaire</h2>
-      <p class="muted">Collez votre relevé (une ligne par opération : <code>date;libellé;montant</code> — dates JJ/MM/AAAA ou AAAA-MM-JJ, montants signés). MIZANE rapproche automatiquement avec les écritures de trésorerie (classe 5) à ±4 jours.</p>
+      <p class="muted">Collez votre relevé bancaire (une ligne par opération : <code>date;libellé;montant</code>). Dates acceptées : JJ/MM/AAAA ou AAAA-MM-JJ. Utilisez un montant positif pour un crédit bancaire et négatif pour un débit, selon le sens des écritures de trésorerie de votre comptabilité.</p>
       <textarea id="bk-text" rows="6" placeholder="10/01/2025;Virement client;1000000&#10;12/01/2025;Fournisseur Diallo;-500000"></textarea>
-      <div class="actions"><button id="bk-run">Rapprocher</button></div>
+      <div class="row">
+        <div><label for="bk-days">Tolérance de date</label><select id="bk-days"><option value="0">Même jour</option><option value="2">± 2 jours</option><option value="4" selected>± 4 jours</option><option value="7">± 7 jours</option><option value="10">± 10 jours</option></select></div>
+        <div class="nogrow"><button id="bk-run">Rapprocher</button></div>
+      </div>
       <div id="bk-result" style="margin-top:10px"></div>
     </div>
   `;
@@ -145,18 +148,36 @@ export function viewTools() {
     const lines = parseBankCSV(document.getElementById("bk-text").value);
     const out = document.getElementById("bk-result");
     if (!lines.length) { out.innerHTML = `<p class="errors">Aucune ligne exploitable. Format attendu : <code>date;libellé;montant</code></p>`; return; }
-    const matched = matchBankLines(store, lines);
-    const ok = matched.filter((m) => m.match).length;
+    const days = Number(document.getElementById("bk-days").value) || 0;
+    const matched = matchBankLines(store, lines, days);
+    const ok = matched.filter((m) => m.status === "matched").length;
+    const pending = matched.length - ok;
+    const totalBank = matched.reduce((sum, line) => sum + Number(line.amount || 0), 0);
+    const totalMatched = matched.filter((line) => line.status === "matched").reduce((sum, line) => sum + Number(line.amount || 0), 0);
     out.innerHTML = `
-      <p>${ok} opération(s) rapprochée(s) sur ${matched.length}.</p>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th class="num">Montant</th><th>Rapprochement</th></tr></thead>
-      <tbody>${matched.map((m) => `<tr><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
-        <td>${m.match ? `<span class="ok-msg">✓ écriture #${m.match}</span>` : `<span class="warn">⚠ non rapprochée${m.candidates.length ? " — proches : #" + m.candidates.join(", #") : ""}</span>`}</td></tr>`).join("")}</tbody></table></div>
+      <div class="grid cols-2">
+        <div class="card kpi"><div class="value">${ok} / ${matched.length}</div><div class="label">Opérations rapprochées</div></div>
+        <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
+      </div>
+      <p class="muted">Tolérance appliquée : ±${days} jour(s). Montant du relevé : ${money(totalBank)} ; montant des opérations rapprochées : ${money(totalMatched)}.</p>
+      <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
+      <div class="table-wrap"><table><thead><tr><th>Date relevé</th><th>Libellé</th><th class="num">Montant</th><th>Écriture MIZANE</th><th>Compte</th><th>État</th></tr></thead>
+      <tbody>${matched.map((m, i) => `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
+        <td>${m.match ? `#${m.match} — ${esc(m.matchDate || "")}` : (m.candidates.length ? `Correspondances possibles : #${m.candidates.join(", #")}` : "Aucune correspondance exacte")}</td>
+        <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
+        <td>${m.match ? `<span class="ok-msg">✓ Rapprochée</span>` : `<span class="warn">⚠ À vérifier</span>`}</td></tr>`).join("")}</tbody></table></div>
+      <p class="muted">Une même ligne comptable ne peut plus être affectée à plusieurs opérations du relevé. Les lignes non rapprochées nécessitent un contrôle manuel.</p>
       <div class="actions">
         <button class="secondary" id="bk-csv">⬇ Exporter le rapprochement (CSV)</button>
       </div>`;
+    document.getElementById("bk-unmatched-only").addEventListener("change", (event) => {
+      out.querySelectorAll("[data-bk-row]").forEach((row) => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
+    });
     document.getElementById("bk-csv").addEventListener("click", () => {
-      downloadBlob(new Blob(["\ufeff" + toCSV(matched.map((m) => ({ date: m.date, libelle: m.label, montant: m.amount, ecriture: m.match || "" })))], { type: "text/csv;charset=utf-8" }), "mizane-rapprochement.csv");
+      downloadBlob(new Blob(["\ufeff" + toCSV(matched.map((m) => ({
+        date: m.date, libelle: m.label, montant: m.amount, ecriture: m.match || "",
+        compte: m.matchAccount || "", etat: m.status === "matched" ? "Rapprochée" : "À vérifier",
+      })))], { type: "text/csv;charset=utf-8" }), "mizane-rapprochement.csv");
     });
   });
 }

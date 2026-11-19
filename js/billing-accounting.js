@@ -4,10 +4,10 @@ import { validateEntry, round2 } from "./accounting.js";
 import { calculateBillingTotals } from "./billing-core.js";
 
 const DEFAULT_CODES = {
-  syscohada: { customer: ["411"], revenue: ["701"], tax: ["4431"], bank: ["521"], cash: ["571"] },
-  pcg: { customer: ["411"], revenue: ["707"], tax: ["4457", "4451"], bank: ["512"], cash: ["53"] },
-  nct: { customer: ["411"], revenue: ["707"], tax: ["4431", "4455"], bank: ["512"], cash: ["53"] },
-  cgnc: { customer: ["4421", "442"], revenue: ["711"], tax: ["4455"], bank: ["5141", "514"], cash: ["516"] },
+  syscohada: { customer: ["411"], revenue: ["701"], tax: ["4431"], bank: ["521"], cash: ["571"], fxGain: ["778"], fxLoss: ["675"] },
+  pcg: { customer: ["411"], revenue: ["707"], tax: ["4457", "4451"], bank: ["512"], cash: ["53"], fxGain: ["766"], fxLoss: [] },
+  nct: { customer: ["411"], revenue: ["707"], tax: ["4431", "4455"], bank: ["512"], cash: ["53"], fxGain: ["766"], fxLoss: ["675"] },
+  cgnc: { customer: ["4421", "442"], revenue: ["711"], tax: ["4455"], bank: ["5141", "514"], cash: ["516"], fxGain: [], fxLoss: ["675"] },
 };
 
 export function suggestBillingAccounts(planId, accounts = []) {
@@ -25,6 +25,8 @@ export function suggestBillingAccounts(planId, accounts = []) {
     tax: choose(defaults.tax, "liability"),
     bank: choose(defaults.bank, "asset"),
     cash: choose(defaults.cash, "asset"),
+    fxGain: defaults.fxGain.map(code => accounts.find(account => String(account.code) === code && account.type === "income")?.code).find(Boolean) || "",
+    fxLoss: defaults.fxLoss.map(code => accounts.find(account => String(account.code) === code && account.type === "expense")?.code).find(Boolean) || "",
   };
 }
 
@@ -95,18 +97,30 @@ export function buildBillingJournalEntries(store, invoice, mapping = {}) {
     if (existing.has(reference)) continue;
     const cash = payment.method === "cash";
     const treasury = requireAccount(cash ? "cash" : "bank", "asset", cash ? "de caisse" : "bancaire");
-    const rate = Number(payment.exchangeRate || invoice.exchangeRate);
-    const amount = round2(Number(payment.amount) * rate);
-    if (!(Number(payment.amount) > 0) || !Number.isFinite(Number(payment.amount))) errors.push("Montant de règlement invalide (paiement #" + payment.id + ").");
-    if (!(rate > 0) || !Number.isFinite(rate)) errors.push("Taux de conversion invalide (paiement #" + payment.id + ").");
-    if (amount > 0) entries.push({
+    const rateValue = payment.exchangeRate == null || payment.exchangeRate === "" ? invoice.exchangeRate : payment.exchangeRate;
+    const rate = Number(rateValue);
+    const paymentAmount = Number(payment.amount);
+    const amount = round2(paymentAmount * rate);
+    const receivableAmount = round2(paymentAmount * Number(invoice.exchangeRate));
+    const exchangeDifference = round2(amount - receivableAmount);
+    if (!(paymentAmount > 0) || !Number.isFinite(paymentAmount)) errors.push("Montant de règlement invalide (paiement #" + payment.id + ").");
+    if (!(rate > 0) || !Number.isFinite(rate)) errors.push("Taux de conversion du règlement invalide (paiement #" + payment.id + ").");
+    const paymentLines = [
+      { account: treasury, label: "Encaissement facture " + invoice.number, third: "", debit: amount, credit: 0 },
+    ];
+    if (exchangeDifference < 0) {
+      const fxLoss = requireAccount("fxLoss", "expense", "de perte de change");
+      paymentLines.push({ account: fxLoss, label: "Perte de change — facture " + invoice.number, third: "", debit: -exchangeDifference, credit: 0 });
+    } else if (exchangeDifference > 0) {
+      const fxGain = requireAccount("fxGain", "income", "de gain de change");
+      paymentLines.push({ account: fxGain, label: "Gain de change — facture " + invoice.number, third: "", debit: 0, credit: exchangeDifference });
+    }
+    paymentLines.push({ account: customer, label: "Règlement client — " + invoice.number, third: thirdName(store, invoice.customerName), debit: 0, credit: receivableAmount });
+    if (amount > 0 && receivableAmount > 0) entries.push({
       date: payment.date || invoice.date,
       journal: cash ? "CAI" : "BAN",
       reference,
-      lines: [
-        { account: treasury, label: "Encaissement facture " + invoice.number, third: "", debit: amount, credit: 0 },
-        { account: customer, label: "Règlement client — " + invoice.number, third: thirdName(store, invoice.customerName), debit: 0, credit: amount },
-      ],
+      lines: paymentLines,
     });
     existing.add(reference);
   }

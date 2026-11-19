@@ -61,9 +61,14 @@ function documentHTML(doc) {
       : number(doc.paidAmount))
     : 0;
   const balance = Math.max(0, round(t.ttc - paid));
+  const requestedAdvance = number(doc.advanceRequested);
   const paymentSummary = doc.type === "invoice" && paid > 0
     ? `<table class="inv-totals payment-summary"><tr><td>Avance déjà payée</td><td class="num">${fmt(paid,currency,locale)}</td></tr><tr class="total"><td>Reste à payer</td><td class="num"><strong>${fmt(balance,currency,locale)}</strong></td></tr></table>`
-    : "";
+    : doc.type === "quote" && requestedAdvance > 0
+      ? `<table class="inv-totals payment-summary"><tr><td>Avance demandée</td><td class="num">${fmt(requestedAdvance,currency,locale)}</td></tr><tr class="total"><td>Solde après avance</td><td class="num"><strong>${fmt(Math.max(0,round(t.ttc-requestedAdvance)),currency,locale)}</strong></td></tr></table>`
+      : doc.type === "invoice" && requestedAdvance > 0 && paid === 0
+        ? `<table class="inv-totals payment-summary"><tr><td>Avance demandée</td><td class="num">${fmt(requestedAdvance,currency,locale)}</td></tr><tr class="total"><td>Solde après avance demandée</td><td class="num"><strong>${fmt(Math.max(0,round(t.ttc-requestedAdvance)),currency,locale)}</strong></td></tr></table>`
+        : "";
   const rows = (doc.lines || []).map((line) => {
     const lineHT = round(number(line.quantity) * number(line.unitPrice));
     const lineTax = round(lineHT * number(line.taxRate) / 100);
@@ -122,7 +127,7 @@ function openEditor(type, source = null) {
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);
-  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
+  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", advanceRequested: 0, lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = source ? (type === "quote" ? "Modifier le devis" : "Modifier la facture") : (type === "quote" ? "Créer un devis" : "Créer une facture");
   const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
@@ -132,7 +137,9 @@ function openEditor(type, source = null) {
     <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><input id="bill-country-search" type="search" placeholder="Rechercher un pays ou une devise"><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
     <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].sort().map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
     <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
-    <div id="bill-totals" class="calculator-result"></div><label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
+    <div id="bill-totals" class="calculator-result"></div>
+    <div><label>${type === "quote" ? "Avance demandée" : source ? "Avance déjà encaissée" : "Avance reçue à la création"} (${esc(doc.currency)})</label><input id="bill-advance" type="number" min="0" step="0.01" value="${type === "quote" ? number(doc.advanceRequested) : source ? number(doc.paidAmount) : 0}" ${source && type === "invoice" ? "readonly" : ""}><small class="muted">${type === "quote" ? "Montant d'avance à demander au client ; ce n'est pas un paiement encaissé." : source ? "Les paiements déjà enregistrés sont conservés dans leur historique." : "Cette avance sera enregistrée comme un premier paiement de la facture."}</small></div>
+    <label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
     <div class="actions"><button type="button" id="bill-save">Enregistrer ${type === "quote" ? "le devis" : "la facture"}</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-error" class="errors" role="alert"></div>`;
   const addLine = (line = { description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }) => {
     const body = content.querySelector("#bill-lines");
@@ -154,7 +161,10 @@ function openEditor(type, source = null) {
       const value = number(line.quantity) * number(line.unitPrice) * (1 + number(line.taxRate)/100);
       tr.querySelector("[data-line-total]").textContent = fmt(value,content.querySelector("#bill-currency").value,store.settings.locale);
     });
-    content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br><small>Contre-valeur comptable : ${fmt(number(content.querySelector("#bill-rate").value) > 0 ? convertBillingAmount(result.ttc, number(content.querySelector("#bill-rate").value)) : 0,store.settings.currency,store.settings.locale)}</small>`;
+    const advance = number(content.querySelector("#bill-advance").value);
+    const advanceLabel = type === "quote" ? "Avance demandée" : "Avance reçue";
+    const remaining = Math.max(0, round(result.ttc - advance));
+    content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br>${advance > 0 ? `<small>${advanceLabel} : ${fmt(advance,content.querySelector("#bill-currency").value,store.settings.locale)} · Solde : ${fmt(remaining,content.querySelector("#bill-currency").value,store.settings.locale)}</small><br>` : ""}<small>Contre-valeur comptable : ${fmt(number(content.querySelector("#bill-rate").value) > 0 ? convertBillingAmount(result.ttc, number(content.querySelector("#bill-rate").value)) : 0,store.settings.currency,store.settings.locale)}</small>`;
   };
   const bindRows = () => {
     content.querySelectorAll("#bill-lines input").forEach((input) => input.addEventListener("input", refreshTotals));
@@ -191,6 +201,7 @@ function openEditor(type, source = null) {
     refreshTotals();
   });
   content.querySelector("#bill-rate").addEventListener("input", refreshTotals);
+  content.querySelector("#bill-advance").addEventListener("input", refreshTotals);
   content.querySelector("#bill-save").addEventListener("click", () => {
     const lines = readLines();
     const errors = [];
@@ -203,6 +214,15 @@ function openEditor(type, source = null) {
     errors.push(...validateBillingDocument(draftForValidation).errors);
     if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
     const totalsValue = totals(lines);
+    const advance = number(content.querySelector("#bill-advance").value);
+    if (!Number.isFinite(advance) || advance < 0) {
+      content.querySelector("#bill-error").textContent = "Le montant de l'avance ne peut pas être négatif.";
+      return;
+    }
+    if (advance > totalsValue.ttc + 0.001) {
+      content.querySelector("#bill-error").textContent = "L'avance ne peut pas dépasser le total TTC du document.";
+      return;
+    }
     const saved = {
       ...(source || {}),
       id: source ? source.id : billing.nextId++,
@@ -221,12 +241,28 @@ function openEditor(type, source = null) {
       notes: content.querySelector("#bill-notes").value.trim(),
       lines,
       totals: totalsValue,
+      advanceRequested: type === "quote" ? advance : (source ? number(source.advanceRequested) : 0),
       paidAmount: source ? number(source.paidAmount) : 0,
       payments: source && Array.isArray(source.payments) ? source.payments : [],
       status: source ? source.status : "issued",
       createdAt: source ? source.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
+    if (!source && type === "invoice" && advance > 0) {
+      saved.payments = [{
+        id: billing.nextPaymentId++,
+        date: saved.date,
+        amount: advance,
+        method: "other",
+        reference: "",
+        notes: "Avance reçue lors de la création de la facture.",
+        currency: saved.currency,
+        exchangeRate: saved.exchangeRate,
+        createdAt: new Date().toISOString(),
+      }];
+      saved.paidAmount = advance;
+      saved.status = advance + 0.001 >= saved.totals.ttc ? "paid" : "partially_paid";
+    }
     if (source && type === "invoice" && saved.totals.ttc + 0.001 < saved.paidAmount) {
       content.querySelector("#bill-error").textContent = "Le total de la facture ne peut pas être inférieur aux paiements déjà enregistrés.";
       return;

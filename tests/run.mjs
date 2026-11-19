@@ -37,7 +37,8 @@ test("validation facture internationale", () => {
   const valid = { type: "invoice", date: "2026-11-19", customerName: "Client", currency: "EUR", exchangeRate: 10.5, lines: [{ description: "Prestation", quantity: 2, unitPrice: 100, taxRate: 20 }] };
   assert.equal(validateBillingDocument(valid).ok, true);
   assert.equal(validateBillingDocument({ ...valid, exchangeRate: 0 }).ok, false);
-  assert.equal(validateBillingDocument({ ...valid, currency: "EURO" }).ok, false);\n  assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
+  assert.equal(validateBillingDocument({ ...valid, currency: "EURO" }).ok, false);
+  assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
 });
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {

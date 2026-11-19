@@ -303,3 +303,82 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
 #modal-content table input { min-width: 95px; padding: 7px; }
 #modal-content table td:first-child input { min-width: 180px; }
 #modal-content table button { min-width: 30px; }
+
+
+/* Barre latérale de l'historique et des travaux — administrateur et comptable. */
+main.workspace {
+  display: block;
+  max-width: 1100px;
+}
+main.workspace.has-work-sidebar {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  max-width: 1420px;
+  align-items: start;
+}
+#work-sidebar {
+  position: sticky;
+  top: 88px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+#work-sidebar[hidden] { display: none; }
+.work-sidebar-title {
+  margin: 4px 8px 10px;
+  color: var(--muted);
+  font-size: .76rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+#work-sidebar button {
+  display: block;
+  width: 100%;
+  margin: 3px 0;
+  padding: 10px 11px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+#work-sidebar button:hover,
+#work-sidebar button.active {
+  background: var(--th-bg);
+  color: var(--teal-dark);
+  font-weight: 700;
+}
+.work-page-heading { justify-content: space-between; align-items: center; }
+.work-page-heading > div { flex: 1 1 220px; }
+.work-events { display: flex; flex-direction: column; gap: 0; }
+.work-event {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.work-event:last-child { border-bottom: 0; }
+.work-event-main { min-width: 0; flex: 1; }
+.work-event-main strong { display: block; margin-bottom: 3px; }
+.work-event-main .muted { overflow-wrap: anywhere; }
+.work-event small { display: block; margin-top: 4px; }
+@media (max-width: 760px) {
+  main.workspace.has-work-sidebar { display: block; }
+  #work-sidebar {
+    position: static;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 12px;
+    padding: 8px;
+  }
+  #work-sidebar[hidden] { display: none; }
+  .work-sidebar-title { flex: 1 0 100%; margin: 2px 6px; }
+  #work-sidebar button { width: auto; flex: 1 1 auto; margin: 0; text-align: center; }
+  .work-event { align-items: flex-start; }
+}

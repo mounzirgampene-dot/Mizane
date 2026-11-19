@@ -192,6 +192,43 @@ function nextDay(d) {
 
 
 // ---- Calculatrice générale et financière ----
+const CALC_HISTORY_KEY = "mizane_calculator_history_v1";
+
+function readCalculatorHistory() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CALC_HISTORY_KEY) || "[]");
+    return Array.isArray(value) ? value.slice(0, 30) : [];
+  } catch { return []; }
+}
+
+function recordCalculatorHistory(expression, result) {
+  if (!Number.isFinite(result)) return;
+  const history = readCalculatorHistory();
+  history.unshift({ expression, result: Math.round((result + Number.EPSILON) * 1e8) / 1e8, date: new Date().toISOString() });
+  try { localStorage.setItem(CALC_HISTORY_KEY, JSON.stringify(history.slice(0, 30))); } catch {}
+  renderCalculatorHistory();
+}
+
+function renderCalculatorHistory() {
+  const target = document.getElementById("calc-history-list");
+  if (!target) return;
+  const history = readCalculatorHistory();
+  target.innerHTML = history.length ? history.map((item) => `
+    <div class="row" style="justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div><div>${esc(item.expression)}</div><strong>${formatCalc(item.result)}</strong></div>
+      <button type="button" class="secondary small" data-history-copy="${Number(item.result)}" title="Copier le résultat">Copier</button>
+    </div>`).join("") : '<p class="muted">Aucun calcul enregistré pour le moment.</p>';
+  target.querySelectorAll("[data-history-copy]").forEach((button) => button.addEventListener("click", async () => {
+    const value = button.dataset.historyCopy;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast("Résultat copié.");
+    } catch {
+      openModal(`<h2>Résultat</h2><input readonly value="${esc(value)}" onclick="this.select()"><p class="muted">Sélectionnez puis copiez ce montant.</p><div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
+    }
+  }));
+}
+
 export function viewCalculator() {
   $app.innerHTML = `
     <h1>Calculatrice</h1>
@@ -218,7 +255,22 @@ export function viewCalculator() {
         </div>
       </section>
     </div>
+    <section class="card" style="margin-top:16px">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h2>Historique des calculs</h2>
+        <button type="button" class="secondary small" id="calc-history-clear">Effacer l'historique</button>
+      </div>
+      <p class="muted">Les 30 derniers calculs sont conservés sur cet appareil.</p>
+      <div id="calc-history-list"></div>
+    </section>
   `;
+  renderCalculatorHistory();
+  document.getElementById("calc-history-clear").addEventListener("click", () => {
+    if (!readCalculatorHistory().length) return;
+    try { localStorage.removeItem(CALC_HISTORY_KEY); } catch {}
+    renderCalculatorHistory();
+    toast("Historique effacé.");
+  });
   bindCalculator($app.querySelector('[data-calculator="main"]'));
   let result = null;
   const amount = document.getElementById("calc-amount");
@@ -235,7 +287,9 @@ export function viewCalculator() {
     if (kind === "ht") result = value / (1 + percent / 100);
     if (kind === "ttc") result = value * (1 + percent / 100);
     const vat = kind === "ht" ? value - result : kind === "ttc" ? result - value : result;
+    const expression = kind === "percent" ? `${formatCalc(value)} × ${percent} %` : kind === "ht" ? `TTC ${formatCalc(value)} ÷ (1 + ${percent} %)` : `HT ${formatCalc(value)} + ${percent} % TVA`;
     output.innerHTML = `<strong>Résultat : ${formatCalc(result)}</strong><br><span class="muted">${kind === "percent" ? percent + " % de " + formatCalc(value) : "TVA : " + formatCalc(vat)}</span>`;
+    recordCalculatorHistory(expression, result);
     use.disabled = false;
   };
   document.getElementById("calc-percent").addEventListener("click", () => calculate("percent"));
@@ -301,7 +355,10 @@ function bindCalculator(root, onInsert) {
       } else stored = value;
       operator = key; waiting = true;
     } else if (key === "=" && operator) {
-      current = String(compute(stored, Number(current), operator));
+      const left = stored, right = Number(current), op = operator;
+      const answer = compute(left, right, op);
+      current = String(answer);
+      if (Number.isFinite(answer)) recordCalculatorHistory(`${formatCalc(left)} ${op} ${formatCalc(right)}`, answer);
       stored = null; operator = null; waiting = true;
     }
     if (!Number.isFinite(Number(current))) current = "Erreur";

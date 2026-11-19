@@ -213,11 +213,21 @@ function renderCalculatorHistory() {
   const target = document.getElementById("calc-history-list");
   if (!target) return;
   const history = readCalculatorHistory();
-  target.innerHTML = history.length ? history.map((item) => `
+  target.innerHTML = history.length ? history.map((item, index) => `
     <div class="row" style="justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
       <div><div>${esc(item.expression)}</div><strong>${formatCalc(item.result)}</strong></div>
-      <button type="button" class="secondary small" data-history-copy="${Number(item.result)}" title="Copier le résultat">Copier</button>
+      <div class="row" style="gap:6px">
+        <button type="button" class="secondary small" data-history-copy="${Number(item.result)}" title="Copier le résultat">Copier</button>
+        <button type="button" class="danger small" data-history-delete="${index}" title="Supprimer ce calcul">Supprimer</button>
+      </div>
     </div>`).join("") : '<p class="muted">Aucun calcul enregistré pour le moment.</p>';
+  target.querySelectorAll("[data-history-delete]").forEach((button) => button.addEventListener("click", () => {
+    const history = readCalculatorHistory();
+    history.splice(Number(button.dataset.historyDelete), 1);
+    try { localStorage.setItem(CALC_HISTORY_KEY, JSON.stringify(history)); } catch {}
+    renderCalculatorHistory();
+    toast("Calcul supprimé de l'historique.");
+  }));
   target.querySelectorAll("[data-history-copy]").forEach((button) => button.addEventListener("click", async () => {
     const value = button.dataset.historyCopy;
     try {

@@ -237,7 +237,7 @@ function openEditor(type, source = null) {
     const lines = readLines();
     const errors = [];
     if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
-      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Pour éviter un écart entre la facture et les journaux, contre-passez d’abord son écriture comptable avant toute modification.";
+      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Sa modification est bloquée pour préserver la cohérence entre le document et les journaux. Une procédure de rectification ou d'avoir sera nécessaire.";
       return;
     }
     if (!content.querySelector("#bill-customer").value.trim()) errors.push("Le nom du client est obligatoire.");

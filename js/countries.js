@@ -25,7 +25,7 @@ GG:GBP JE:GBP IM:GBP CW:XCG SX:XCG AW:AWG BQ:USD GP:EUR MQ:EUR RE:EUR YT:EUR
 PF:XPF NC:XPF WF:XPF PM:EUR GF:EUR BL:EUR MF:EUR IO:USD FK:FKP GS:GBP SH:SHP
 AI:XCD VG:USD VI:USD TC:USD MS:XCD PN:NZD CK:NZD NU:NZD TK:NZD AS:USD GU:USD
 MP:USD CC:AUD CX:AUD NF:AUD AQ:XXX BV:NOK SJ:NOK
-`.trim().split(/\\s+/).map((item) => item.split(":"));
+`.trim().split(/\s+/).map((item) => item.split(":"));
 
 const existingProfiles = [
   { code: "SN", name: "Sénégal", zone: "OHADA", currency: "XOF", plan: "syscohada", vatRates: [18, 10, 0], locale: "fr-SN" },

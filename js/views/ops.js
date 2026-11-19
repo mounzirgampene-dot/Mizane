@@ -164,7 +164,7 @@ export function viewTools() {
       <p class="muted">Tolérance appliquée : ±${days} jour(s). Montant du relevé : ${money(totalBank)} ; montant des opérations rapprochées : ${money(totalMatched)}.</p>
       <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
       <div class="table-wrap"><table><thead><tr><th>Date relevé</th><th>Libellé</th><th class="num">Montant</th><th>Écriture MIZANE</th><th>Compte</th><th>État</th></tr></thead>
-      <tbody>${matched.map((m, i) => `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
+      <tbody>${matched.map((m) => `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
         <td>${m.match ? `#${m.match} — ${esc(m.matchDate || "")}` : (m.candidates.length ? `Correspondances possibles : #${m.candidates.join(", #")}` : "Aucune correspondance exacte")}</td>
         <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
         <td>${m.match ? `<span class="ok-msg">✓ Rapprochée</span>` : `<span class="warn">⚠ À vérifier</span>`}</td></tr>`).join("")}</tbody></table></div>

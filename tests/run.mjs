@@ -11,6 +11,7 @@ import { COUNTRIES, formatMoney, getCountry, getCurrencyInfo, currencyOptionLabe
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines } from "../js/finance.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
+import { buildBillingJournalEntries, suggestBillingAccounts } from "../js/billing-accounting.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -64,7 +65,6 @@ test("validation facture internationale", () => {
   assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
 });
 test("paiements de facture : paiements partiels et solde restant", () => {
-  const invoice = { type: "invoice", status: "issued", currency: "EUR", totals: { ttc: 1200 } };
   const payments = [{ amount: 300 }, { amount: 200 }];
   assert.equal(calculatePaymentBalance(1200, payments), 700);
   assert.equal(calculatePaymentBalance(1200, [...payments, { amount: 700 }]), 0);
@@ -77,6 +77,92 @@ test("paiements de facture : validation et refus du trop-perçu", () => {
   assert.equal(validateBillingPayment({ ...payment, date: "2026-02-30" }, invoice, []).ok, false);
   assert.equal(validateBillingPayment({ ...payment, method: "crypto" }, invoice, []).ok, false);
   assert.equal(validateBillingPayment(payment, { ...invoice, status: "cancelled" }, []).ok, false);
+});
+console.log("— Comptabilisation automatique des factures —");
+test("facture multi-devises : génère une vente équilibrée et un règlement en devise comptable", () => {
+  const s = newStore();
+  s.settings.plan = "syscohada";
+  buildAccountCache(s, allAccounts("syscohada"));
+  const accounts = allAccounts("syscohada");
+  const mapping = suggestBillingAccounts("syscohada", accounts);
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-2026-0001", date: "2026-11-19",
+    customerName: "Client Démo", currency: "EUR", exchangeRate: 10,
+    lines: [{ description: "Prestation", quantity: 2, unitPrice: 100, taxRate: 20 }],
+    payments: [{ id: 1, date: "2026-11-19", amount: 50, method: "bank", exchangeRate: 10 }],
+  };
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, true, result.errors.join(" "));
+  assert.equal(result.entries.length, 2);
+  assert.equal(result.entries[0].journal, "VTE");
+  assert.equal(result.entries[0].lines[0].account, mapping.customer);
+  assert.equal(result.entries[0].lines[0].debit, 2400);
+  assert.equal(result.entries[0].lines[1].credit, 2000);
+  assert.equal(result.entries[0].lines[2].credit, 400);
+  assert.equal(result.entries[1].journal, "BAN");
+  assert.equal(result.entries[1].lines[0].debit, 500);
+  assert.equal(result.entries[1].lines[1].credit, 500);
+  for (const entry of result.entries) {
+    const debit = entry.lines.reduce((sum, line) => sum + line.debit, 0);
+    const credit = entry.lines.reduce((sum, line) => sum + line.credit, 0);
+    assert.equal(debit, credit);
+  }
+});
+test("facturation : aucun doublon de facture ou de paiement", () => {
+  const s = newStore();
+  s.settings.plan = "pcg";
+  buildAccountCache(s, allAccounts("pcg"));
+  const mapping = suggestBillingAccounts("pcg", allAccounts("pcg"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-2026-0002", date: "2026-11-19",
+    customerName: "Client", currency: "MAD", exchangeRate: 1,
+    lines: [{ description: "Produit", quantity: 1, unitPrice: 100, taxRate: 0 }],
+    payments: [{ id: 4, date: "2026-11-19", amount: 25, method: "cash", exchangeRate: 1 }],
+  };
+  const first = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(first.entries.length, 2);
+  s.entries.push(...first.entries);
+  const second = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(second.ok, true);
+  assert.equal(second.entries.length, 0);
+});
+test("facturation : refuse un compte de vente incompatible avec le plan", () => {
+  const s = newStore();
+  buildAccountCache(s, allAccounts("syscohada"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-TEST", date: "2026-11-19",
+    customerName: "Client", currency: "XOF", exchangeRate: 1,
+    lines: [{ description: "Service", quantity: 1, unitPrice: 100, taxRate: 0 }], payments: [],
+  };
+  const result = buildBillingJournalEntries(s, invoice, { customer: "411", revenue: "999999" });
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /produits/);
+});
+for (const planId of Object.keys(PLANS)) {
+  test("comptabilisation : comptes suggérés compatibles avec le plan " + planId, () => {
+    const accounts = allAccounts(planId);
+    const mapping = suggestBillingAccounts(planId, accounts);
+    assert.ok(accounts.some(account => account.code === mapping.customer && account.type === "asset"));
+    assert.ok(accounts.some(account => account.code === mapping.revenue && account.type === "income"));
+    assert.ok(accounts.some(account => account.code === mapping.bank && account.type === "asset"));
+    assert.ok(accounts.some(account => account.code === mapping.cash && account.type === "asset"));
+    assert.ok(accounts.some(account => account.code === mapping.tax && account.type === "liability"));
+  });
+}
+test("facturation : ne recrée jamais automatiquement une écriture contrepassée", () => {
+  const s = newStore();
+  s.settings.plan = "syscohada";
+  buildAccountCache(s, allAccounts("syscohada"));
+  const mapping = suggestBillingAccounts("syscohada", allAccounts("syscohada"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-REVERSED", date: "2026-11-19",
+    customerName: "Client", currency: "XOF", exchangeRate: 1,
+    lines: [{ description: "Prestation", quantity: 1, unitPrice: 100, taxRate: 0 }], payments: [],
+  };
+  s.entries.push({ reference: "FACTURE FAC-REVERSED", reversed: true });
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /contrepassée/);
 });
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {

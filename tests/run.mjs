@@ -23,7 +23,7 @@ test("référentiel international : pays uniques et devises locales reconnues", 
   assert.equal(new Set(COUNTRIES.map((country) => country.code)).size, COUNTRIES.length, "aucun code pays en double");
   assert.equal(getCountry("MA").currency, "MAD");
   assert.equal(getCountry("US").currency, "USD");
-  assert.equal(getCountry("JP").currency, "JPY");
+  assert.equal(getCountry("JP").currency, "JPY");\n  assert.equal(getCountry("BG").currency, "EUR", "la Bulgarie utilise l’euro depuis janvier 2026");
   assert.equal(getCountry("OTHER").currency, "XXX");
 });
 test("présentation des devises : nom, code et symbole", () => {

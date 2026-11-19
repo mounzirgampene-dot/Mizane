@@ -75,7 +75,6 @@ function renderList() {
 function openEditor(type, source = null) {
   const billing = getBilling();
   const settings = billing.settings;
-  const countries = COUNTRIES.filter((country) => country.code !== "OTHER");
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);

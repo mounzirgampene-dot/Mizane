@@ -6,7 +6,7 @@ import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
-import { viewTools } from "./views/ops.js";
+import { viewTools, viewCalculator } from "./views/ops.js";
 import { syncCloudIfReady } from "./cloud-sync.js";
 
 const NAV = [
@@ -19,6 +19,7 @@ const NAV = [
   ["sheet", "Bilan"],
   ["thirds", "Tiers"],
   ["tools", "Outils"],
+  ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
   ["settings", "Paramètres"],
 ];
@@ -26,7 +27,7 @@ const NAV = [
 const VIEWS = {
   dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
-  tools: viewTools, assistant: viewAssistant, settings: viewSettings,
+  tools: viewTools, calculator: viewCalculator, assistant: viewAssistant, settings: viewSettings,
 };
 
 function renderNav() {

@@ -4,6 +4,7 @@
 import { COUNTRIES, formatMoney } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
+import { calculateBillingTotals, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
 
 const CURRENCIES = ["MAD","EUR","USD","GBP","XOF","XAF","CAD","CHF","AED","SAR","TND","DZD","GNF","CDF","JPY","CNY","AUD","XXX"];
 const today = () => new Date().toISOString().slice(0, 10);
@@ -25,16 +26,11 @@ const getBilling = () => {
   return store.billing;
 };
 const fmt = (value, currency, locale) => formatMoney(value, currency, locale);
-const totals = (lines) => {
-  const ht = round(lines.reduce((sum, line) => sum + number(line.quantity) * number(line.unitPrice), 0));
-  const tax = round(lines.reduce((sum, line) => sum + number(line.quantity) * number(line.unitPrice) * number(line.taxRate) / 100, 0));
-  return { ht, tax, ttc: round(ht + tax) };
-};
+const totals = calculateBillingTotals;
 const nextNumber = (kind, settings) => {
   const key = kind === "quote" ? "nextQuote" : "nextInvoice";
-  const prefix = kind === "quote" ? settings.prefixQuote : settings.prefixInvoice;
   const value = settings[key]++;
-  return prefix + "-" + new Date().getFullYear() + "-" + String(value).padStart(4, "0");
+  return makeBillingNumber(kind, new Date().getFullYear(), value, settings);
 };
 
 function documentHTML(doc) {
@@ -51,7 +47,7 @@ function documentHTML(doc) {
   return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
-  <p>Devise de facturation : ${esc(currency)}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(t.ttc * (number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;
+  <p>Devise de facturation : ${esc(currency)}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(convertBillingAmount(t.ttc, number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;
 }
 
 function renderList() {
@@ -114,7 +110,7 @@ function openEditor(type, source = null) {
       const value = number(line.quantity) * number(line.unitPrice) * (1 + number(line.taxRate)/100);
       tr.querySelector("[data-line-total]").textContent = fmt(value,content.querySelector("#bill-currency").value,store.settings.locale);
     });
-    content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br><small>Contre-valeur comptable : ${fmt(result.ttc * (number(content.querySelector("#bill-rate").value) || 0),store.settings.currency,store.settings.locale)}</small>`;
+    content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br><small>Contre-valeur comptable : ${fmt(number(content.querySelector("#bill-rate").value) > 0 ? convertBillingAmount(result.ttc, number(content.querySelector("#bill-rate").value)) : 0,store.settings.currency,store.settings.locale)}</small>`;
   };
   const bindRows = () => {
     content.querySelectorAll("#bill-lines input").forEach((input) => input.addEventListener("input", refreshTotals));
@@ -137,7 +133,9 @@ function openEditor(type, source = null) {
     if (!lines.length || lines.some((line) => !line.description || line.quantity <= 0 || line.unitPrice < 0 || line.taxRate < 0)) errors.push("Chaque ligne doit avoir une description, une quantité positive, un prix et un taux valides.");
     const rate = number(content.querySelector("#bill-rate").value);
     if (!(rate > 0)) errors.push("Le taux de conversion doit être supérieur à zéro.");
-    if (errors.length) { content.querySelector("#bill-error").textContent = errors.join(" "); return; }
+    const draftForValidation = { type, date: content.querySelector("#bill-date").value, customerName: content.querySelector("#bill-customer").value, currency: content.querySelector("#bill-currency").value, exchangeRate: rate, lines };
+    errors.push(...validateBillingDocument(draftForValidation).errors);
+    if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
     const totalsValue = totals(lines);
     const saved = {
       id: billing.nextId++, type, number: nextNumber(type,settings),

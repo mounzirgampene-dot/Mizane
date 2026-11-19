@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
-import { calculateBillingTotals, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
 
 const CURRENCIES = typeof Intl.supportedValuesOf === "function"
   ? [...new Set([...Intl.supportedValuesOf("currency"), "XXX"])].sort()
@@ -57,7 +57,7 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
-  const openAmount = invoices.filter((doc) => doc.status !== "cancelled").reduce((sum, doc) => sum + Math.max(0, number(doc.totals?.ttc) - number(doc.paidAmount)), 0);
+  const openAmount = calculateOutstandingBase(invoices);
   const row = (doc) => `<tr><td>${esc(doc.number)}</td><td>${doc.type === "quote" ? "Devis" : "Facture"}</td><td>${esc(doc.date)}</td><td>${esc(doc.customerName)}</td><td>${esc(doc.currency)}</td><td class="num">${fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale)}</td><td>${doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis"}</td><td><button class="secondary small" data-bill-print="${doc.id}">Imprimer</button> ${doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? `<button class="small" data-bill-convert="${doc.id}">Convertir</button>` : ""}</td></tr>`;
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>

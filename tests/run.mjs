@@ -10,7 +10,7 @@ import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines } from "../js/finance.js";
-import { calculateBillingTotals, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "../js/billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "../js/billing-core.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -24,6 +24,13 @@ test("calcul des totaux de facture : HT, taxe et TTC", () => {
     { quantity: 2, unitPrice: 100, taxRate: 20 },
     { quantity: 1, unitPrice: 50, taxRate: 10 },
   ]), { ht: 250, tax: 45, ttc: 295 });
+});
+test("créances multi-devises : conversion dans la devise comptable", () => {
+  assert.equal(calculateOutstandingBase([
+    { type: "invoice", status: "issued", totals: { ttc: 100 }, paidAmount: 20, exchangeRate: 10 },
+    { type: "invoice", status: "cancelled", totals: { ttc: 500 }, paidAmount: 0, exchangeRate: 10 },
+    { type: "quote", status: "issued", totals: { ttc: 200 }, paidAmount: 0, exchangeRate: 10 },
+  ]), 800);
 });
 test("conversion de devise : conserve le taux appliqué", () => {
   assert.equal(convertBillingAmount(100, 10.25), 1025);

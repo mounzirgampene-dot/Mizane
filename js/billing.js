@@ -73,7 +73,18 @@ function renderList() {
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
   const openAmount = calculateOutstandingBase(invoices);
-  const row = (doc) => `<tr><td>${esc(doc.number)}</td><td>${doc.type === "quote" ? "Devis" : "Facture"}</td><td>${esc(doc.date)}</td><td>${esc(doc.customerName)}</td><td>${esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr"))}</td><td class="num">${fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale)}</td><td>${doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis"}</td><td><button class="secondary small" data-bill-print="${doc.id}">Imprimer</button> ${doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? `<button class="small" data-bill-convert="${doc.id}">Convertir</button>` : ""}</td></tr>`;
+  const row = (doc) => {
+    const paid = number(doc.paidAmount);
+    const balance = Math.max(0, number(doc.totals?.ttc) - paid);
+    const status = doc.type === "invoice" && doc.status !== "cancelled"
+      ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
+      : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+      '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
+      (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      "</td></tr>";
+  };
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
@@ -99,7 +110,7 @@ function openEditor(type, source = null) {
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = type === "quote" ? "Créer un devis" : "Créer une facture";
-  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button> ${doc.type === "invoice" && doc.status !== "cancelled" ? `<button class="secondary small" data-bill-payments="${doc.id}">Paiements (${(doc.payments || []).length})</button>` : ""}</td></tr>`;
+  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>

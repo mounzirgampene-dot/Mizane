@@ -220,11 +220,22 @@ export function viewSettings() {
     const c = getCountry(document.getElementById("s-country").value);
     document.getElementById("s-vat").textContent = c.vatRates.length ? `Taux indicatifs enregistrés pour ${c.name} : ${c.vatRates.join("%, ")}% — Devise locale suggérée : ${currencyOptionLabel(c.currency, s.locale || "fr")} — Plan : ${PLANS[c.plan]?.name || "à choisir"}` : `Devise locale suggérée pour ${c.name} : ${currencyOptionLabel(c.currency, s.locale || "fr")}. Profil fiscal non configuré : vérifiez et renseignez les règles locales. Choisissez le plan comptable adapté.`;
   };
+  const currencyInput = document.getElementById("s-currency");
+  const updateCurrencyName = () => {
+    document.getElementById("s-currency-name").textContent =
+      currencyOptionLabel(currencyInput.value.trim().toUpperCase(), s.locale || "fr");
+  };
+  let selectedCountryCode = s.country;
   updateVat();
+  updateCurrencyName();
+  currencyInput.addEventListener("input", updateCurrencyName);
   document.getElementById("s-country").addEventListener("change", (e) => {
+    const previousCountry = getCountry(selectedCountryCode);
     const c = getCountry(e.target.value);
-    document.getElementById("s-plan").value = c.plan;
-    document.getElementById("s-currency").value = c.currency;
+    if (c.plan) document.getElementById("s-plan").value = c.plan;
+    if (currencyInput.value.trim().toUpperCase() === previousCountry.currency) currencyInput.value = c.currency;
+    selectedCountryCode = c.code;
+    updateCurrencyName();
     updateVat();
   });
 

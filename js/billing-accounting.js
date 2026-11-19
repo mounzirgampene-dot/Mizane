@@ -69,9 +69,13 @@ export function buildBillingJournalEntries(store, invoice, mapping = {}) {
   if (!(Number(invoice.exchangeRate) > 0) || !Number.isFinite(Number(invoice.exchangeRate))) errors.push("Taux de conversion de la facture invalide.");
   if (!(baseTotal > 0)) errors.push("Le total de la facture doit être positif pour être comptabilisé.");
 
-  const existing = new Set((store.entries || []).map(entry => String(entry.reference || "")));
+  const existingEntries = store.entries || [];
+  const existing = new Set(existingEntries.map(entry => String(entry.reference || "")));
   const entries = [];
   const invoiceReference = "FACTURE " + String(invoice.number || invoice.id);
+  if (existingEntries.some(entry => entry.reference === invoiceReference && entry.reversed)) {
+    errors.push("L'écriture de cette facture a été contrepassée. Une nouvelle comptabilisation doit être préparée manuellement.");
+  }
   if (!existing.has(invoiceReference)) {
     const lines = [
       { account: customer, label: "Créance client — " + invoice.number, third: thirdName(store, invoice.customerName), debit: baseTotal, credit: 0 },
@@ -84,6 +88,10 @@ export function buildBillingJournalEntries(store, invoice, mapping = {}) {
 
   for (const payment of invoice.payments || []) {
     const reference = "REGLEMENT " + String(invoice.number || invoice.id) + " #" + String(payment.id);
+    if (existingEntries.some(entry => entry.reference === reference && entry.reversed)) {
+      errors.push("L'écriture du règlement #" + payment.id + " a été contrepassée ; elle ne sera pas recréée automatiquement.");
+      continue;
+    }
     if (existing.has(reference)) continue;
     const cash = payment.method === "cash";
     const treasury = requireAccount(cash ? "cash" : "bank", "asset", cash ? "de caisse" : "bancaire");

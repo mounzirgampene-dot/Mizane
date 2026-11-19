@@ -41,7 +41,7 @@ export function viewTools() {
           const cumul = Number(a.amortized) || 0;
           return `<tr><td>${esc(a.name)}</td><td>${esc(a.account)}</td><td class="num">${money(a.amount)}</td><td>${esc(AMORT_METHODS[a.method] || a.method)}</td><td>${a.years} an(s)</td>
           <td class="num">${money(cumul)}</td><td class="num">${money(a.amount - cumul)}</td>
-          <td><button class="secondary small" data-sched="${i}">Plan</button> <button class="danger small" data-del-asset="${i}">✕</button></td></tr>`;
+          <td><button class="secondary small" data-sched="${i}">Plan</button> <button class="secondary small" data-edit-asset="${i}">Modifier</button> <button class="danger small" data-del-asset="${i}">✕</button></td></tr>`;
         }).join("")}</tbody>
       </table></div>
       <div class="actions"><button id="am-dotation">Générer la dotation de l'exercice</button></div>`}
@@ -105,6 +105,45 @@ export function viewTools() {
     toast("✓ Immobilisation ajoutée.");
     router.render();
   });
+  $app.querySelectorAll("[data-edit-asset]").forEach((b) => b.addEventListener("click", () => {
+    const index = Number(b.dataset.editAsset);
+    const asset = store.assets[index];
+    if (!asset) return;
+    const locked = (Number(asset.amortized) || 0) > 0;
+    openModal(`
+      <h2>Modifier l'immobilisation</h2>
+      <div class="row">
+        <div><label for="am-edit-name">Libellé</label><input id="am-edit-name" value="${esc(asset.name || "")}" required></div>
+        <div><label for="am-edit-account">Compte immobilisation</label><input id="am-edit-account" list="am-edit-accounts" value="${esc(asset.account || "")}" ${locked ? "disabled" : ""}><datalist id="am-edit-accounts">${planAccounts.filter((a) => /^[2]/.test(a.code)).map((a) => `<option value="${a.code}">${esc(a.label)}</option>`).join("")}</datalist></div>
+        <div><label for="am-edit-amount">Valeur (HT)</label><input id="am-edit-amount" type="number" min="0.01" step="0.01" value="${Number(asset.amount) || 0}" ${locked ? "disabled" : ""}></div>
+      </div>
+      <div class="row">
+        <div><label for="am-edit-date">Date de mise en service</label><input id="am-edit-date" type="date" value="${esc(asset.date || "")}" ${locked ? "disabled" : ""}></div>
+        <div><label for="am-edit-years">Durée (années)</label><input id="am-edit-years" type="number" min="1" max="30" step="1" value="${Number(asset.years) || 1}" ${locked ? "disabled" : ""}></div>
+        <div><label for="am-edit-method">Méthode</label><select id="am-edit-method" ${locked ? "disabled" : ""}>${Object.entries(AMORT_METHODS).map(([key, label]) => `<option value="${key}" ${asset.method === key ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      </div>
+      ${locked ? '<p class="muted">Cette immobilisation a déjà été amortie : seul son libellé peut être modifié afin de préserver l’historique comptable.</p>' : ""}
+      <div class="actions"><button type="button" class="secondary" data-close>Annuler</button><button type="button" id="am-edit-save">Enregistrer les modifications</button></div>`);
+    document.getElementById("am-edit-save")?.addEventListener("click", () => {
+      const name = document.getElementById("am-edit-name").value.trim();
+      const account = document.getElementById("am-edit-account").value.trim();
+      const amount = Number(document.getElementById("am-edit-amount").value);
+      const date = document.getElementById("am-edit-date").value;
+      const years = Number(document.getElementById("am-edit-years").value);
+      const method = document.getElementById("am-edit-method").value;
+      if (!name) return toast("Le libellé est obligatoire.");
+      if (!locked && !account) return toast("Le compte immobilisation est obligatoire.");
+      if (!locked && (!Number.isFinite(amount) || amount <= 0)) return toast("Valeur invalide.");
+      if (!locked && (!Number.isInteger(years) || years < 1 || years > 30)) return toast("La durée doit être comprise entre 1 et 30 ans.");
+      if (!locked && !date) return toast("La date de mise en service est obligatoire.");
+      Object.assign(asset, { name });
+      if (!locked) Object.assign(asset, { account, amount, date, years, method });
+      saveStore(store);
+      closeModal();
+      toast("✓ Immobilisation modifiée.");
+      router.render();
+    });
+  }));
   $app.querySelectorAll("[data-del-asset]").forEach((b) => b.addEventListener("click", () => {
     store.assets.splice(Number(b.dataset.delAsset), 1);
     saveStore(store);

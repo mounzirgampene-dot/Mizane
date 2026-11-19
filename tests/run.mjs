@@ -146,8 +146,25 @@ for (const planId of Object.keys(PLANS)) {
     assert.ok(accounts.some(account => account.code === mapping.customer && account.type === "asset"));
     assert.ok(accounts.some(account => account.code === mapping.revenue && account.type === "income"));
     assert.ok(accounts.some(account => account.code === mapping.bank && account.type === "asset"));
+    assert.ok(accounts.some(account => account.code === mapping.cash && account.type === "asset"));
+    assert.ok(accounts.some(account => account.code === mapping.tax && account.type === "liability"));
   });
 }
+test("facturation : ne recrée jamais automatiquement une écriture contrepassée", () => {
+  const s = newStore();
+  s.settings.plan = "syscohada";
+  buildAccountCache(s, allAccounts("syscohada"));
+  const mapping = suggestBillingAccounts("syscohada", allAccounts("syscohada"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-REVERSED", date: "2026-11-19",
+    customerName: "Client", currency: "XOF", exchangeRate: 1,
+    lines: [{ description: "Prestation", quantity: 1, unitPrice: 100, taxRate: 0 }], payments: [],
+  };
+  s.entries.push({ reference: "FACTURE FAC-REVERSED", reversed: true });
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /contrepassée/);
+});
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {
   test(`plan ${id} : codes uniques et types valides`, () => {

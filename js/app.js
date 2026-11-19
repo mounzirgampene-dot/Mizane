@@ -9,6 +9,7 @@ import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools, viewCalculator } from "./views/ops.js";
 import { syncCloudIfReady } from "./cloud-sync.js";
 import { viewBilling } from "./billing.js";
+import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -30,7 +31,22 @@ const VIEWS = {
   dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
   tools: viewTools, calculator: viewCalculator, billing: viewBilling, assistant: viewAssistant, settings: viewSettings,
+  history: viewActivityHistory, "my-work": viewMyWork,
 };
+
+function renderWorkSidebar() {
+  const sidebar = document.getElementById("work-sidebar");
+  const workspace = document.querySelector(".workspace");
+  const enabled = canAccessWorkHistory();
+  if (!sidebar || !workspace) return;
+  sidebar.hidden = !enabled;
+  workspace.classList.toggle("has-work-sidebar", enabled);
+  if (!enabled) { sidebar.innerHTML = ""; return; }
+  sidebar.innerHTML = `
+    <p class="work-sidebar-title">Espace de travail</p>
+    <button type="button" data-route="history" class="${currentRoute === "history" ? "active" : ""}">Historique des actions</button>
+    <button type="button" data-route="my-work" class="${currentRoute === "my-work" ? "active" : ""}">Mes travaux</button>`;
+}
 
 function renderNav() {
   $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("");

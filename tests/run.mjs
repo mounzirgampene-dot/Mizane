@@ -164,6 +164,62 @@ test("facturation : ne recrée jamais automatiquement une écriture contrepassé
   assert.equal(result.ok, false);
   assert.match(result.errors.join(" "), /contrepassée/);
 });
+test("écarts de change : comptabilise un gain lors d'un règlement à un taux supérieur", () => {
+  const s = newStore();
+  s.settings.plan = "syscohada";
+  buildAccountCache(s, allAccounts("syscohada"));
+  const mapping = suggestBillingAccounts("syscohada", allAccounts("syscohada"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-FX-GAIN", date: "2026-11-19",
+    customerName: "Client", currency: "EUR", exchangeRate: 10,
+    lines: [{ description: "Service", quantity: 1, unitPrice: 100, taxRate: 0 }],
+    payments: [{ id: 1, date: "2026-11-20", amount: 40, method: "bank", exchangeRate: 11 }],
+  };
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, true, result.errors.join(" "));
+  const payment = result.entries.find(entry => entry.reference.includes("REGLEMENT"));
+  assert.equal(payment.lines[0].debit, 440);
+  assert.equal(payment.lines[1].credit, 40);
+  assert.equal(payment.lines[1].account, mapping.fxGain);
+  assert.equal(payment.lines[2].credit, 400);
+  assert.equal(payment.lines.reduce((sum, line) => sum + line.debit, 0), payment.lines.reduce((sum, line) => sum + line.credit, 0));
+});
+test("écarts de change : comptabilise une perte lors d'un règlement à un taux inférieur", () => {
+  const s = newStore();
+  s.settings.plan = "syscohada";
+  buildAccountCache(s, allAccounts("syscohada"));
+  const mapping = suggestBillingAccounts("syscohada", allAccounts("syscohada"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-FX-LOSS", date: "2026-11-19",
+    customerName: "Client", currency: "EUR", exchangeRate: 10,
+    lines: [{ description: "Service", quantity: 1, unitPrice: 100, taxRate: 0 }],
+    payments: [{ id: 2, date: "2026-11-20", amount: 40, method: "cash", exchangeRate: 9 }],
+  };
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, true, result.errors.join(" "));
+  const payment = result.entries.find(entry => entry.reference.includes("REGLEMENT"));
+  assert.equal(payment.lines[0].debit, 360);
+  assert.equal(payment.lines[1].debit, 40);
+  assert.equal(payment.lines[1].account, mapping.fxLoss);
+  assert.equal(payment.lines[2].credit, 400);
+  assert.equal(payment.journal, "CAI");
+  assert.equal(payment.lines.reduce((sum, line) => sum + line.debit, 0), payment.lines.reduce((sum, line) => sum + line.credit, 0));
+});
+test("écart de change : bloque si le compte de perte n'est pas configuré", () => {
+  const s = newStore();
+  s.settings.plan = "pcg";
+  buildAccountCache(s, allAccounts("pcg"));
+  const mapping = suggestBillingAccounts("pcg", allAccounts("pcg"));
+  const invoice = {
+    type: "invoice", status: "issued", number: "FAC-FX-MISSING", date: "2026-11-19",
+    customerName: "Client", currency: "EUR", exchangeRate: 10,
+    lines: [{ description: "Service", quantity: 1, unitPrice: 100, taxRate: 0 }],
+    payments: [{ id: 3, date: "2026-11-20", amount: 40, method: "bank", exchangeRate: 9 }],
+  };
+  const result = buildBillingJournalEntries(s, invoice, mapping);
+  assert.equal(result.ok, false);
+  assert.match(result.errors.join(" "), /perte de change/);
+});
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {
   test(`plan ${id} : codes uniques et types valides`, () => {

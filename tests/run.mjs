@@ -7,7 +7,7 @@ import {
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { searchAccountsByDescription } from "../js/account-autocomplete.js";
-import { COUNTRIES, formatMoney } from "../js/countries.js";
+import { COUNTRIES, formatMoney, getCountry, getCurrencyInfo, currencyOptionLabel } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines } from "../js/finance.js";
 import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "../js/billing-core.js";
@@ -18,6 +18,22 @@ function test(name, fn) {
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }
 }
 
+test("référentiel international : pays uniques et devises locales reconnues", () => {
+  assert.ok(COUNTRIES.length >= 190, "le référentiel doit couvrir les pays et territoires courants");
+  assert.equal(new Set(COUNTRIES.map((country) => country.code)).size, COUNTRIES.length, "aucun code pays en double");
+  assert.equal(getCountry("MA").currency, "MAD");
+  assert.equal(getCountry("US").currency, "USD");
+  assert.equal(getCountry("JP").currency, "JPY");
+  assert.equal(getCountry("BG").currency, "EUR", "la Bulgarie utilise l’euro depuis janvier 2026");
+  assert.equal(getCountry("OTHER").currency, "XXX");
+});
+test("présentation des devises : nom, code et symbole", () => {
+  const info = getCurrencyInfo("MAD", "fr");
+  assert.equal(info.code, "MAD");
+  assert.ok(info.name && info.name !== "MAD");
+  assert.ok(info.symbol);
+  assert.match(currencyOptionLabel("EUR", "fr"), /EUR/);
+});
 console.log("— Facturation internationale —");
 test("calcul des totaux de facture : HT, taxe et TTC", () => {
   assert.deepEqual(calculateBillingTotals([

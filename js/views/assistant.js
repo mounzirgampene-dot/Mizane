@@ -1,7 +1,7 @@
 // MIZANE — Écrans : assistant IA (photo, import de texte, audit) et paramètres.
 import { validateEntry, postEntry, checkAnomalies } from "../accounting.js";
 import { PLANS, getPlan, ACCOUNT_TYPES } from "../plans.js";
-import { COUNTRIES, getCountry } from "../countries.js";
+import { COUNTRIES, getCountry, currencyOptionLabel } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
@@ -158,15 +158,16 @@ export function viewSettings() {
       <h2>🏢 Société & internationalisation</h2>
       <div class="row">
         <div><label>Nom de la société</label><input id="s-company" value="${esc(s.companyName)}"></div>
-        <div><label>Pays (plan, devise, TVA choisis automatiquement)</label>
-          <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${c.currency} (${esc(c.zone)})</option>`).join("")}</select>
-        </div>
-      </div>
-      <div class="row">
         <div><label>Plan comptable</label>
           <select id="s-plan">${Object.values(PLANS).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
         </div>
-        <div><label>Devise</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"></div>
+      </div>
+      <div class="row">
+        <div><label>Pays de l'entreprise — détermine la devise proposée</label>
+          <input id="s-country-search" type="search" placeholder="Rechercher un pays ou une devise">
+          <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${esc(currencyOptionLabel(c.currency, s.locale || "fr"))}${c.zone !== "International" && c.zone !== "—" ? ` (${esc(c.zone)})` : ""}</option>`).join("")}</select>
+        </div>
+        <div><label>Devise comptable proposée selon le pays (modifiable)</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3" aria-describedby="s-currency-name"><small class="muted" id="s-currency-name"></small><small class="muted" id="s-country-currency-hint"></small></div>
         <div><label>Langue</label>
           <select id="s-language">${LANGS.map(([id, label]) => `<option value="${id}" ${(s.language || "fr") === id ? "selected" : ""}>${label}</option>`).join("")}</select>
         </div>
@@ -218,13 +219,34 @@ export function viewSettings() {
 
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);
-    document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;
+    document.getElementById("s-vat").textContent = c.vatRates.length ? `Taux indicatifs enregistrés pour ${c.name} : ${c.vatRates.join("%, ")}% — Devise locale suggérée : ${currencyOptionLabel(c.currency, s.locale || "fr")} — Plan : ${PLANS[c.plan]?.name || "à choisir"}` : `Devise locale suggérée pour ${c.name} : ${currencyOptionLabel(c.currency, s.locale || "fr")}. Profil fiscal non configuré : vérifiez et renseignez les règles locales. Choisissez le plan comptable adapté.`;
+    document.getElementById("s-country-currency-hint").textContent = `Pour ${c.name}, MIZANE propose : ${currencyOptionLabel(c.currency, s.locale || "fr")}.`;
   };
+  const currencyInput = document.getElementById("s-currency");
+  const updateCurrencyName = () => {
+    document.getElementById("s-currency-name").textContent =
+      currencyOptionLabel(currencyInput.value.trim().toUpperCase(), s.locale || "fr");
+  };
+  let selectedCountryCode = s.country;
+  const countrySelect = document.getElementById("s-country");
+  document.getElementById("s-country-search").addEventListener("input", (e) => {
+    const query = e.target.value.trim().toLocaleLowerCase("fr");
+    [...countrySelect.options].forEach((option) => {
+      option.hidden = Boolean(query) && !option.textContent.toLocaleLowerCase("fr").includes(query);
+    });
+  });
   updateVat();
-  document.getElementById("s-country").addEventListener("change", (e) => {
+  updateCurrencyName();
+  currencyInput.addEventListener("input", updateCurrencyName);
+  countrySelect.addEventListener("change", (e) => {
+    document.getElementById("s-country-search").value = "";
+    [...countrySelect.options].forEach((option) => { option.hidden = false; });
+    const previousCountry = getCountry(selectedCountryCode);
     const c = getCountry(e.target.value);
-    document.getElementById("s-plan").value = c.plan;
-    document.getElementById("s-currency").value = c.currency;
+    if (c.plan) document.getElementById("s-plan").value = c.plan;
+    if (currencyInput.value.trim().toUpperCase() === previousCountry.currency) currencyInput.value = c.currency;
+    selectedCountryCode = c.code;
+    updateCurrencyName();
     updateVat();
   });
 
@@ -234,7 +256,7 @@ export function viewSettings() {
     s.country = c.code;
     s.plan = document.getElementById("s-plan").value;
     s.currency = document.getElementById("s-currency").value.trim().toUpperCase() || c.currency;
-    s.locale = c.locale;
+    s.locale = c.locale || s.locale || "fr";
     s.exerciceStart = document.getElementById("s-start").value || s.exerciceStart;
     s.exerciceEnd = document.getElementById("s-end").value || s.exerciceEnd;
     refreshPlan();

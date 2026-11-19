@@ -446,7 +446,7 @@ function openSettings() {
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
     </div>
-    <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise.</p>
+    <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
     <div class="actions"><button id="bill-settings-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
 

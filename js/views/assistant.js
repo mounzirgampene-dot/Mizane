@@ -158,16 +158,16 @@ export function viewSettings() {
       <h2>🏢 Société & internationalisation</h2>
       <div class="row">
         <div><label>Nom de la société</label><input id="s-company" value="${esc(s.companyName)}"></div>
-        <div><label>Pays de l'entreprise (devise locale proposée automatiquement)</label>
-          <input id="s-country-search" type="search" placeholder="Rechercher un pays ou une devise">
-          <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${esc(currencyOptionLabel(c.currency, s.locale || "fr"))}${c.zone !== "International" && c.zone !== "—" ? ` (${esc(c.zone)})` : ""}</option>`).join("")}</select>
-        </div>
-      </div>
-      <div class="row">
         <div><label>Plan comptable</label>
           <select id="s-plan">${Object.values(PLANS).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
         </div>
-        <div><label>Devise comptable (code ISO)</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"><small class="muted" id="s-currency-name"></small></div>
+      </div>
+      <div class="row">
+        <div><label>Pays de l'entreprise — détermine la devise proposée</label>
+          <input id="s-country-search" type="search" placeholder="Rechercher un pays ou une devise">
+          <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${esc(currencyOptionLabel(c.currency, s.locale || "fr"))}${c.zone !== "International" && c.zone !== "—" ? ` (${esc(c.zone)})` : ""}</option>`).join("")}</select>
+        </div>
+        <div><label>Devise comptable proposée selon le pays (modifiable)</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3" aria-describedby="s-currency-name"><small class="muted" id="s-currency-name"></small><small class="muted" id="s-country-currency-hint"></small></div>
         <div><label>Langue</label>
           <select id="s-language">${LANGS.map(([id, label]) => `<option value="${id}" ${(s.language || "fr") === id ? "selected" : ""}>${label}</option>`).join("")}</select>
         </div>
@@ -220,6 +220,7 @@ export function viewSettings() {
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);
     document.getElementById("s-vat").textContent = c.vatRates.length ? `Taux indicatifs enregistrés pour ${c.name} : ${c.vatRates.join("%, ")}% — Devise locale suggérée : ${currencyOptionLabel(c.currency, s.locale || "fr")} — Plan : ${PLANS[c.plan]?.name || "à choisir"}` : `Devise locale suggérée pour ${c.name} : ${currencyOptionLabel(c.currency, s.locale || "fr")}. Profil fiscal non configuré : vérifiez et renseignez les règles locales. Choisissez le plan comptable adapté.`;
+    document.getElementById("s-country-currency-hint").textContent = `Pour ${c.name}, MIZANE propose : ${currencyOptionLabel(c.currency, s.locale || "fr")}.`;
   };
   const currencyInput = document.getElementById("s-currency");
   const updateCurrencyName = () => {

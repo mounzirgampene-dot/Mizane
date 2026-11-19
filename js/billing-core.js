@@ -24,7 +24,9 @@ export function validateBillingDocument(document) {
   const errors = [];
   if (!document || typeof document !== "object") return { ok: false, errors: ["Document invalide."] };
   if (!["quote", "invoice"].includes(document.type)) errors.push("Type de document invalide.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(document.date || "")) || Number.isNaN(Date.parse(document.date + "T00:00:00Z"))) errors.push("Date invalide.");
+  const dateMatch = String(document.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) errors.push("Date invalide.");
+  else { const date = new Date(Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]))); if (date.getUTCFullYear() !== Number(dateMatch[1]) || date.getUTCMonth() !== Number(dateMatch[2]) - 1 || date.getUTCDate() !== Number(dateMatch[3])) errors.push("Date invalide."); }
   if (!String(document.customerName || "").trim()) errors.push("Le client est obligatoire.");
   if (!/^[A-Z]{3}$/.test(String(document.currency || ""))) errors.push("Code devise ISO 4217 invalide.");
   if (!(Number(document.exchangeRate) > 0) || !Number.isFinite(Number(document.exchangeRate))) errors.push("Taux de change invalide.");

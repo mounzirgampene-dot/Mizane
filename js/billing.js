@@ -2,7 +2,9 @@
 // Les documents restent dans le store de l'entreprise ; aucune écriture comptable
 // n'est générée avant la phase de validation comptable du module.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
-import { store, $app, saveNow, esc, toast } from "./state.js";
+import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
+import { postEntry } from "./accounting.js";
+import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 
@@ -33,6 +35,14 @@ const getBilling = () => {
     for (const payment of doc.payments) store.billing.nextPaymentId = Math.max(store.billing.nextPaymentId, number(payment.id) + 1);
   }
   const settings = store.billing.settings;
+  const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
+  const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
+  if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash"]) {
+    const code = settings.accountingAccounts[key];
+    const type = key === "revenue" ? "income" : key === "tax" ? "liability" : "asset";
+    if (code && !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
+  }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
   settings.prefixQuote ||= "DEV";
@@ -43,6 +53,19 @@ const getBilling = () => {
 };
 const fmt = (value, currency, locale) => formatMoney(value, currency, locale);
 const totals = calculateBillingTotals;
+function postInvoiceAccounting(invoice) {
+  const mapping = getBilling().settings.accountingAccounts || {};
+  const proposal = buildBillingJournalEntries(store, invoice, mapping);
+  if (!proposal.ok) return proposal;
+  let created = 0;
+  for (const entry of proposal.entries) {
+    const result = postEntry(store, entry);
+    if (!result.ok) return { ok: false, errors: result.errors, created };
+    created++;
+  }
+  return { ok: true, errors: [], created };
+}
+
 const nextNumber = (kind, settings) => {
   const key = kind === "quote" ? "nextQuote" : "nextInvoice";
   const value = settings[key]++;
@@ -98,14 +121,14 @@ function renderList() {
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
       (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
-      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
       "</td></tr>";
   };
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
     <section class="card"><h2>Documents</h2><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Type</th><th>Date</th><th>Client</th><th>Devise</th><th class="num">Total TTC</th><th>État</th><th>Actions</th></tr></thead><tbody>${docs.length ? docs.map(row).join("") : '<tr><td colspan="8" class="muted">Aucun devis ou facture pour le moment.</td></tr>'}</tbody></table></div></section>
-    <p class="muted">Les documents sont actuellement enregistrés dans les données locales de l'entreprise. La synchronisation cloud et la génération des écritures comptables seront raccordées dans les étapes suivantes.</p>`;
+    <p class="muted">Les devis et factures sont enregistrés localement. Les écritures comptables générées sont ajoutées au journal et suivent la synchronisation comptable existante.</p>`;
   document.getElementById("bill-new-quote").addEventListener("click", () => openEditor("quote"));
   document.getElementById("bill-new-invoice").addEventListener("click", () => openEditor("invoice"));
   document.getElementById("bill-settings").addEventListener("click", openSettings);
@@ -119,6 +142,14 @@ function renderList() {
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
   $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
+  $app.querySelectorAll("[data-bill-post]").forEach((button) => button.addEventListener("click", () => {
+    const invoice = billing.documents.find(item => item.id === Number(button.dataset.billPost) && item.type === "invoice");
+    if (!invoice) return;
+    const result = postInvoiceAccounting(invoice);
+    if (!result.ok) return toast("Comptabilisation impossible : " + result.errors[0], 5000);
+    saveNow();
+    toast(result.created ? result.created + " écriture(s) comptable(s) générée(s)." : "Toutes les écritures de cette facture existent déjà.");
+  }));
 }
 
 function openEditor(type, source = null) {
@@ -205,6 +236,10 @@ function openEditor(type, source = null) {
   content.querySelector("#bill-save").addEventListener("click", () => {
     const lines = readLines();
     const errors = [];
+    if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
+      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Pour éviter un écart entre la facture et les journaux, contre-passez d’abord son écriture comptable avant toute modification.";
+      return;
+    }
     if (!content.querySelector("#bill-customer").value.trim()) errors.push("Le nom du client est obligatoire.");
     if (!content.querySelector("#bill-date").value) errors.push("La date est obligatoire.");
     if (!lines.length || lines.some((line) => !line.description || line.quantity <= 0 || line.unitPrice < 0 || line.taxRate < 0)) errors.push("Chaque ligne doit avoir une description, une quantité positive, un prix et un taux valides.");
@@ -277,10 +312,12 @@ function openEditor(type, source = null) {
     } else {
       billing.documents.push(saved);
     }
+    const accountingResult = type === "invoice" ? postInvoiceAccounting(saved) : null;
     saveNow();
     modal.close();
     renderList();
-    toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée."));
+    if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
+    else toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée et comptabilisée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée et comptabilisée."));
   });
   refreshTotals();
   modal.showModal();
@@ -320,10 +357,12 @@ function openPaymentManager(invoiceId) {
     invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
     invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
     invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : "partially_paid";
+    const accountingResult = postInvoiceAccounting(invoice);
     saveNow();
     modal.close();
     renderList();
-    toast("Paiement enregistré.");
+    if (accountingResult && !accountingResult.ok) toast("Paiement enregistré, mais écriture non générée : " + accountingResult.errors[0], 5500);
+    else toast("Paiement enregistré et comptabilisé.");
   });
   modal.showModal();
 }
@@ -345,9 +384,11 @@ function convertQuote(id) {
   quote.status = "converted";
   quote.convertedTo = invoice.id;
   billing.documents.push(invoice);
+  const accountingResult = postInvoiceAccounting(invoice);
   saveNow();
   renderList();
-  toast("Devis converti en facture.");
+  if (accountingResult && !accountingResult.ok) toast("Facture créée, comptabilisation à configurer : " + accountingResult.errors[0], 5500);
+  else toast("Devis converti en facture et comptabilisé.");
 }
 
 function openSettings() {

@@ -4,7 +4,7 @@
 const countryRows = `
 AF:AFN AL:ALL DZ:DZD AD:EUR AO:AOA AG:XCD AR:ARS AM:AMD AU:AUD AT:EUR AZ:AZN
 BS:BSD BH:BHD BD:BDT BB:BBD BY:BYN BE:EUR BZ:BZD BJ:XOF BT:BTN BO:BOB BA:BAM
-BW:BWP BR:BRL BN:BND BG:BGN BF:XOF BI:BIF KH:KHR CM:XAF CA:CAD CV:CVE CF:XAF
+BW:BWP BR:BRL BN:BND BG:EUR BF:XOF BI:BIF KH:KHR CM:XAF CA:CAD CV:CVE CF:XAF
 TD:XAF CL:CLP CN:CNY CO:COP KM:KMF CG:XAF CD:CDF CR:CRC CI:XOF HR:EUR CU:CUP
 CY:EUR CZ:CZK DK:DKK DJ:DJF DM:XCD DO:DOP EC:USD EG:EGP SV:USD GQ:XAF ER:ERN
 EE:EUR SZ:SZL ET:ETB FJ:FJD FI:EUR FR:EUR GA:XAF GM:GMD GE:GEL DE:EUR GH:GHS
@@ -70,17 +70,31 @@ export function getCountry(code) {
   return COUNTRIES.find((country) => country.code === code) || COUNTRIES.find((country) => country.code === "OTHER");
 }
 
+const CURRENCY_SYMBOLS = {
+  MAD: "DH", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
+  USD: "$US", CAD: "$CA", AUD: "$AU", NZD: "$NZ",
+  GNF: "FG", CDF: "FC", MRU: "UM", GMD: "D",
+  NGN: "₦", GHS: "GH₵", KES: "KSh", ZAR: "R",
+  INR: "₹", PKR: "₨", JPY: "¥", CNY: "¥",
+  BRL: "R$", MXN: "MX$", RUB: "₽", TRY: "₺",
+  AED: "د.إ", SAR: "ر.س", QAR: "ر.ق", KWD: "د.ك",
+  BHD: "د.ب", OMR: "ر.ع.", JOD: "د.ا", EGP: "ج.م",
+  TND: "د.ت", DZD: "د.ج", LBP: "ل.ل",
+};
+
 export function getCurrencyInfo(currency, locale = "fr") {
   const code = String(currency || "XXX").toUpperCase();
   let name = code;
-  let symbol = code;
+  let symbol = CURRENCY_SYMBOLS[code] || code;
   try {
     name = new Intl.DisplayNames([locale, "fr"], { type: "currency" }).of(code) || code;
   } catch {}
-  try {
-    symbol = new Intl.NumberFormat(locale, { style: "currency", currency: code, currencyDisplay: "narrowSymbol", maximumFractionDigits: 0 })
-      .formatToParts(1).find((part) => part.type === "currency")?.value || code;
-  } catch {}
+  if (!CURRENCY_SYMBOLS[code]) {
+    try {
+      symbol = new Intl.NumberFormat(locale, { style: "currency", currency: code, currencyDisplay: "narrowSymbol", maximumFractionDigits: 0 })
+        .formatToParts(1).find((part) => part.type === "currency")?.value || code;
+    } catch {}
+  }
   return { code, name, symbol };
 }
 

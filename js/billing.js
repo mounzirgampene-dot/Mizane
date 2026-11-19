@@ -81,6 +81,7 @@ function renderList() {
       : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
     return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
+      (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
       "</td></tr>";
@@ -93,6 +94,10 @@ function renderList() {
   document.getElementById("bill-new-quote").addEventListener("click", () => openEditor("quote"));
   document.getElementById("bill-new-invoice").addEventListener("click", () => openEditor("invoice"));
   document.getElementById("bill-settings").addEventListener("click", openSettings);
+  $app.querySelectorAll("[data-bill-edit]").forEach((button) => button.addEventListener("click", () => {
+    const doc = billing.documents.find((item) => item.id === Number(button.dataset.billEdit));
+    if (doc) openEditor(doc.type, doc);
+  }));
   $app.querySelectorAll("[data-bill-print]").forEach((button) => button.addEventListener("click", () => {
     const doc = billing.documents.find((item) => item.id === Number(button.dataset.billPrint));
     if (doc) printHTML(doc.number, documentHTML(doc));
@@ -109,7 +114,7 @@ function openEditor(type, source = null) {
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
-  const title = type === "quote" ? "Créer un devis" : "Créer une facture";
+  const title = source ? (type === "quote" ? "Modifier le devis" : "Modifier la facture") : (type === "quote" ? "Créer un devis" : "Créer une facture");
   const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
@@ -189,7 +194,10 @@ function openEditor(type, source = null) {
     if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
     const totalsValue = totals(lines);
     const saved = {
-      id: billing.nextId++, type, number: nextNumber(type,settings),
+      ...(source || {}),
+      id: source ? source.id : billing.nextId++,
+      type,
+      number: source ? source.number : nextNumber(type,settings),
       date: content.querySelector("#bill-date").value,
       dueDate: content.querySelector("#bill-due-date").value,
       customerName: content.querySelector("#bill-customer").value.trim(),
@@ -201,14 +209,32 @@ function openEditor(type, source = null) {
       taxLabel: content.querySelector("#bill-tax-label").value.trim() || settings.taxLabel,
       paymentTerms: content.querySelector("#bill-terms").value.trim(),
       notes: content.querySelector("#bill-notes").value.trim(),
-      lines, totals: totalsValue, paidAmount: 0,
-      status: "issued", createdAt: new Date().toISOString(),
+      lines,
+      totals: totalsValue,
+      paidAmount: source ? number(source.paidAmount) : 0,
+      payments: source && Array.isArray(source.payments) ? source.payments : [],
+      status: source ? source.status : "issued",
+      createdAt: source ? source.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    billing.documents.push(saved);
+    if (source && type === "invoice" && saved.totals.ttc + 0.001 < saved.paidAmount) {
+      content.querySelector("#bill-error").textContent = "Le total de la facture ne peut pas être inférieur aux paiements déjà enregistrés.";
+      return;
+    }
+    if (source) {
+      const index = billing.documents.findIndex((item) => item.id === source.id);
+      if (index < 0) {
+        content.querySelector("#bill-error").textContent = "Ce document n'existe plus. Fermez puis actualisez la liste.";
+        return;
+      }
+      billing.documents[index] = saved;
+    } else {
+      billing.documents.push(saved);
+    }
     saveNow();
     modal.close();
     renderList();
-    toast(type === "quote" ? "Devis enregistré." : "Facture enregistrée.");
+    toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée."));
   });
   refreshTotals();
   modal.showModal();

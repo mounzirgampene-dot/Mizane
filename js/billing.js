@@ -1,14 +1,16 @@
 // MIZANE — Socle international de devis et factures.
 // Les documents restent dans le store de l'entreprise ; aucune écriture comptable
 // n'est générée avant la phase de validation comptable du module.
-import { COUNTRIES, formatMoney } from "./countries.js";
+import { COUNTRIES, formatMoney, currencyOptionLabel } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
 
-const CURRENCIES = typeof Intl.supportedValuesOf === "function"
-  ? [...new Set([...Intl.supportedValuesOf("currency"), "XXX"])].sort()
-  : ["MAD","EUR","USD","GBP","XOF","XAF","CAD","CHF","AED","SAR","TND","DZD","GNF","CDF","JPY","CNY","AUD","XXX"];
+const CURRENCIES = [...new Set([
+  ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
+  ...COUNTRIES.map((country) => country.currency),
+  "XXX",
+])].sort();
 const today = () => new Date().toISOString().slice(0, 10);
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round = (value) => Math.round((number(value) + Number.EPSILON) * 100) / 100;
@@ -49,7 +51,7 @@ function documentHTML(doc) {
   return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
-  <p>Devise de facturation : ${esc(currency)}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(convertBillingAmount(t.ttc, number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;
+  <p>Devise de facturation : ${esc(currencyOptionLabel(currency, locale))}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(convertBillingAmount(t.ttc, number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;
 }
 
 function renderList() {
@@ -58,7 +60,7 @@ function renderList() {
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
   const openAmount = calculateOutstandingBase(invoices);
-  const row = (doc) => `<tr><td>${esc(doc.number)}</td><td>${doc.type === "quote" ? "Devis" : "Facture"}</td><td>${esc(doc.date)}</td><td>${esc(doc.customerName)}</td><td>${esc(doc.currency)}</td><td class="num">${fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale)}</td><td>${doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis"}</td><td><button class="secondary small" data-bill-print="${doc.id}">Imprimer</button> ${doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? `<button class="small" data-bill-convert="${doc.id}">Convertir</button>` : ""}</td></tr>`;
+  const row = (doc) => `<tr><td>${esc(doc.number)}</td><td>${doc.type === "quote" ? "Devis" : "Facture"}</td><td>${esc(doc.date)}</td><td>${esc(doc.customerName)}</td><td>${esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr"))}</td><td class="num">${fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale)}</td><td>${doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis"}</td><td><button class="secondary small" data-bill-print="${doc.id}">Imprimer</button> ${doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? `<button class="small" data-bill-convert="${doc.id}">Convertir</button>` : ""}</td></tr>`;
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
@@ -80,14 +82,14 @@ function openEditor(type, source = null) {
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);
-  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
+  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };\n  const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = type === "quote" ? "Créer un devis" : "Créer une facture";
   const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>
-    <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
-    <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${currency}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
+    <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
+    <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].sort().map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
     <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
     <div id="bill-totals" class="calculator-result"></div><label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
     <div class="actions"><button type="button" id="bill-save">Enregistrer ${type === "quote" ? "le devis" : "la facture"}</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-error" class="errors" role="alert"></div>`;
@@ -124,7 +126,7 @@ function openEditor(type, source = null) {
   };
   bindRows();
   content.querySelector("#bill-add-line").addEventListener("click", () => addLine());
-  content.querySelector("#bill-currency").addEventListener("change", () => {
+  content.querySelector("#bill-customer-country").addEventListener("change", () => {\n    const selectedCountry = COUNTRIES.find((country) => country.code === content.querySelector("#bill-customer-country").value);\n    if (!selectedCountry) return;\n    content.querySelector("#bill-currency").value = selectedCountry.currency;\n    const rateInput = content.querySelector("#bill-rate");\n    rateInput.value = selectedCountry.currency === store.settings.currency ? "1" : "";\n    refreshTotals();\n  });\n  content.querySelector("#bill-currency").addEventListener("change", () => {
     const currency = content.querySelector("#bill-currency").value;
     const rateInput = content.querySelector("#bill-rate");
     rateInput.value = currency === store.settings.currency ? "1" : "";
@@ -148,7 +150,7 @@ function openEditor(type, source = null) {
       date: content.querySelector("#bill-date").value,
       dueDate: content.querySelector("#bill-due-date").value,
       customerName: content.querySelector("#bill-customer").value.trim(),
-      customerAddress: content.querySelector("#bill-customer-address").value.trim(),
+      customerAddress: content.querySelector("#bill-customer-address").value.trim(),\n      customerCountry: content.querySelector("#bill-customer-country").value,
       currency: content.querySelector("#bill-currency").value,
       baseCurrency: store.settings.currency,
       exchangeRate: rate,
@@ -197,7 +199,7 @@ function openSettings() {
   const rates = country?.vatRates || [0];
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>Paramètres de facturation</h2>
-    <label>Devise par défaut des documents</label><select id="bill-default-currency">${CURRENCIES.map((currency) => `<option value="${currency}" ${currency === settings.currency ? "selected" : ""}>${currency}</option>`).join("")}</select>
+    <label>Devise par défaut des documents</label><select id="bill-default-currency">${CURRENCIES.map((currency) => `<option value="${currency}" ${currency === settings.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select>
     <label>Libellé fiscal (TVA, GST, taxe de vente…)</label><input id="bill-default-tax-label" value="${esc(settings.taxLabel)}">
     <label>Taux par défaut suggéré pour ${esc(country?.name || "ce pays")}</label><select id="bill-default-tax">${rates.map((rate) => `<option value="${rate}" ${number(settings.defaultTax ?? rates[0]) === rate ? "selected" : ""}>${rate} %</option>`).join("")}<option value="0">0 % / exonéré</option></select>
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>

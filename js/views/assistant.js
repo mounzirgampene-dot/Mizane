@@ -159,6 +159,7 @@ export function viewSettings() {
       <div class="row">
         <div><label>Nom de la société</label><input id="s-company" value="${esc(s.companyName)}"></div>
         <div><label>Pays de l'entreprise (devise locale proposée automatiquement)</label>
+          <input id="s-country-search" type="search" placeholder="Rechercher un pays ou une devise">
           <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${esc(currencyOptionLabel(c.currency, s.locale || "fr"))}${c.zone !== "International" && c.zone !== "—" ? ` (${esc(c.zone)})` : ""}</option>`).join("")}</select>
         </div>
       </div>
@@ -226,10 +227,19 @@ export function viewSettings() {
       currencyOptionLabel(currencyInput.value.trim().toUpperCase(), s.locale || "fr");
   };
   let selectedCountryCode = s.country;
+  const countrySelect = document.getElementById("s-country");
+  document.getElementById("s-country-search").addEventListener("input", (e) => {
+    const query = e.target.value.trim().toLocaleLowerCase("fr");
+    [...countrySelect.options].forEach((option) => {
+      option.hidden = Boolean(query) && !option.textContent.toLocaleLowerCase("fr").includes(query);
+    });
+  });
   updateVat();
   updateCurrencyName();
   currencyInput.addEventListener("input", updateCurrencyName);
-  document.getElementById("s-country").addEventListener("change", (e) => {
+  countrySelect.addEventListener("change", (e) => {
+    document.getElementById("s-country-search").value = "";
+    [...countrySelect.options].forEach((option) => { option.hidden = false; });
     const previousCountry = getCountry(selectedCountryCode);
     const c = getCountry(e.target.value);
     if (c.plan) document.getElementById("s-plan").value = c.plan;

@@ -38,10 +38,10 @@ const getBilling = () => {
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
   if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash"]) {
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" ? "income" : key === "tax" ? "liability" : "asset";
-    if (code && !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -170,6 +170,7 @@ function openEditor(type, source = null) {
     <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
     <div id="bill-totals" class="calculator-result"></div>
     <div><label>${type === "quote" ? "Avance demandée" : source ? "Avance déjà encaissée" : "Avance reçue à la création"} (${esc(doc.currency)})</label><input id="bill-advance" type="number" min="0" step="0.01" value="${type === "quote" ? number(doc.advanceRequested) : source ? number(doc.paidAmount) : 0}" ${source && type === "invoice" ? "readonly" : ""}><small class="muted">${type === "quote" ? "Montant d'avance à demander au client ; ce n'est pas un paiement encaissé." : source ? "Les paiements déjà enregistrés sont conservés dans leur historique." : "Cette avance sera enregistrée comme un premier paiement de la facture."}</small></div>
+    ${type === "invoice" && !source ? '<div><label>Mode d’encaissement de l’avance</label><select id="bill-advance-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option><option value="mobile">Paiement mobile</option><option value="cheque">Chèque</option><option value="card">Carte bancaire</option><option value="other">Autre</option></select></div>' : ""}
     <label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
     <div class="actions"><button type="button" id="bill-save">Enregistrer ${type === "quote" ? "le devis" : "la facture"}</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-error" class="errors" role="alert"></div>`;
   const addLine = (line = { description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }) => {
@@ -288,7 +289,7 @@ function openEditor(type, source = null) {
         id: billing.nextPaymentId++,
         date: saved.date,
         amount: advance,
-        method: "other",
+        method: content.querySelector("#bill-advance-method").value,
         reference: "",
         notes: "Avance reçue lors de la création de la facture.",
         currency: saved.currency,
@@ -340,7 +341,7 @@ function openPaymentManager(invoiceId) {
   content.innerHTML = "<h2>Règlements — " + esc(invoice.number) + "</h2><p><strong>Client :</strong> " + esc(invoice.customerName) + "</p>" +
     "<div class=\"grid cols-3\"><section class=\"card kpi\"><div class=\"label\">Total facture</div><div class=\"value\">" + fmt(total, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Déjà réglé</div><div class=\"value\">" + fmt(paid, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Reste à payer</div><div class=\"value\">" + fmt(balance, invoice.currency, store.settings.locale) + "</div></section></div>" +
     "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"5\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
-    (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
+    (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Taux de change vers " + esc(invoice.baseCurrency || store.settings.currency) + " (1 " + esc(invoice.currency) + " = ?)</label><input id=\"bill-payment-rate\" type=\"number\" min=\"0.00000001\" step=\"0.00000001\" value=\"" + number(invoice.exchangeRate) + "\"></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
     "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
   if (balance > 0) content.querySelector("#bill-payment-save").addEventListener("click", () => {
     const payment = {
@@ -350,9 +351,10 @@ function openPaymentManager(invoiceId) {
       reference: content.querySelector("#bill-payment-reference").value.trim(),
       notes: content.querySelector("#bill-payment-notes").value.trim(),
       currency: invoice.currency,
-      exchangeRate: number(invoice.exchangeRate),
+      exchangeRate: number(content.querySelector("#bill-payment-rate").value),
     };
     const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    if (!(payment.exchangeRate > 0) || !Number.isFinite(payment.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
     if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
     invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
     invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
@@ -441,8 +443,10 @@ function openSettings() {
       ${accountSelect("tax", "liability", "Compte de taxe collectée")}
       ${accountSelect("bank", "asset", "Compte bancaire")}
       ${accountSelect("cash", "asset", "Compte de caisse")}
+      ${accountSelect("fxGain", "income", "Compte de gains de change")}
+      ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
     </div>
-    <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise.</p>
+    <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
     <div class="actions"><button id="bill-settings-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
 
@@ -489,7 +493,7 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveNow();

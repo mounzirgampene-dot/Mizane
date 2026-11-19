@@ -224,7 +224,8 @@ function renderCalculatorHistory() {
       await navigator.clipboard.writeText(value);
       toast("Résultat copié.");
     } catch {
-      openModal(`<h2>Résultat</h2><input id="calc-history-fallback" readonly value="${esc(value)}"><p class="muted">Sélectionnez puis copiez ce montant.</p><div class="actions"><button class="secondary" data-close>Fermer</button></div>`);\n      document.getElementById("calc-history-fallback")?.addEventListener("focus", (event) => event.target.select());
+      openModal(`<h2>Résultat</h2><input id="calc-history-fallback" readonly value="${esc(value)}"><p class="muted">Sélectionnez puis copiez ce montant.</p><div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
+      document.getElementById("calc-history-fallback")?.addEventListener("focus", (event) => event.target.select());
     }
   }));
 }

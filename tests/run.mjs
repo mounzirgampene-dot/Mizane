@@ -10,7 +10,7 @@ import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney, getCountry, getCurrencyInfo, currencyOptionLabel } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines } from "../js/finance.js";
-import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "../js/billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -62,6 +62,21 @@ test("validation facture internationale", () => {
   assert.equal(validateBillingDocument({ ...valid, exchangeRate: 0 }).ok, false);
   assert.equal(validateBillingDocument({ ...valid, currency: "EURO" }).ok, false);
   assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
+});
+test("paiements de facture : paiements partiels et solde restant", () => {
+  const invoice = { type: "invoice", status: "issued", currency: "EUR", totals: { ttc: 1200 } };
+  const payments = [{ amount: 300 }, { amount: 200 }];
+  assert.equal(calculatePaymentBalance(1200, payments), 700);
+  assert.equal(calculatePaymentBalance(1200, [...payments, { amount: 700 }]), 0);
+});
+test("paiements de facture : validation et refus du trop-perçu", () => {
+  const invoice = { type: "invoice", status: "issued", currency: "EUR", totals: { ttc: 1000 } };
+  const payment = { date: "2026-11-19", amount: 400, method: "bank", currency: "EUR" };
+  assert.equal(validateBillingPayment(payment, invoice, []).ok, true);
+  assert.equal(validateBillingPayment({ ...payment, amount: 1001 }, invoice, []).ok, false);
+  assert.equal(validateBillingPayment({ ...payment, date: "2026-02-30" }, invoice, []).ok, false);
+  assert.equal(validateBillingPayment({ ...payment, method: "crypto" }, invoice, []).ok, false);
+  assert.equal(validateBillingPayment(payment, { ...invoice, status: "cancelled" }, []).ok, false);
 });
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {

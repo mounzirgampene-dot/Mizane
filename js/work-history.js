@@ -8,8 +8,9 @@ let client = null;
 let access = null;
 
 async function getContext() {
-  if (access) return access;
   const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
+  if (access?.companyId === companyId) return access;
+  access = null;
   if (!companyId || !SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
   if (!client) client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const { data: sessionData, error: sessionError } = await client.auth.getSession();

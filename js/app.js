@@ -153,6 +153,12 @@ window.addEventListener("storage", async (event) => {
   }
 });
 
+window.addEventListener("mizane:billing-changed", () => {
+  void syncCloudIfReady().catch(error => {
+    toast("Synchronisation de la facturation impossible : " + (error?.message || "erreur inconnue"), 5500);
+  });
+});
+
 window.addEventListener("mizane:cloud-synced", (event) => {
   if (!(Number(event.detail?.pulled) > 0)) return;
   try {

@@ -1418,5 +1418,85 @@ test("rapprochement bancaire : la tolérance de date est respectée", () => {
   assert.equal(matchBankLines(store, [{ date: "2026-01-15", amount: -250 }], 4)[0].match, null);
 });
 
+
+console.log("— Synchronisation de la facturation —");
+const { syncBilling } = await import("../js/billing-sync.js");
+function makeBillingCloud() {
+  const state = { data: null, version: 0, writes: 0 };
+  const client = { functions: { invoke: async (name, { body }) => {
+    assert.equal(name, "sync-billing");
+    if (body.action === "read") return { data: { company_id: body.company_id, data: structuredClone(state.data), sync_version: state.version }, error: null };
+    state.writes++;
+    if (Number(body.expected_sync_version) !== state.version) {
+      return { data: { ok: false, conflict: true, server_sync_version: state.version }, error: null };
+    }
+    state.data = structuredClone(body.data);
+    state.version++;
+    return { data: { ok: true, conflict: false, sync_version: state.version }, error: null };
+  } } };
+  return { state, client };
+}
+function sampleBilling(label) {
+  return {
+    nextId: 2, nextPaymentId: 2,
+    settings: { currency: "MAD", prefixInvoice: "FAC" },
+    documents: [{ id: 1, type: "invoice", number: "FAC-2026-0001", customerName: label, payments: [{ id: 1, amount: 25 }] }],
+  };
+}
+await testAsync("deux appareils : devis, factures et paiements sont envoyés puis récupérés", async () => {
+  const companyId = "company-billing-sync-test";
+  const cloud = makeBillingCloud(), deviceA = memoryStorage(), deviceB = memoryStorage();
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceA;
+    const first = await syncBilling(cloud.client, companyId, "admin", sampleBilling("Client ajouté sur A"));
+    assert.equal(first.pushed, 1);
+    assert.equal(cloud.state.version, 1);
+    globalThis.localStorage = deviceB;
+    const second = await syncBilling(cloud.client, companyId, "admin", { documents: [], settings: {} });
+    assert.equal(second.pulled, 1);
+    assert.equal(second.billing.documents[0].customerName, "Client ajouté sur A");
+    assert.equal(second.billing.documents[0].payments[0].amount, 25);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("facturation : les modifications simultanées sur deux appareils sont bloquées sans écrasement", async () => {
+  const companyId = "company-billing-conflict-test";
+  const cloud = makeBillingCloud(), deviceA = memoryStorage(), deviceB = memoryStorage();
+  const baseline = sampleBilling("Client initial");
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = deviceA;
+    await syncBilling(cloud.client, companyId, "admin", baseline);
+    globalThis.localStorage = deviceB;
+    await syncBilling(cloud.client, companyId, "admin", baseline);
+    globalThis.localStorage = deviceA;
+    await syncBilling(cloud.client, companyId, "admin", sampleBilling("Modification A"));
+    globalThis.localStorage = deviceB;
+    await assert.rejects(syncBilling(cloud.client, companyId, "admin", {
+      ...baseline, documents: [{ ...baseline.documents[0], customerName: "Modification B" }],
+    }), /Conflit simultané dans la Facturation/);
+    assert.equal(cloud.state.data.documents[0].customerName, "Modification A");
+    assert.equal(cloud.state.writes, 2);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousStorage;
+  }
+});
+await testAsync("facturation : un lecteur ne peut pas envoyer de modifications locales", async () => {
+  const companyId = "company-billing-reader-test";
+  const cloud = makeBillingCloud(), storage = memoryStorage();
+  const previousStorage = globalThis.localStorage;
+  try {
+    globalThis.localStorage = storage;
+    const first = await syncBilling(cloud.client, companyId, "reader", sampleBilling("Modification lecteur"));
+    assert.equal(first.pushed, 0);
+    assert.equal(cloud.state.writes, 0);
+    assert.equal(cloud.state.version, 0);
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage; else globalThis.localStorage = previousStorage;
+  }
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

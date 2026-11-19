@@ -39,7 +39,8 @@ export async function initWorkHistory() {
 }
 
 export function canAccessWorkHistory() {
-  return Boolean(access && ["admin", "accountant"].includes(access.role));
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
+  return Boolean(access && access.companyId === companyId && ["admin", "accountant"].includes(access.role));
 }
 
 function actionText(action) {

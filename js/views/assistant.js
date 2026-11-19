@@ -158,7 +158,7 @@ export function viewSettings() {
       <h2>🏢 Société & internationalisation</h2>
       <div class="row">
         <div><label>Nom de la société</label><input id="s-company" value="${esc(s.companyName)}"></div>
-        <div><label>Pays (plan, devise, TVA choisis automatiquement)</label>
+        <div><label>Pays de l'entreprise (devise locale proposée automatiquement)</label>
           <select id="s-country">${COUNTRIES.map((c) => `<option value="${c.code}" ${c.code === s.country ? "selected" : ""}>${esc(c.name)} — ${esc(currencyOptionLabel(c.currency, s.locale || "fr"))}${c.zone !== "International" && c.zone !== "—" ? ` (${esc(c.zone)})` : ""}</option>`).join("")}</select>
         </div>
       </div>

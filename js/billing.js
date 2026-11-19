@@ -89,7 +89,7 @@ function openEditor(type, source = null) {
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>
-    <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
+    <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><input id="bill-country-search" type="search" placeholder="Rechercher un pays ou une devise"><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
     <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].sort().map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
     <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
     <div id="bill-totals" class="calculator-result"></div><label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
@@ -127,8 +127,17 @@ function openEditor(type, source = null) {
   };
   bindRows();
   content.querySelector("#bill-add-line").addEventListener("click", () => addLine());
-  content.querySelector("#bill-customer-country").addEventListener("change", () => {
-    const selectedCountry = COUNTRIES.find((country) => country.code === content.querySelector("#bill-customer-country").value);
+  const customerCountrySelect = content.querySelector("#bill-customer-country");
+  content.querySelector("#bill-country-search").addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLocaleLowerCase("fr");
+    [...customerCountrySelect.options].forEach((option) => {
+      option.hidden = Boolean(query) && !option.textContent.toLocaleLowerCase("fr").includes(query);
+    });
+  });
+  customerCountrySelect.addEventListener("change", () => {
+    content.querySelector("#bill-country-search").value = "";
+    [...customerCountrySelect.options].forEach((option) => { option.hidden = false; });
+    const selectedCountry = COUNTRIES.find((country) => country.code === customerCountrySelect.value);
     if (!selectedCountry) return;
     content.querySelector("#bill-currency").value = selectedCountry.currency;
     const rateInput = content.querySelector("#bill-rate");

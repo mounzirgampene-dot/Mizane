@@ -82,7 +82,8 @@ function openEditor(type, source = null) {
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);
-  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };\n  const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
+  const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
+  const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = type === "quote" ? "Créer un devis" : "Créer une facture";
   const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
@@ -126,7 +127,15 @@ function openEditor(type, source = null) {
   };
   bindRows();
   content.querySelector("#bill-add-line").addEventListener("click", () => addLine());
-  content.querySelector("#bill-customer-country").addEventListener("change", () => {\n    const selectedCountry = COUNTRIES.find((country) => country.code === content.querySelector("#bill-customer-country").value);\n    if (!selectedCountry) return;\n    content.querySelector("#bill-currency").value = selectedCountry.currency;\n    const rateInput = content.querySelector("#bill-rate");\n    rateInput.value = selectedCountry.currency === store.settings.currency ? "1" : "";\n    refreshTotals();\n  });\n  content.querySelector("#bill-currency").addEventListener("change", () => {
+  content.querySelector("#bill-customer-country").addEventListener("change", () => {
+    const selectedCountry = COUNTRIES.find((country) => country.code === content.querySelector("#bill-customer-country").value);
+    if (!selectedCountry) return;
+    content.querySelector("#bill-currency").value = selectedCountry.currency;
+    const rateInput = content.querySelector("#bill-rate");
+    rateInput.value = selectedCountry.currency === store.settings.currency ? "1" : "";
+    refreshTotals();
+  });
+  content.querySelector("#bill-currency").addEventListener("change", () => {
     const currency = content.querySelector("#bill-currency").value;
     const rateInput = content.querySelector("#bill-rate");
     rateInput.value = currency === store.settings.currency ? "1" : "";
@@ -150,7 +159,8 @@ function openEditor(type, source = null) {
       date: content.querySelector("#bill-date").value,
       dueDate: content.querySelector("#bill-due-date").value,
       customerName: content.querySelector("#bill-customer").value.trim(),
-      customerAddress: content.querySelector("#bill-customer-address").value.trim(),\n      customerCountry: content.querySelector("#bill-customer-country").value,
+      customerAddress: content.querySelector("#bill-customer-address").value.trim(),
+      customerCountry: content.querySelector("#bill-customer-country").value,
       currency: content.querySelector("#bill-currency").value,
       baseCurrency: store.settings.currency,
       exchangeRate: rate,

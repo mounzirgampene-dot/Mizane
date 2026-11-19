@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
-import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -20,6 +20,18 @@ const getBilling = () => {
   }
   if (!Array.isArray(store.billing.documents)) store.billing.documents = [];
   if (!store.billing.settings) store.billing.settings = {};
+  store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
+  for (const doc of store.billing.documents) {
+    if (doc.type !== "invoice") continue;
+    if (!Array.isArray(doc.payments)) {
+      doc.payments = [];
+      if (number(doc.paidAmount) > 0) {
+        doc.payments.push({ id: store.billing.nextPaymentId++, date: doc.date, amount: number(doc.paidAmount), currency: doc.currency, method: "legacy", reference: "", notes: "Règlement antérieur repris automatiquement." });
+      }
+    }
+    doc.paidAmount = round(doc.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
+    for (const payment of doc.payments) store.billing.nextPaymentId = Math.max(store.billing.nextPaymentId, number(payment.id) + 1);
+  }
   const settings = store.billing.settings;
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -43,6 +55,15 @@ function documentHTML(doc) {
   const locale = company.locale || "fr";
   const customerCountryName = getCountry(doc.customerCountry)?.name || "";
   const t = totals(doc.lines || []);
+  const paid = doc.type === "invoice"
+    ? round(Array.isArray(doc.payments)
+      ? doc.payments.reduce((sum, payment) => sum + number(payment.amount), 0)
+      : number(doc.paidAmount))
+    : 0;
+  const balance = Math.max(0, round(t.ttc - paid));
+  const paymentSummary = doc.type === "invoice" && paid > 0
+    ? `<table class="inv-totals payment-summary"><tr><td>Avance déjà payée</td><td class="num">${fmt(paid,currency,locale)}</td></tr><tr class="total"><td>Reste à payer</td><td class="num"><strong>${fmt(balance,currency,locale)}</strong></td></tr></table>`
+    : "";
   const rows = (doc.lines || []).map((line) => {
     const lineHT = round(number(line.quantity) * number(line.unitPrice));
     const lineTax = round(lineHT * number(line.taxRate) / 100);
@@ -52,6 +73,7 @@ function documentHTML(doc) {
   return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
+  ${paymentSummary}
   <p>Devise de facturation : ${esc(currencyOptionLabel(currency, locale))}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(convertBillingAmount(t.ttc, number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;
 }
 
@@ -61,7 +83,19 @@ function renderList() {
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
   const openAmount = calculateOutstandingBase(invoices);
-  const row = (doc) => `<tr><td>${esc(doc.number)}</td><td>${doc.type === "quote" ? "Devis" : "Facture"}</td><td>${esc(doc.date)}</td><td>${esc(doc.customerName)}</td><td>${esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr"))}</td><td class="num">${fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale)}</td><td>${doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis"}</td><td><button class="secondary small" data-bill-print="${doc.id}">Imprimer</button> ${doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? `<button class="small" data-bill-convert="${doc.id}">Convertir</button>` : ""}</td></tr>`;
+  const row = (doc) => {
+    const paid = number(doc.paidAmount);
+    const balance = Math.max(0, number(doc.totals?.ttc) - paid);
+    const status = doc.type === "invoice" && doc.status !== "cancelled"
+      ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
+      : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+      '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
+      (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
+      (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      "</td></tr>";
+  };
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
@@ -70,11 +104,16 @@ function renderList() {
   document.getElementById("bill-new-quote").addEventListener("click", () => openEditor("quote"));
   document.getElementById("bill-new-invoice").addEventListener("click", () => openEditor("invoice"));
   document.getElementById("bill-settings").addEventListener("click", openSettings);
+  $app.querySelectorAll("[data-bill-edit]").forEach((button) => button.addEventListener("click", () => {
+    const doc = billing.documents.find((item) => item.id === Number(button.dataset.billEdit));
+    if (doc) openEditor(doc.type, doc);
+  }));
   $app.querySelectorAll("[data-bill-print]").forEach((button) => button.addEventListener("click", () => {
     const doc = billing.documents.find((item) => item.id === Number(button.dataset.billPrint));
     if (doc) printHTML(doc.number, documentHTML(doc));
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
+  $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
 }
 
 function openEditor(type, source = null) {
@@ -85,7 +124,7 @@ function openEditor(type, source = null) {
   const defaultTax = settings.defaultTax == null ? (defaultCountry?.vatRates?.[0] || 0) : number(settings.defaultTax);
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
-  const title = type === "quote" ? "Créer un devis" : "Créer une facture";
+  const title = source ? (type === "quote" ? "Modifier le devis" : "Modifier la facture") : (type === "quote" ? "Créer un devis" : "Créer une facture");
   const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
@@ -165,7 +204,10 @@ function openEditor(type, source = null) {
     if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
     const totalsValue = totals(lines);
     const saved = {
-      id: billing.nextId++, type, number: nextNumber(type,settings),
+      ...(source || {}),
+      id: source ? source.id : billing.nextId++,
+      type,
+      number: source ? source.number : nextNumber(type,settings),
       date: content.querySelector("#bill-date").value,
       dueDate: content.querySelector("#bill-due-date").value,
       customerName: content.querySelector("#bill-customer").value.trim(),
@@ -177,16 +219,76 @@ function openEditor(type, source = null) {
       taxLabel: content.querySelector("#bill-tax-label").value.trim() || settings.taxLabel,
       paymentTerms: content.querySelector("#bill-terms").value.trim(),
       notes: content.querySelector("#bill-notes").value.trim(),
-      lines, totals: totalsValue, paidAmount: 0,
-      status: "issued", createdAt: new Date().toISOString(),
+      lines,
+      totals: totalsValue,
+      paidAmount: source ? number(source.paidAmount) : 0,
+      payments: source && Array.isArray(source.payments) ? source.payments : [],
+      status: source ? source.status : "issued",
+      createdAt: source ? source.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
-    billing.documents.push(saved);
+    if (source && type === "invoice" && saved.totals.ttc + 0.001 < saved.paidAmount) {
+      content.querySelector("#bill-error").textContent = "Le total de la facture ne peut pas être inférieur aux paiements déjà enregistrés.";
+      return;
+    }
+    if (source) {
+      const index = billing.documents.findIndex((item) => item.id === source.id);
+      if (index < 0) {
+        content.querySelector("#bill-error").textContent = "Ce document n'existe plus. Fermez puis actualisez la liste.";
+        return;
+      }
+      billing.documents[index] = saved;
+    } else {
+      billing.documents.push(saved);
+    }
     saveNow();
     modal.close();
     renderList();
-    toast(type === "quote" ? "Devis enregistré." : "Facture enregistrée.");
+    toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée."));
   });
   refreshTotals();
+  modal.showModal();
+}
+
+
+function openPaymentManager(invoiceId) {
+  const billing = getBilling();
+  const invoice = billing.documents.find((doc) => doc.id === invoiceId && doc.type === "invoice");
+  if (!invoice) return;
+  if (!Array.isArray(invoice.payments)) invoice.payments = [];
+  const content = document.getElementById("modal-content");
+  const modal = document.getElementById("modal");
+  const total = number(invoice.totals?.ttc);
+  const paid = round(invoice.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
+  const balance = calculatePaymentBalance(total, invoice.payments);
+  const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
+  const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
+  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td></tr>").join("");
+  content.innerHTML = "<h2>Règlements — " + esc(invoice.number) + "</h2><p><strong>Client :</strong> " + esc(invoice.customerName) + "</p>" +
+    "<div class=\"grid cols-3\"><section class=\"card kpi\"><div class=\"label\">Total facture</div><div class=\"value\">" + fmt(total, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Déjà réglé</div><div class=\"value\">" + fmt(paid, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Reste à payer</div><div class=\"value\">" + fmt(balance, invoice.currency, store.settings.locale) + "</div></section></div>" +
+    "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"5\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
+    (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
+    "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
+  if (balance > 0) content.querySelector("#bill-payment-save").addEventListener("click", () => {
+    const payment = {
+      date: content.querySelector("#bill-payment-date").value,
+      amount: number(content.querySelector("#bill-payment-amount").value),
+      method: content.querySelector("#bill-payment-method").value,
+      reference: content.querySelector("#bill-payment-reference").value.trim(),
+      notes: content.querySelector("#bill-payment-notes").value.trim(),
+      currency: invoice.currency,
+      exchangeRate: number(invoice.exchangeRate),
+    };
+    const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
+    invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
+    invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+    invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : "partially_paid";
+    saveNow();
+    modal.close();
+    renderList();
+    toast("Paiement enregistré.");
+  });
   modal.showModal();
 }
 

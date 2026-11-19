@@ -215,18 +215,76 @@ function convertQuote(id) {
 function openSettings() {
   const billing = getBilling();
   const settings = billing.settings;
-  const country = COUNTRIES.find((item) => item.code === store.settings.country);
-  const rates = country?.vatRates || [0];
+  const companySettings = store.settings;
+  const initialCountry = getCountry(companySettings.country);
+  const initialAccountingCurrency = companySettings.currency || initialCountry.currency;
+  let selectedCountryCode = initialCountry.code;
+  let accountingCurrency = initialAccountingCurrency;
+  let billingCurrency = settings.currency || initialAccountingCurrency;
   const content = document.getElementById("modal-content");
+
+  const countryOptions = () => COUNTRIES.map((item) =>
+    `<option value="${item.code}" ${item.code === selectedCountryCode ? "selected" : ""}>${esc(item.name)} — ${esc(currencyOptionLabel(item.currency, companySettings.locale || "fr"))}</option>`
+  ).join("");
+  const renderTaxRates = (country) => {
+    const rates = country.vatRates.length ? country.vatRates : [0];
+    const current = settings.defaultTax == null ? rates[0] : number(settings.defaultTax);
+    return `<label id="bill-default-tax-label-caption">Taux par défaut suggéré pour ${esc(country.name)}</label><select id="bill-default-tax">${rates.map((rate) => `<option value="${rate}" ${current === rate ? "selected" : ""}>${rate} %</option>`).join("")}<option value="0" ${current === 0 ? "selected" : ""}>0 % / exonéré</option></select>`;
+  };
   content.innerHTML = `<h2>Paramètres de facturation</h2>
-    <label>Devise par défaut des documents</label><select id="bill-default-currency">${CURRENCIES.map((currency) => `<option value="${currency}" ${currency === settings.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select>
+    <h3>Entreprise</h3>
+    <label>Pays de l'entreprise</label>
+    <input id="bill-company-country-search" type="search" placeholder="Rechercher un pays ou une devise">
+    <select id="bill-company-country">${countryOptions()}</select>
+    <label>Devise comptable de l'entreprise</label>
+    <div id="bill-accounting-currency" class="calculator-result">${esc(currencyOptionLabel(accountingCurrency, companySettings.locale || "fr"))}</div>
+    <p class="muted">Le pays propose automatiquement sa devise locale comme devise comptable. Une devise comptable personnalisée déjà choisie est conservée.</p>
+    <h3>Documents de facturation</h3>
+    <label>Devise par défaut des documents</label><select id="bill-default-currency">${[...new Set([...CURRENCIES, settings.currency, accountingCurrency])].sort().map((currency) => `<option value="${currency}" ${currency === billingCurrency ? "selected" : ""}>${esc(currencyOptionLabel(currency, companySettings.locale || "fr"))}</option>`).join("")}</select>
     <label>Libellé fiscal (TVA, GST, taxe de vente…)</label><input id="bill-default-tax-label" value="${esc(settings.taxLabel)}">
-    <label>Taux par défaut suggéré pour ${esc(country?.name || "ce pays")}</label><select id="bill-default-tax">${rates.map((rate) => `<option value="${rate}" ${number(settings.defaultTax ?? rates[0]) === rate ? "selected" : ""}>${rate} %</option>`).join("")}<option value="0">0 % / exonéré</option></select>
+    <div id="bill-default-tax-container">${renderTaxRates(initialCountry)}</div>
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
     <div class="actions"><button id="bill-settings-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+
+  const countrySelect = content.querySelector("#bill-company-country");
+  const countrySearch = content.querySelector("#bill-company-country-search");
+  countrySearch.addEventListener("input", (event) => {
+    const query = event.target.value.trim().toLocaleLowerCase("fr");
+    [...countrySelect.options].forEach((option) => {
+      option.hidden = Boolean(query) && !option.textContent.toLocaleLowerCase("fr").includes(query);
+    });
+  });
+  countrySelect.addEventListener("change", () => {
+    countrySearch.value = "";
+    [...countrySelect.options].forEach((option) => { option.hidden = false; });
+    const previousCountry = getCountry(selectedCountryCode);
+    const nextCountry = getCountry(countrySelect.value);
+    if (accountingCurrency === previousCountry.currency) {
+      accountingCurrency = nextCountry.currency;
+      content.querySelector("#bill-accounting-currency").textContent =
+        currencyOptionLabel(accountingCurrency, companySettings.locale || "fr");
+    }
+    if (billingCurrency === previousCountry.currency) {
+      billingCurrency = nextCountry.currency;
+      const currencySelect = content.querySelector("#bill-default-currency");
+      if (![...currencySelect.options].some((option) => option.value === billingCurrency)) {
+        currencySelect.add(new Option(currencyOptionLabel(billingCurrency, companySettings.locale || "fr"), billingCurrency));
+      }
+      currencySelect.value = billingCurrency;
+    }
+    selectedCountryCode = nextCountry.code;
+    content.querySelector("#bill-default-tax-container").innerHTML = renderTaxRates(nextCountry);
+  });
+  content.querySelector("#bill-default-currency").addEventListener("change", (event) => {
+    billingCurrency = event.target.value;
+  });
+
   document.getElementById("bill-settings-save").addEventListener("click", () => {
+    const chosenCountry = getCountry(selectedCountryCode);
+    companySettings.country = chosenCountry.code;
+    companySettings.currency = accountingCurrency;
     settings.currency = content.querySelector("#bill-default-currency").value;
     settings.taxLabel = content.querySelector("#bill-default-tax-label").value.trim() || "Taxe";
     settings.defaultTax = number(content.querySelector("#bill-default-tax").value);

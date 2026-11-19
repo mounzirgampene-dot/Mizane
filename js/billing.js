@@ -16,6 +16,11 @@ const CURRENCIES = [...new Set([
 const today = () => new Date().toISOString().slice(0, 10);
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round = (value) => Math.round((number(value) + Number.EPSILON) * 100) / 100;
+function saveBilling() {
+  saveBilling();
+  window.dispatchEvent(new Event("mizane:billing-changed"));
+}
+
 const getBilling = () => {
   if (!store.billing || typeof store.billing !== "object") {
     store.billing = { documents: [], nextId: 1, settings: { currency: store.settings.currency || "XOF", taxLabel: "TVA", defaultTax: null, prefixQuote: "DEV", prefixInvoice: "FAC", nextQuote: 1, nextInvoice: 1, paymentTerms: "Paiement à réception" } };
@@ -147,7 +152,7 @@ function renderList() {
     if (!invoice) return;
     const result = postInvoiceAccounting(invoice);
     if (!result.ok) return toast("Comptabilisation impossible : " + result.errors[0], 5000);
-    saveNow();
+    saveBilling();
     toast(result.created ? result.created + " écriture(s) comptable(s) générée(s)." : "Toutes les écritures de cette facture existent déjà.");
   }));
 }
@@ -314,7 +319,7 @@ function openEditor(type, source = null) {
       billing.documents.push(saved);
     }
     const accountingResult = type === "invoice" ? postInvoiceAccounting(saved) : null;
-    saveNow();
+    saveBilling();
     modal.close();
     renderList();
     if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
@@ -360,7 +365,7 @@ function openPaymentManager(invoiceId) {
     invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
     invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : "partially_paid";
     const accountingResult = postInvoiceAccounting(invoice);
-    saveNow();
+    saveBilling();
     modal.close();
     renderList();
     if (accountingResult && !accountingResult.ok) toast("Paiement enregistré, mais écriture non générée : " + accountingResult.errors[0], 5500);
@@ -387,7 +392,7 @@ function convertQuote(id) {
   quote.convertedTo = invoice.id;
   billing.documents.push(invoice);
   const accountingResult = postInvoiceAccounting(invoice);
-  saveNow();
+  saveBilling();
   renderList();
   if (accountingResult && !accountingResult.ok) toast("Facture créée, comptabilisation à configurer : " + accountingResult.errors[0], 5500);
   else toast("Devis converti en facture et comptabilisé.");
@@ -496,7 +501,7 @@ function openSettings() {
     settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
-    saveNow();
+    saveBilling();
     document.getElementById("modal").close();
     renderList();
     toast("Paramètres de facturation enregistrés.");

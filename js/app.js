@@ -53,6 +53,7 @@ function renderNav() {
 }
 
 function render() {
+  renderWorkSidebar();
   setLang(store.settings.language);
   document.getElementById("company-tag").textContent =
     `${store.settings.companyName} · ${store.settings.country} · ${store.settings.currency}`;
@@ -62,6 +63,7 @@ function render() {
 }
 
 function go(route) {
+  if (["history", "my-work"].includes(route) && !canAccessWorkHistory()) route = "dashboard";
   setRoute(route);
   location.hash = route;
   renderNav();
@@ -104,10 +106,17 @@ $nav.addEventListener("click", (e) => {
   if (btn) go(btn.dataset.route);
 });
 
+document.getElementById("work-sidebar")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-route]");
+  if (btn) go(btn.dataset.route);
+});
+
 async function start() {
   const hash = location.hash.replace("#", "");
-  setRoute(NAV.some(([id]) => id === hash) ? hash : "dashboard");
   initStore(loadStore(allAccounts("syscohada")));
+  const historyAccess = await initWorkHistory();
+  const allowedRoutes = new Set([...NAV.map(([id]) => id), ...(historyAccess ? ["history", "my-work"] : [])]);
+  setRoute(allowedRoutes.has(hash) ? hash : "dashboard");
   renderNav();
   render();
   if ("serviceWorker" in navigator) {

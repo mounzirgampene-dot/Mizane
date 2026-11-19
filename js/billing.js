@@ -20,6 +20,18 @@ const getBilling = () => {
   }
   if (!Array.isArray(store.billing.documents)) store.billing.documents = [];
   if (!store.billing.settings) store.billing.settings = {};
+  store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
+  for (const doc of store.billing.documents) {
+    if (doc.type !== "invoice") continue;
+    if (!Array.isArray(doc.payments)) {
+      doc.payments = [];
+      if (number(doc.paidAmount) > 0) {
+        doc.payments.push({ id: store.billing.nextPaymentId++, date: doc.date, amount: number(doc.paidAmount), currency: doc.currency, method: "legacy", reference: "", notes: "Règlement antérieur repris automatiquement." });
+      }
+    }
+    doc.paidAmount = round(doc.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
+    for (const payment of doc.payments) store.billing.nextPaymentId = Math.max(store.billing.nextPaymentId, number(payment.id) + 1);
+  }
   const settings = store.billing.settings;
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";

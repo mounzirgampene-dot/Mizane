@@ -1,7 +1,7 @@
 // MIZANE — Socle international de devis et factures.
 // Les documents restent dans le store de l'entreprise ; aucune écriture comptable
 // n'est générée avant la phase de validation comptable du module.
-import { COUNTRIES, formatMoney, currencyOptionLabel } from "./countries.js";
+import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
@@ -41,6 +41,7 @@ function documentHTML(doc) {
   const company = store.settings;
   const currency = doc.currency || company.currency;
   const locale = company.locale || "fr";
+  const customerCountryName = getCountry(doc.customerCountry)?.name || "";
   const t = totals(doc.lines || []);
   const rows = (doc.lines || []).map((line) => {
     const lineHT = round(number(line.quantity) * number(line.unitPrice));
@@ -48,7 +49,7 @@ function documentHTML(doc) {
     return `<tr><td>${esc(line.description)}</td><td class="num">${number(line.quantity)}</td><td class="num">${fmt(line.unitPrice,currency,locale)}</td><td class="num">${number(line.taxRate)} %</td><td class="num">${fmt(lineHT+lineTax,currency,locale)}</td></tr>`;
   }).join("");
   const title = doc.type === "quote" ? "DEVIS" : "FACTURE";
-  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p></div></div>
+  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
   <p>Devise de facturation : ${esc(currencyOptionLabel(currency, locale))}</p><p>Taux de conversion vers ${esc(doc.baseCurrency)} : ${number(doc.exchangeRate) || 1}</p><p>Contre-valeur comptable : ${fmt(convertBillingAmount(t.ttc, number(doc.exchangeRate) || 1),doc.baseCurrency,locale)}</p><p>${esc(doc.paymentTerms || "")}</p><p>${esc(doc.notes || "")}</p>`;

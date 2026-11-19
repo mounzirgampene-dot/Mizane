@@ -106,6 +106,8 @@ function mergeInitialBilling(localValue, remoteValue) {
           existing.doc.payments = [...payments.values()];
           existing.doc.paidAmount = existing.doc.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
         }
+        if (doc.id != null) existing.mergedIds ||= [];
+        if (doc.id != null) existing.mergedIds.push({ source, id: doc.id });
         continue;
       }
       const record = { doc, source, oldId: doc.id };
@@ -122,6 +124,7 @@ function mergeInitialBilling(localValue, remoteValue) {
     const oldId = record.oldId;
     record.doc.id = nextId++;
     if (oldId != null) idMaps[record.source].set(oldId, record.doc.id);
+    for (const merged of record.mergedIds || []) idMaps[merged.source].set(merged.id, record.doc.id);
   }
   for (const record of records) {
     if (record.doc.type === "quote" && record.doc.convertedTo != null) {

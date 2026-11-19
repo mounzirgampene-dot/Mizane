@@ -2,7 +2,7 @@
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
 import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
-import { store, planAccounts, $app, router, toast, esc, money, openModal } from "../state.js";
+import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 
 export function viewTools() {
   const s = store.settings;
@@ -186,4 +186,144 @@ function nextDay(d) {
   const dt = new Date(d + "T00:00:00");
   dt.setDate(dt.getDate() + 1);
   return dt.toISOString().slice(0, 10);
+}
+
+
+// ---- Calculatrice générale et financière ----
+export function viewCalculator() {
+  $app.innerHTML = `
+    <h1>Calculatrice</h1>
+    <p class="muted">Effectuez vos calculs courants, puis utilisez les outils financiers pour calculer un pourcentage ou la TVA.</p>
+    <div class="grid cols-2 calculator-layout">
+      <section class="card">
+        <h2>Calculatrice classique</h2>
+        ${calculatorMarkup("main")}
+      </section>
+      <section class="card">
+        <h2>Calcul financier</h2>
+        <div class="calculator-finance">
+          <label for="calc-amount">Montant</label>
+          <input id="calc-amount" type="number" min="0" step="0.01" placeholder="Ex. 1000">
+          <label for="calc-rate">Taux (%)</label>
+          <input id="calc-rate" type="number" min="0" step="0.01" value="20">
+          <div class="actions">
+            <button class="secondary" id="calc-percent">Calculer le pourcentage</button>
+            <button class="secondary" id="calc-vat-ht">Montant HT depuis TTC</button>
+            <button class="secondary" id="calc-vat-ttc">Montant TTC depuis HT</button>
+          </div>
+          <div class="calculator-result" id="calc-finance-result" aria-live="polite">Le résultat apparaîtra ici.</div>
+          <button class="secondary" id="calc-use-finance" disabled>Utiliser ce résultat</button>
+        </div>
+      </section>
+    </div>
+  `;
+  bindCalculator($app.querySelector('[data-calculator="main"]'));
+  let result = null;
+  const amount = document.getElementById("calc-amount");
+  const rate = document.getElementById("calc-rate");
+  const output = document.getElementById("calc-finance-result");
+  const use = document.getElementById("calc-use-finance");
+  const calculate = (kind) => {
+    const value = Number(amount.value), percent = Number(rate.value);
+    if (!amount.value || !Number.isFinite(value) || !Number.isFinite(percent) || percent < 0) {
+      output.textContent = "Saisissez un montant et un taux valides.";
+      result = null; use.disabled = true; return;
+    }
+    if (kind === "percent") result = value * percent / 100;
+    if (kind === "ht") result = value / (1 + percent / 100);
+    if (kind === "ttc") result = value * (1 + percent / 100);
+    const vat = kind === "ht" ? value - result : kind === "ttc" ? result - value : result;
+    output.innerHTML = `<strong>Résultat : ${formatCalc(result)}</strong><br><span class="muted">${kind === "percent" ? percent + " % de " + formatCalc(value) : "TVA : " + formatCalc(vat)}</span>`;
+    use.disabled = false;
+  };
+  document.getElementById("calc-percent").addEventListener("click", () => calculate("percent"));
+  document.getElementById("calc-vat-ht").addEventListener("click", () => calculate("ht"));
+  document.getElementById("calc-vat-ttc").addEventListener("click", () => calculate("ttc"));
+  use.addEventListener("click", () => {
+    if (result === null) return;
+    openModal(`<h2>Résultat du calcul</h2><p class="calculator-result"><strong>${formatCalc(result)}</strong></p><p class="muted">Copiez ce montant dans le champ comptable souhaité.</p><div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
+  });
+}
+
+function calculatorMarkup(id, withInsert = false) {
+  return `
+    <div class="calculator" data-calculator="${id}">
+      <output class="calculator-display" data-calc-display aria-live="polite">0</output>
+      <div class="calculator-keys">
+        ${["C","⌫","%","÷","7","8","9","×","4","5","6","−","1","2","3","+","±","0",".","="].map((key) =>
+          `<button type="button" class="calculator-key ${["÷","×","−","+","="].includes(key) ? "operator" : ""}" data-calc-key="${key}">${key}</button>`).join("")}
+      </div>
+      ${withInsert ? '<button type="button" class="calculator-insert" data-calc-insert>Insérer le résultat</button>' : ""}
+    </div>`;
+}
+
+function formatCalc(value) {
+  if (!Number.isFinite(value)) return "Erreur";
+  return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 8 }).format(Math.round((value + Number.EPSILON) * 1e8) / 1e8);
+}
+
+function bindCalculator(root, onInsert) {
+  if (!root) return;
+  let current = "0", stored = null, operator = null, waiting = false;
+  const display = root.querySelector("[data-calc-display]");
+  const render = () => { display.textContent = current; };
+  const compute = (a, b, op) => {
+    if (op === "+") return a + b;
+    if (op === "−") return a - b;
+    if (op === "×") return a * b;
+    if (op === "÷") return b === 0 ? NaN : a / b;
+    return b;
+  };
+  root.querySelectorAll("[data-calc-key]").forEach((button) => button.addEventListener("click", () => {
+    const key = button.dataset.calcKey;
+    if (/^\d$/.test(key)) {
+      current = waiting || current === "0" ? key : current.length < 18 ? current + key : current;
+      waiting = false;
+    } else if (key === ".") {
+      if (waiting) { current = "0."; waiting = false; }
+      else if (!current.includes(".")) current += ".";
+    } else if (key === "C") {
+      current = "0"; stored = null; operator = null; waiting = false;
+    } else if (key === "⌫") {
+      current = waiting || current.length <= 1 ? "0" : current.slice(0, -1);
+      waiting = false;
+    } else if (key === "±") {
+      current = String(-Number(current));
+    } else if (key === "%") {
+      current = String(Number(current) / 100);
+    } else if (["+", "−", "×", "÷"].includes(key)) {
+      const value = Number(current);
+      if (operator && !waiting) {
+        const next = compute(stored, value, operator);
+        current = String(next); stored = next;
+      } else stored = value;
+      operator = key; waiting = true;
+    } else if (key === "=" && operator) {
+      current = String(compute(stored, Number(current), operator));
+      stored = null; operator = null; waiting = true;
+    }
+    if (!Number.isFinite(Number(current))) current = "Erreur";
+    render();
+  }));
+  root.querySelector("[data-calc-insert]")?.addEventListener("click", () => {
+    if (Number.isFinite(Number(current)) && onInsert) onInsert(Number(current));
+  });
+}
+
+export function openCalculator(targetInput) {
+  if (!targetInput) return;
+  openModal(`
+    <h2>Calculatrice</h2>
+    <p class="muted">Effectuez le calcul puis insérez le résultat dans le champ ${esc(targetInput.dataset.calcLabel || "montant")}.</p>
+    ${calculatorMarkup("inline", true)}
+    <div class="actions"><button class="secondary" data-close>Fermer</button></div>
+  `);
+  const modalCalculator = document.querySelector('#modal-content [data-calculator="inline"]');
+  bindCalculator(modalCalculator, (value) => {
+    targetInput.value = String(Math.round((value + Number.EPSILON) * 100) / 100);
+    targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+    targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+    closeModal();
+    toast("Résultat inséré dans le montant.");
+  });
 }

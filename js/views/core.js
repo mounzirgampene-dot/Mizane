@@ -4,6 +4,7 @@ import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { attachAccountAutocomplete } from "../account-autocomplete.js";
+import { openCalculator } from "./ops.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -45,8 +46,8 @@ function lineRowHTML(l, i) {
     <tr>
       <td style="min-width:160px"><input data-i="${i}" data-f="account" value="${esc(l.account)}" placeholder="N° ou nom du compte" autocomplete="off"></td>
       <td style="min-width:180px"><input data-i="${i}" data-f="label" value="${esc(l.label)}" placeholder="Ex. achat de fournitures"></td>
-      <td style="min-width:110px"><input type="number" step="0.01" min="0" data-i="${i}" data-f="debit" value="${l.debit}" placeholder="Débit"></td>
-      <td style="min-width:110px"><input type="number" step="0.01" min="0" data-i="${i}" data-f="credit" value="${l.credit}" placeholder="Crédit"></td>
+      <td style="min-width:140px"><div class="amount-with-calc"><input type="number" step="0.01" min="0" data-i="${i}" data-f="debit" value="${l.debit}" placeholder="Débit"><button type="button" class="secondary small" data-calc-for="debit" title="Calculer le débit">∑</button></div></td>
+      <td style="min-width:140px"><div class="amount-with-calc"><input type="number" step="0.01" min="0" data-i="${i}" data-f="credit" value="${l.credit}" placeholder="Crédit"><button type="button" class="secondary small" data-calc-for="credit" title="Calculer le crédit">∑</button></div></td>
       <td><input data-i="${i}" data-f="third" value="${esc(l.third || "")}" placeholder="Tiers (opt.)"></td>
       <td class="nogrow"><button class="danger small" data-del-line="${i}" title="Supprimer la ligne">✕</button></td>
     </tr>`;
@@ -129,6 +130,10 @@ export function viewEntry() {
       }, isDescription ? "label" : "code", isDescription ? "description" : "account");
     }
   });
+  $app.querySelectorAll("[data-calc-for]").forEach((button) => button.addEventListener("click", () => {
+    const input = button.parentElement.querySelector("input");
+    if (input) { input.dataset.calcLabel = button.dataset.calcFor; openCalculator(input); }
+  }));
   const dateInput = document.getElementById("e-date");
   const dateFormat = document.getElementById("e-date-format");
   const readEntryDate = () => parseEntryDate(dateInput.value, dateFormat.value);
@@ -366,10 +371,14 @@ export function viewEntries() {
         <div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th>Tiers</th></tr></thead><tbody>
         ${entry.lines.map((line, index) => `<tr><td><input data-edit-line="${index}" data-edit-field="account" value="${esc(line.account)}"></td>
         <td><input data-edit-line="${index}" data-edit-field="label" value="${esc(line.label || "")}"></td>
-        <td><input type="number" min="0" step="0.01" data-edit-line="${index}" data-edit-field="debit" value="${Number(line.debit) || 0}"></td>
-        <td><input type="number" min="0" step="0.01" data-edit-line="${index}" data-edit-field="credit" value="${Number(line.credit) || 0}"></td>
+        <td><div class="amount-with-calc"><input type="number" min="0" step="0.01" data-edit-line="${index}" data-edit-field="debit" value="${Number(line.debit) || 0}"><button type="button" class="secondary small" data-edit-calc="${index}" data-edit-calc-field="debit">∑</button></div></td>
+        <td><div class="amount-with-calc"><input type="number" min="0" step="0.01" data-edit-line="${index}" data-edit-field="credit" value="${Number(line.credit) || 0}"><button type="button" class="secondary small" data-edit-calc="${index}" data-edit-calc-field="credit">∑</button></div></td>
         <td><input data-edit-line="${index}" data-edit-field="third" value="${esc(line.third || "")}"></td></tr>`).join("")}</tbody></table></div>
         <div id="edit-entry-errors"></div><div class="actions"><button id="save-entry-edit">Enregistrer les modifications</button><button class="secondary" data-close>Annuler</button></div>`);
+      document.querySelectorAll("[data-edit-calc]").forEach((button) => button.addEventListener("click", () => {
+        const input = document.querySelector(`[data-edit-line="${button.dataset.editCalc}"][data-edit-field="${button.dataset.editCalcField}"]`);
+        if (input) { input.dataset.calcLabel = button.dataset.editCalcField; openCalculator(input); }
+      }));
       document.getElementById("save-entry-edit").addEventListener("click", () => {
         const updated = { date: document.getElementById("edit-entry-date").value, journal: document.getElementById("edit-entry-journal").value,
           reference: document.getElementById("edit-entry-ref").value.trim(), lines: entry.lines.map((line, index) => {

@@ -65,7 +65,6 @@ test("validation facture internationale", () => {
   assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
 });
 test("paiements de facture : paiements partiels et solde restant", () => {
-  const invoice = { type: "invoice", status: "issued", currency: "EUR", totals: { ttc: 1200 } };
   const payments = [{ amount: 300 }, { amount: 200 }];
   assert.equal(calculatePaymentBalance(1200, payments), 700);
   assert.equal(calculatePaymentBalance(1200, [...payments, { amount: 700 }]), 0);

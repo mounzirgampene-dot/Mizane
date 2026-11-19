@@ -1,12 +1,12 @@
 // MIZANE — Écrans : tableau de bord, saisie, écritures, grand livre.
-import { JOURNALS, postEntry, reverseEntry, validateEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, accountType, validDate } from "../accounting.js";
+import { JOURNALS, postEntry, reverseEntry, validateEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, validDate } from "../accounting.js";
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { attachAccountAutocomplete } from "../account-autocomplete.js";
 import { openCalculator } from "./ops.js";
 import {
-  store, planAccounts, $app, router, toast, esc, money, planLabel,
+  store, planAccounts, $app, router, toast, esc, money,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
 } from "../state.js";
 

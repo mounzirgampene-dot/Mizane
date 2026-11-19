@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
-import { calculateBillingTotals, calculateOutstandingBase, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -75,6 +75,7 @@ function renderList() {
     if (doc) printHTML(doc.number, documentHTML(doc));
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
+  $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
 }
 
 function openEditor(type, source = null) {
@@ -86,7 +87,7 @@ function openEditor(type, source = null) {
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = type === "quote" ? "Créer un devis" : "Créer une facture";
-  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
+  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button> ${doc.type === "invoice" && doc.status !== "cancelled" ? `<button class="secondary small" data-bill-payments="${doc.id}">Paiements (${(doc.payments || []).length})</button>` : ""}</td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>
@@ -187,6 +188,48 @@ function openEditor(type, source = null) {
     toast(type === "quote" ? "Devis enregistré." : "Facture enregistrée.");
   });
   refreshTotals();
+  modal.showModal();
+}
+
+
+function openPaymentManager(invoiceId) {
+  const billing = getBilling();
+  const invoice = billing.documents.find((doc) => doc.id === invoiceId && doc.type === "invoice");
+  if (!invoice) return;
+  if (!Array.isArray(invoice.payments)) invoice.payments = [];
+  const content = document.getElementById("modal-content");
+  const modal = document.getElementById("modal");
+  const total = number(invoice.totals?.ttc);
+  const paid = round(invoice.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
+  const balance = calculatePaymentBalance(total, invoice.payments);
+  const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
+  const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
+  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td></tr>").join("");
+  content.innerHTML = "<h2>Règlements — " + esc(invoice.number) + "</h2><p><strong>Client :</strong> " + esc(invoice.customerName) + "</p>" +
+    "<div class=\"grid cols-3\"><section class=\"card kpi\"><div class=\"label\">Total facture</div><div class=\"value\">" + fmt(total, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Déjà réglé</div><div class=\"value\">" + fmt(paid, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Reste à payer</div><div class=\"value\">" + fmt(balance, invoice.currency, store.settings.locale) + "</div></section></div>" +
+    "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"5\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
+    (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
+    "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
+  if (balance > 0) content.querySelector("#bill-payment-save").addEventListener("click", () => {
+    const payment = {
+      date: content.querySelector("#bill-payment-date").value,
+      amount: number(content.querySelector("#bill-payment-amount").value),
+      method: content.querySelector("#bill-payment-method").value,
+      reference: content.querySelector("#bill-payment-reference").value.trim(),
+      notes: content.querySelector("#bill-payment-notes").value.trim(),
+      currency: invoice.currency,
+      exchangeRate: number(invoice.exchangeRate),
+    };
+    const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
+    invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
+    invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+    invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : "partially_paid";
+    saveNow();
+    modal.close();
+    renderList();
+    toast("Paiement enregistré.");
+  });
   modal.showModal();
 }
 

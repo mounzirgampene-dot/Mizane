@@ -1,6 +1,6 @@
 // MIZANE — Socle international de devis et factures.
-// Les documents restent dans le store de l'entreprise ; aucune écriture comptable
-// n'est générée avant la phase de validation comptable du module.
+// Les documents restent dans le store local ; les factures et règlements génèrent
+// des écritures comptables selon les comptes configurés par l'entreprise.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { postEntry } from "./accounting.js";

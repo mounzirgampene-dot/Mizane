@@ -134,7 +134,14 @@ async function start() {
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,
  // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
-window.addEventListener("storage", (event) => {
+window.addEventListener("storage", async (event) => {
+  if (event.key === "mizane_active_company_v1") {
+    const allowed = await initWorkHistory();
+    if (!allowed && ["history", "my-work"].includes(currentRoute)) setRoute("dashboard");
+    renderNav();
+    render();
+    return;
+  }
   if (event.key !== "mizane_v1" || !event.newValue) return;
   try {
     initStore(loadStore(allAccounts("syscohada")));

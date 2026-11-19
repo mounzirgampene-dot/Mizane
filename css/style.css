@@ -270,3 +270,28 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
 .account-suggestion:hover, .account-suggestion.active { background: var(--th-bg); color: var(--teal-dark); }
 .account-suggestion strong { font-size: .88rem; }
 .account-suggestion span { font-size: .8rem; color: var(--muted); white-space: normal; }
+
+
+/* Calculatrice intégrée */
+.amount-with-calc { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.amount-with-calc input { min-width: 72px; flex: 1; }
+.amount-with-calc button { flex: 0 0 34px; padding: 7px 4px; font-weight: 700; }
+.calculator { max-width: 360px; margin: 0 auto; }
+.calculator-display {
+  display: block; width: 100%; min-height: 64px; padding: 14px;
+  margin-bottom: 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--th-bg); color: var(--text); text-align: right;
+  font-size: 1.8rem; font-weight: 700; overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.calculator-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+.calculator-key { min-height: 48px; padding: 8px; font-size: 1.05rem; }
+.calculator-key.operator { background: var(--teal-dark); }
+.calculator-insert { width: 100%; margin-top: 9px; }
+.calculator-layout { align-items: start; }
+.calculator-finance { max-width: 520px; }
+.calculator-result { padding: 14px; margin: 12px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--th-bg); font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .calculator-key { min-height: 46px; }
+  .calculator-display { font-size: 1.55rem; }
+}

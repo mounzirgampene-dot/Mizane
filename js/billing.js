@@ -6,7 +6,7 @@ import { store, $app, saveNow, esc, toast } from "./state.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "./billing-core.js";
 
-const CURRENCIES = ["MAD","EUR","USD","GBP","XOF","XAF","CAD","CHF","AED","SAR","TND","DZD","GNF","CDF","JPY","CNY","AUD","XXX"];
+const CURRENCIES = typeof Intl.supportedValuesOf === "function"\n  ? [...new Set([...Intl.supportedValuesOf("currency"), "XXX"])].sort()\n  : ["MAD","EUR","USD","GBP","XOF","XAF","CAD","CHF","AED","SAR","TND","DZD","GNF","CDF","JPY","CNY","AUD","XXX"];
 const today = () => new Date().toISOString().slice(0, 10);
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round = (value) => Math.round((number(value) + Number.EPSILON) * 100) / 100;
@@ -122,7 +122,7 @@ function openEditor(type, source = null) {
   };
   bindRows();
   content.querySelector("#bill-add-line").addEventListener("click", () => addLine());
-  content.querySelector("#bill-currency").addEventListener("change", refreshTotals);
+  content.querySelector("#bill-currency").addEventListener("change", () => {\n    const currency = content.querySelector("#bill-currency").value;\n    const rateInput = content.querySelector("#bill-rate");\n    if (currency === store.settings.currency) rateInput.value = "1";\n    else if (number(rateInput.value) === 1) rateInput.value = "";\n    refreshTotals();\n  });
   content.querySelector("#bill-rate").addEventListener("input", refreshTotals);
   content.querySelector("#bill-save").addEventListener("click", () => {
     const lines = readLines();

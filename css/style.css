@@ -295,3 +295,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--teal-light)
   .calculator-key { min-height: 46px; }
   .calculator-display { font-size: 1.55rem; }
 }
+
+
+/* Module de facturation */
+#modal-content textarea { min-height: 72px; resize: vertical; }
+#modal-content .table-wrap { margin: 8px 0; }
+#modal-content table input { min-width: 95px; padding: 7px; }
+#modal-content table td:first-child input { min-width: 180px; }
+#modal-content table button { min-width: 30px; }

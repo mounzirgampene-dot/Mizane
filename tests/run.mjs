@@ -10,6 +10,7 @@ import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines } from "../js/finance.js";
+import { calculateBillingTotals, convertBillingAmount, makeBillingNumber, validateBillingDocument } from "../js/billing-core.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -17,6 +18,28 @@ function test(name, fn) {
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }
 }
 
+console.log("— Facturation internationale —");
+test("calcul des totaux de facture : HT, taxe et TTC", () => {
+  assert.deepEqual(calculateBillingTotals([
+    { quantity: 2, unitPrice: 100, taxRate: 20 },
+    { quantity: 1, unitPrice: 50, taxRate: 10 },
+  ]), { ht: 250, tax: 45, ttc: 295 });
+});
+test("conversion de devise : conserve le taux appliqué", () => {
+  assert.equal(convertBillingAmount(100, 10.25), 1025);
+  assert.throws(() => convertBillingAmount(100, 0), /taux de change invalide/);
+});
+test("numérotation distincte des devis et factures", () => {
+  assert.equal(makeBillingNumber("quote", 2026, 2, { prefixQuote: "DEV" }), "DEV-2026-0002");
+  assert.equal(makeBillingNumber("invoice", 2026, 9, { prefixInvoice: "INV" }), "INV-2026-0009");
+});
+test("validation facture internationale", () => {
+  const valid = { type: "invoice", date: "2026-11-19", customerName: "Client", currency: "EUR", exchangeRate: 10.5, lines: [{ description: "Prestation", quantity: 2, unitPrice: 100, taxRate: 20 }] };
+  assert.equal(validateBillingDocument(valid).ok, true);
+  assert.equal(validateBillingDocument({ ...valid, exchangeRate: 0 }).ok, false);
+  assert.equal(validateBillingDocument({ ...valid, currency: "EURO" }).ok, false);
+  assert.equal(validateBillingDocument({ ...valid, date: "2026-02-31" }).ok, false);
+});
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {
   test(`plan ${id} : codes uniques et types valides`, () => {

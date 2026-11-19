@@ -410,6 +410,15 @@ function openSettings() {
     const current = settings.defaultTax == null ? rates[0] : number(settings.defaultTax);
     return `<label id="bill-default-tax-label-caption">Taux par défaut suggéré pour ${esc(country.name)}</label><select id="bill-default-tax">${rates.map((rate) => `<option value="${rate}" ${current === rate ? "selected" : ""}>${rate} %</option>`).join("")}<option value="0" ${current === 0 ? "selected" : ""}>0 % / exonéré</option></select>`;
   };
+
+  const billingAccounts = [...new Map([...planAccounts, ...(companySettings.customAccounts || [])].map(account => [String(account.code), account])).values()];
+  const accountSelect = (key, type, label) => {
+    const selected = settings.accountingAccounts?.[key] || "";
+    const options = billingAccounts.filter(account => account.type === type)
+      .sort((a, b) => String(a.code).localeCompare(String(b.code), "fr", { numeric: true }))
+      .map(account => `<option value="${esc(account.code)}" ${String(account.code) === String(selected) ? "selected" : ""}>${esc(account.code)} — ${esc(account.label)}</option>`).join("");
+    return `<div><label for="bill-account-${key}">${label}</label><select id="bill-account-${key}"><option value="">— Choisir un compte —</option>${options}</select></div>`;
+  };
   content.innerHTML = `<h2>Paramètres de facturation</h2>
     <h3>Entreprise</h3>
     <label>Pays de l'entreprise</label>
@@ -424,6 +433,16 @@ function openSettings() {
     <div id="bill-default-tax-container">${renderTaxRates(initialCountry)}</div>
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
+    <h3>Comptabilisation automatique</h3>
+    <p class="muted">Choisissez les comptes de votre plan comptable. Une facture génère une écriture de vente ; chaque règlement génère une écriture de trésorerie. Le compte de taxe n'est exigé que si la facture comporte une taxe.</p>
+    <div class="grid cols-2">
+      ${accountSelect("customer", "asset", "Compte client (créance)")}
+      ${accountSelect("revenue", "income", "Compte de ventes / produits")}
+      ${accountSelect("tax", "liability", "Compte de taxe collectée")}
+      ${accountSelect("bank", "asset", "Compte bancaire")}
+      ${accountSelect("cash", "asset", "Compte de caisse")}
+    </div>
+    <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
     <div class="actions"><button id="bill-settings-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
 
@@ -470,6 +489,9 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash"].map(key => [
+      key, content.querySelector("#bill-account-" + key).value,
+    ]));
     saveNow();
     document.getElementById("modal").close();
     renderList();

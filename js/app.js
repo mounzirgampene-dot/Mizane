@@ -114,9 +114,12 @@ document.getElementById("work-sidebar")?.addEventListener("click", (e) => {
 async function start() {
   const hash = location.hash.replace("#", "");
   initStore(loadStore(allAccounts("syscohada")));
+  setRoute(NAV.some(([id]) => id === hash) ? hash : "dashboard");
+  renderNav();
+  render();
   const historyAccess = await initWorkHistory();
-  const allowedRoutes = new Set([...NAV.map(([id]) => id), ...(historyAccess ? ["history", "my-work"] : [])]);
-  setRoute(allowedRoutes.has(hash) ? hash : "dashboard");
+  if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);
+  else if (!historyAccess && ["history", "my-work"].includes(hash)) setRoute("dashboard");
   renderNav();
   render();
   if ("serviceWorker" in navigator) {

@@ -17,7 +17,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round = (value) => Math.round((number(value) + Number.EPSILON) * 100) / 100;
 function saveBilling() {
-  saveBilling();
+  saveNow();
   window.dispatchEvent(new Event("mizane:billing-changed"));
 }
 

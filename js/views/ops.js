@@ -26,7 +26,7 @@ export function viewTools() {
       <div class="row">
         <div><label>Libellé</label><input id="am-name" placeholder="Ex. Matériel informatique"></div>
         <div><label>Compte immobilisation</label><input id="am-account" list="am-accounts" placeholder="Ex. 2240"><datalist id="am-accounts">${planAccounts.filter((a) => /^[2]/.test(a.code)).map((a) => `<option value="${a.code}">${esc(a.label)}</option>`).join("")}</datalist></div>
-        <div><label>Valeur (HT)</label><input type="number" id="am-amount" min="0" step="0.01"></div>
+        <div><label>Valeur (HT)</label><div class="amount-with-calc"><input type="number" id="am-amount" min="0" step="0.01"><button type="button" class="secondary small" id="am-amount-calc" title="Calculer la valeur">∑</button></div></div>
       </div>
       <div class="row">
         <div><label>Date de mise en service</label><input type="date" id="am-date" value="${esc(s.exerciceStart)}"></div>
@@ -59,6 +59,8 @@ export function viewTools() {
       <div id="bk-result" style="margin-top:10px"></div>
     </div>
   `;
+
+  document.getElementById("am-amount-calc")?.addEventListener("click", () => openCalculator(document.getElementById("am-amount")));
 
   // ---- Clôture ----
   document.getElementById("cl-run").addEventListener("click", () => {
@@ -212,7 +214,7 @@ export function viewCalculator() {
             <button class="secondary" id="calc-vat-ttc">Montant TTC depuis HT</button>
           </div>
           <div class="calculator-result" id="calc-finance-result" aria-live="polite">Le résultat apparaîtra ici.</div>
-          <button class="secondary" id="calc-use-finance" disabled>Utiliser ce résultat</button>
+          <button class="secondary" id="calc-use-finance" disabled>Afficher le résultat</button>
         </div>
       </section>
     </div>

@@ -5,7 +5,7 @@ import { calculateBillingTotals } from "./billing-core.js";
 
 const DEFAULT_CODES = {
   syscohada: { customer: ["411"], revenue: ["701"], tax: ["4431"], bank: ["521"], cash: ["571"] },
-  pcg: { customer: ["411"], revenue: ["707"], tax: ["4457", "4451"], bank: ["512"], cash: ["530"] },
+  pcg: { customer: ["411"], revenue: ["707"], tax: ["4457", "4451"], bank: ["512"], cash: ["53"] },
   nct: { customer: ["411"], revenue: ["707"], tax: ["4431", "4455"], bank: ["512"], cash: ["53"] },
   cgnc: { customer: ["4421", "442"], revenue: ["711"], tax: ["4455"], bank: ["5141", "514"], cash: ["516"] },
 };

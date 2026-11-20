@@ -6,7 +6,7 @@ import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { postEntry, reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
-import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -30,12 +30,9 @@ const getBilling = () => {
   store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
   for (const doc of store.billing.documents) {
     if (doc.type !== "invoice") continue;
-    if (!Array.isArray(doc.payments)) {
-      doc.payments = [];
-      if (number(doc.paidAmount) > 0) {
-        doc.payments.push({ id: store.billing.nextPaymentId++, date: doc.date, amount: number(doc.paidAmount), currency: doc.currency, method: "legacy", reference: "", notes: "Règlement antérieur repris automatiquement." });
-      }
-    }
+    const migrated = migrateLegacyInvoicePayment(doc, store.billing.nextPaymentId);
+    doc.payments = migrated.payments;
+    store.billing.nextPaymentId = migrated.nextPaymentId;
     doc.paidAmount = round(doc.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
     for (const payment of doc.payments) store.billing.nextPaymentId = Math.max(store.billing.nextPaymentId, number(payment.id) + 1);
   }

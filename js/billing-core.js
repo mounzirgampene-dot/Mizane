@@ -50,6 +50,26 @@ export function calculateOutstandingBase(documents = []) {
 }
 
 
+export function migrateLegacyInvoicePayment(invoice, nextPaymentId = 1) {
+  const payments = Array.isArray(invoice?.payments) ? invoice.payments : [];
+  const nextId = Math.max(1, Math.floor(Number(nextPaymentId) || 1));
+  const legacyAmount = billingRound(Number(invoice?.paidAmount));
+  if (payments.length || !(legacyAmount > 0)) return { payments, nextPaymentId: nextId };
+  return {
+    payments: [{
+      id: nextId,
+      date: invoice.date,
+      amount: legacyAmount,
+      currency: invoice.currency,
+      method: "legacy",
+      reference: "",
+      notes: "Règlement antérieur repris automatiquement.",
+      legacyImported: true,
+    }],
+    nextPaymentId: nextId + 1,
+  };
+}
+
 export function calculatePaymentBalance(total, payments = []) {
   const paid = payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
   return billingRound(Math.max(0, Number(total || 0) - paid));

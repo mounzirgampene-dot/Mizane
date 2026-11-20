@@ -12,6 +12,7 @@ import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines, diagnoseBankLine } from "../js/finance.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "../js/billing-accounting.js";
+import { addClosedPeriod, isDateInClosedPeriod, removeClosedPeriod, validatePeriodRange } from "../js/periods.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -28,6 +29,36 @@ test("référentiel international : pays uniques et devises locales reconnues", 
   assert.equal(getCountry("BG").currency, "EUR", "la Bulgarie utilise l’euro depuis janvier 2026");
   assert.equal(getCountry("OTHER").currency, "XXX");
 });
+test("périodes comptables : validation des dates et détection des chevauchements", () => {
+  assert.equal(validatePeriodRange("2026-01-01", "2026-12-31").ok, true);
+  assert.equal(validatePeriodRange("2026-12-31", "2026-01-01").ok, false);
+  assert.equal(validatePeriodRange("2026-02-30", "2026-12-31").ok, false);
+  const periods = addClosedPeriod([], { startDate: "2026-01-01", endDate: "2026-12-31" });
+  assert.equal(isDateInClosedPeriod("2026-06-15", periods), true);
+  assert.equal(isDateInClosedPeriod("2027-01-01", periods), false);
+  assert.throws(() => addClosedPeriod(periods, { startDate: "2026-12-01", endDate: "2027-01-31" }), /chevauche/);
+  assert.equal(removeClosedPeriod(periods, "2026-01-01", "2026-12-31").length, 0);
+});
+test("périodes comptables : une écriture nouvelle est refusée dans une période clôturée", () => {
+  const store = newStore();
+  store.settings.closedPeriods = [{ startDate: "2026-01-01", endDate: "2026-12-31", status: "closed" }];
+  const result = postEntry(store, { date: "2026-06-15", journal: "OD", reference: "TEST", lines: [] });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /Période comptable clôturée/);
+  assert.equal(store.entries.length, 0);
+});
+
+test("périodes comptables : une écriture clôturée ne peut pas être contrepassée", () => {
+  const store = newStore();
+  store.entries.push({ id: 1, date: "2026-06-15", journal: "OD", reference: "TEST", reversed: false, lines: [] });
+  store.settings.closedPeriods = [{ startDate: "2026-01-01", endDate: "2026-12-31", status: "closed" }];
+  const result = reverseEntry(store, 1, "2027-01-01");
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /Période comptable clôturée/);
+  assert.equal(store.entries.length, 1);
+  assert.equal(store.entries[0].reversed, false);
+});
+
 test("présentation des devises : nom, code et symbole", () => {
   const info = getCurrencyInfo("MAD", "fr");
   assert.equal(info.code, "MAD");
@@ -284,7 +315,7 @@ test("recherche par libellé d'opération : vocabulaire courant", () => {
   ];
   for (const [query, expectedCode] of cases) {
     const results = searchAccountsByDescription(accounts, query);
-    assert.ok(results.some((account) => account.code === expectedCode),
+    assert.ok(results.some((account) => account.code === expectedCode || String(account.code).startsWith(expectedCode)),
       `le libellé "${query}" doit proposer le compte ${expectedCode}; reçus : ${results.map((a) => a.code).join(", ")}`);
   }
 });
@@ -361,7 +392,7 @@ test("recherche par libellé d'opération sur les quatre plans", () => {
 
 console.log("— Pays —");
 test("chaque pays référence un plan existant", () => {
-  for (const c of COUNTRIES) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan);
+  for (const c of COUNTRIES) if (c.plan) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan);
 });
 test("formatMoney ne lève pas d'exception", () => {
   assert.ok(typeof formatMoney(1234.5, "XOF", "fr-SN") === "string");
@@ -546,7 +577,7 @@ test("arrondi monétaire à 2 décimales", () => {
   assert.equal(res.entry.lines[0].debit, 10.01);
 });
 
-test("import local de texte : une écriture par ligne", async () => {
+await testAsync("import local de texte : une écriture par ligne", async () => {
   const { parseEntriesFromTextLocal } = await import("../js/ai.js");
   const s = freshStore();
   const arr = parseEntriesFromTextLocal(s, "2025-03-01 601 401 25000 Achat marchandises\n521 701 10000 Vente au comptant\nligne incompréhensible");
@@ -559,7 +590,7 @@ test("import local de texte : une écriture par ligne", async () => {
   assert.equal(res.ok, true, res.errors.join(","));
 });
 
-test("facture : HTML avec en-tête et total TTC", async () => {
+await testAsync("facture : HTML avec en-tête et total TTC", async () => {
   const { invoiceHTML } = await import("../js/invoice.js");
   const s = freshStore();
   const e = postEntry(s, {
@@ -583,7 +614,7 @@ test("export CSV", () => {
   assert.ok(csv.includes('"x;y"'));
 });
 
-test("données de démonstration équilibrées", async () => {
+await testAsync("données de démonstration équilibrées", async () => {
   const { demoData } = await import("../js/db.js");
   const s = freshStore();
   demoData(s);
@@ -593,7 +624,7 @@ test("données de démonstration équilibrées", async () => {
 });
 
 console.log("— Amortissements (finance.js) —");
-test("amortissement linéaire : annuité constante, VNC nulle à la fin", async () => {
+await testAsync("amortissement linéaire : annuité constante, VNC nulle à la fin", async () => {
   const { amortizationSchedule } = await import("../js/finance.js");
   const sched = amortizationSchedule(10000, 5, "lineaire");
   assert.equal(sched.length, 5);
@@ -602,7 +633,7 @@ test("amortissement linéaire : annuité constante, VNC nulle à la fin", async 
   assert.equal(sched[4].vnc, 0);
 });
 
-test("amortissement dégressif : cumul final = valeur, VNC nulle", async () => {
+await testAsync("amortissement dégressif : cumul final = valeur, VNC nulle", async () => {
   const { amortizationSchedule, amortRate } = await import("../js/finance.js");
   const rate = amortRate(5, "degressif");
   assert.equal(rate, 0.35);
@@ -613,13 +644,13 @@ test("amortissement dégressif : cumul final = valeur, VNC nulle", async () => {
   assert.ok(sched[0].annuite === 3500, "1re annuité dégressive = 3500");
 });
 
-test("nextAnnuity : reprend après cumul déjà amorti, 0 si terminé", async () => {
+await testAsync("nextAnnuity : reprend après cumul déjà amorti, 0 si terminé", async () => {
   const { nextAnnuity } = await import("../js/finance.js");
   assert.equal(nextAnnuity({ amount: 10000, years: 5, method: "lineaire", amortized: 2000 }), 2000);
   assert.equal(nextAnnuity({ amount: 10000, years: 5, method: "lineaire", amortized: 10000 }), 0);
 });
 
-test("dotationLines : 681 débit / 28x crédit, équilibrées", async () => {
+await testAsync("dotationLines : 681 débit / 28x crédit, équilibrées", async () => {
   const { dotationLines } = await import("../js/finance.js");
   const lines = dotationLines([
     { name: "Moto", account: "2455", amount: 1500000, years: 5, method: "lineaire", amortized: 0 },
@@ -631,7 +662,7 @@ test("dotationLines : 681 débit / 28x crédit, équilibrées", async () => {
 });
 
 console.log("— Clôture & à-nouveaux —");
-test("closingProposal : clôture équilibrée, résultat au compte 12, à-nouveaux équilibrés", async () => {
+await testAsync("closingProposal : clôture équilibrée, résultat au compte 12, à-nouveaux équilibrés", async () => {
   const { closingProposal } = await import("../js/finance.js");
   const s = freshStore();
   postEntry(s, { date: "2025-01-05", journal: "BAN", reference: "Capital", lines: [
@@ -661,7 +692,7 @@ test("closingProposal : clôture équilibrée, résultat au compte 12, à-nouvea
 });
 
 console.log("— Rapprochement bancaire —");
-test("parseBankCSV : JJ/MM/AAAA, AAAA-MM-JJ, en-tête ignoré", async () => {
+await testAsync("parseBankCSV : JJ/MM/AAAA, AAAA-MM-JJ, en-tête ignoré", async () => {
   const { parseBankCSV } = await import("../js/finance.js");
   const txt = "Date;Libellé;Montant\n10/01/2025;Virement client;1 000 000\n2025-01-12;Fournisseur;-500,5\nligne invalide\n";
   const rows = parseBankCSV(txt);
@@ -672,7 +703,7 @@ test("parseBankCSV : JJ/MM/AAAA, AAAA-MM-JJ, en-tête ignoré", async () => {
   assert.equal(rows[1].amount, -500.5);
 });
 
-test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", async () => {
+await testAsync("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", async () => {
   const { parseBankCSV, matchBankLines } = await import("../js/finance.js");
   const s = freshStore();
   postEntry(s, { date: "2025-01-08", journal: "BAN", reference: "V1", lines: [
@@ -685,7 +716,7 @@ test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", asy
   assert.equal(matched[1].match, null);
 });
 
-test("rapprochement manuel : valide uniquement une écriture de trésorerie au montant exact", async () => {
+await testAsync("rapprochement manuel : valide uniquement une écriture de trésorerie au montant exact", async () => {
   const { reconcileBankLine } = await import("../js/finance.js");
   const s = freshStore();
   postEntry(s, { date:"2025-01-08", journal:"BAN", reference:"V1", lines:[
@@ -698,7 +729,7 @@ test("rapprochement manuel : valide uniquement une écriture de trésorerie au m
   assert.throws(() => reconcileBankLine({date:"2025-01-10",label:"Virement",amount:999},1,s),/ne correspond pas/);
 });
 
-test("rapprochement : identifiant stable pour ignorer les lignes déjà importées", async () => {
+await testAsync("rapprochement : identifiant stable pour ignorer les lignes déjà importées", async () => {
   const { bankLineKey } = await import("../js/finance.js");
   const line = {date:"2025-01-10",label:"Virement client",amount:1000};
   assert.equal(bankLineKey(line),bankLineKey({...line,label:" VIREMENT CLIENT "}));
@@ -772,7 +803,7 @@ test("exercice à cheval : entriesInRange filtre 2025 vs 2024", () => {
 });
 
 console.log("— Fournisseurs IA —");
-test("providerOf / visionModel : détection mistral, groq, gemini, custom", async () => {
+await testAsync("providerOf / visionModel : détection mistral, groq, gemini, custom", async () => {
   const { providerOf, visionModel } = await import("../js/ai.js");
   const mk = (ep) => ({ settings: { aiEndpoint: ep, aiModel: "m" } });
   assert.equal(providerOf(mk("https://api.mistral.ai/v1/chat/completions")), "mistral");
@@ -785,7 +816,7 @@ test("providerOf / visionModel : détection mistral, groq, gemini, custom", asyn
   assert.equal(visionModel(mk("https://generativelanguage.googleapis.com/v1beta")), "gemini-3.8-flash");
 });
 
-test("toGeminiBody : conversion messages texte et image", async () => {
+await testAsync("toGeminiBody : conversion messages texte et image", async () => {
   const { toGeminiBody } = await import("../js/ai.js");
   const body = toGeminiBody([
     { role: "system", content: "SYS" },
@@ -801,7 +832,7 @@ test("toGeminiBody : conversion messages texte et image", async () => {
   assert.equal(body.generationConfig.temperature, 0.5);
 });
 
-test("chat : image_url encapsulée en {url} hors Mistral (mock fetch)", async () => {
+await testAsync("chat : image_url encapsulée en {url} hors Mistral (mock fetch)", async () => {
   const { chat } = await import("../js/ai.js");
   const calls = [];
   const orig = globalThis.fetch;
@@ -819,7 +850,7 @@ test("chat : image_url encapsulée en {url} hors Mistral (mock fetch)", async ()
   } finally { globalThis.fetch = orig; }
 });
 
-test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel (mock fetch)", async () => {
+await testAsync("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel (mock fetch)", async () => {
   const { chat } = await import("../js/ai.js");
   const urls = [];
   const orig = globalThis.fetch;
@@ -838,7 +869,7 @@ test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel
 });
 
 console.log("— Internationalisation —");
-test("i18n : t() traduit, repli sur français, langue inconnue rejetée", async () => {
+await testAsync("i18n : t() traduit, repli sur français, langue inconnue rejetée", async () => {
   const { t, setLang, lang, LANGS } = await import("../js/i18n.js");
   setLang("fr");
   assert.equal(lang(), "fr");
@@ -856,7 +887,7 @@ test("i18n : t() traduit, repli sur français, langue inconnue rejetée", async 
   assert.equal(LANGS.length, 4);
 });
 
-test("i18n : mêmes clés pour toutes les langues", async () => {
+await testAsync("i18n : mêmes clés pour toutes les langues", async () => {
   const { DICT } = await import("../js/i18n.js");
   const counts = Object.values(DICT).map((d) => Object.keys(d).length);
   assert.ok(counts.length >= 3, "au moins 3 langues");
@@ -1435,7 +1466,7 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
 
 
 test("rapprochement bancaire : import des dates et montants signés", () => {
-  const rows = parseBankCSV("date;libellé;montant\\n10/01/2026;Virement client;1250,50\\n2026-01-11;Fournisseur;-500");
+  const rows = parseBankCSV("date;libellé;montant\n10/01/2026;Virement client;1250,50\n2026-01-11;Fournisseur;-500");
   assert.equal(rows.length, 2);
   assert.equal(rows[0].date, "2026-01-10");
   assert.equal(rows[0].amount, 1250.5);

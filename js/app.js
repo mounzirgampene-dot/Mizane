@@ -5,6 +5,7 @@ import { store, $nav, $app, $modalContent, router, setRoute, currentRoute, initS
 import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
+import { viewFinancial } from "./views/financial.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools, viewCalculator } from "./views/ops.js";
 import { syncCloudIfReady } from "./cloud-sync.js";
@@ -20,6 +21,7 @@ const NAV = [
   ["income", "Résultat"],
   ["sheet", "Bilan"],
   ["thirds", "Tiers"],
+  ["financial", "Pilotage"],
   ["billing", "Facturation"],
   ["tools", "Outils"],
   ["calculator", "Calculatrice"],
@@ -30,7 +32,7 @@ const NAV = [
 const VIEWS = {
   dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
-  tools: viewTools, calculator: viewCalculator, billing: viewBilling, assistant: viewAssistant, settings: viewSettings,
+  tools: viewTools, financial: viewFinancial, calculator: viewCalculator, billing: viewBilling, assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork,
 };
 

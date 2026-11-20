@@ -213,6 +213,10 @@ export async function syncBilling(supabase, companyId, role, localValue) {
       return { billing: remote.data, pushed: 0, pulled: 1 };
     }
     if (role === "reader") throw new Error("La première synchronisation doit être effectuée par un administrateur ou un comptable.");
+    if (hash(local) === hash(remote.data)) {
+      saveShadow(companyId, remote.data, remote.version);
+      return { billing: remote.data, pushed: 0, pulled: 1 };
+    }
     const merged = mergeInitialBilling(local, remote.data);
     const version = await writeRemote(supabase, companyId, merged, remote.version);
     const confirmed = await readRemote(supabase, companyId);

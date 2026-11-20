@@ -1,4 +1,5 @@
 // MIZANE — Moteur comptable en partie double.
+import { isDateInClosedPeriod } from "./periods.js";
 // Le store est un simple objet persisté (localStorage / export JSON).
 
 export const JOURNALS = [
@@ -21,6 +22,8 @@ export function newStore() {
       language: "fr",
       exerciceStart: new Date().getFullYear() + "-01-01",
       exerciceEnd: new Date().getFullYear() + "-12-31",
+      closedPeriods: [],
+      cashForecast: [],
       aiKey: "",
       aiModel: "gemini-3.8-flash",
       aiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
@@ -122,6 +125,9 @@ export function validateEntry(store, entry) {
 }
 
 export function postEntry(store, entry) {
+  if (isDateInClosedPeriod(entry?.date, (Array.isArray(store.settings?.closedPeriods) ? store.settings.closedPeriods : []))) {
+    return { ok: false, errors: ["Période comptable clôturée : aucune nouvelle écriture ne peut être enregistrée à cette date."] };
+  }
   const v = validateEntry(store, entry);
   if (!v.ok) return v;
   const e = {
@@ -148,6 +154,7 @@ export function reverseEntry(store, id, reversalDate = new Date().toISOString().
   const src = store.entries.find((e) => e.id === id);
   if (!src) return { ok: false, errors: ["Écriture introuvable."] };
   if (src.reversed) return { ok: false, errors: [`Écriture #${id} déjà contrepassée : opération refusée.`] };
+  if (isDateInClosedPeriod(src.date, (Array.isArray(store.settings?.closedPeriods) ? store.settings.closedPeriods : []))) return { ok: false, errors: ["Période comptable clôturée : cette écriture ne peut pas être contrepassée."] };
   const rev = {
     date: reversalDate,
     journal: src.journal,

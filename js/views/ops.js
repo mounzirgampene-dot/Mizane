@@ -3,10 +3,13 @@ import { postEntry, validateEntry, toCSV } from "../accounting.js";
 import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
+import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
+import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady } from "../cloud-sync.js";
 
 export function viewTools() {
   const s = store.settings;
   const assets = store.assets || [];
+  const closedPeriods = Array.isArray(s.closedPeriods) ? s.closedPeriods.filter(period => period.status !== "open") : [];
   $app.innerHTML = `
     <h1>Outils comptables</h1>
 
@@ -19,6 +22,12 @@ export function viewTools() {
         <div class="nogrow"><button id="cl-run">Clôturer et générer les à-nouveaux</button></div>
       </div>
       <div id="cl-result" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Périodes clôturées</h2>
+      <p class="muted">Les périodes clôturées sont verrouillées localement et, lorsque l'entreprise est synchronisée, également au niveau du serveur cloud. La réouverture exige un motif et un rôle administrateur.</p>
+      ${closedPeriods.length ? '<div class="table-wrap"><table><thead><tr><th>Début</th><th>Fin</th><th>Clôturée le</th><th>Action</th></tr></thead><tbody>' + closedPeriods.map(period => '<tr><td>' + esc(period.startDate) + '</td><td>' + esc(period.endDate) + '</td><td>' + esc((period.closedAt || '').slice(0,10) || '—') + '</td><td><button class="secondary small" data-period-reopen="' + esc(period.startDate) + '" data-period-end="' + esc(period.endDate) + '">Rouvrir</button></td></tr>').join('') + '</tbody></table></div>' : '<p class="muted">Aucune période clôturée.</p>'}
     </div>
 
     <div class="card">
@@ -67,6 +76,7 @@ export function viewTools() {
     const newStart = document.getElementById("cl-start").value;
     const newEnd = document.getElementById("cl-end").value;
     if (!newStart || !newEnd) return toast("Renseignez les dates du nouvel exercice.");
+    if (newStart <= s.exerciceEnd || newEnd < newStart) return toast("Le nouvel exercice doit commencer après la fin de l’exercice clôturé et se terminer après sa date de début.");
     const { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
     const out = document.getElementById("cl-result");
     if (!closing && !anew) { out.innerHTML = `<p class="muted">Rien à clôturer : aucune écriture sur cet exercice.</p>`; return; }
@@ -80,15 +90,60 @@ export function viewTools() {
       ${closing ? `<p>Écriture de clôture au ${esc(closing.date)} : ${closing.lines.length} lignes.</p>` : ""}
       ${anew ? `<p>Écriture d'à-nouveaux au ${esc(anew.date)} : ${anew.lines.length} comptes reportés.</p>` : ""}
       <div class="actions"><button id="cl-post">Valider la clôture</button></div>`;
-    document.getElementById("cl-post").addEventListener("click", () => {
-      for (const e of [closing, anew]) if (e) postEntry(store, e);
-      s.exerciceStart = newStart;
-      s.exerciceEnd = newEnd;
-      saveStore(store);
-      toast("✓ Exercice clôturé. À-nouveaux générés pour " + newStart + ".");
-      router.go("entries");
+    document.getElementById("cl-post").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      if (button.disabled) return;
+      if (!window.confirm("Confirmer la clôture de l'exercice " + s.exerciceStart + " au " + s.exerciceEnd + " ? Les écritures de cette période seront ensuite verrouillées.")) return;
+      button.disabled = true;
+      try {
+        assertCloudAccountingPeriodReady();
+        for (const entry of [closing, anew]) {
+          if (!entry) continue;
+          const exists = (store.entries || []).some(item => item.date === entry.date && item.reference === entry.reference);
+          if (exists) continue;
+          const posted = postEntry(store, entry);
+          if (!posted.ok) throw new Error(posted.errors[0] || "Écriture de clôture invalide.");
+        }
+        // Envoyer d'abord les écritures de clôture et d'à-nouveaux, avant d'activer le verrou serveur.
+        saveStore(store);
+        await syncCloudIfReady();
+        await manageCloudAccountingPeriod({ startDate: s.exerciceStart, endDate: s.exerciceEnd, action: "close" });
+        s.closedPeriods = addClosedPeriod(s.closedPeriods || [], {
+          startDate: s.exerciceStart, endDate: s.exerciceEnd, status: "closed", closedAt: new Date().toISOString(),
+        });
+        s.exerciceStart = newStart;
+        s.exerciceEnd = newEnd;
+        saveStore(store);
+        try { await syncCloudIfReady(); }
+        catch (syncError) { toast("Période clôturée, mais la synchronisation des paramètres sera à relancer : " + (syncError.message || "erreur inconnue"), 6000); }
+        toast("✓ Exercice clôturé et période verrouillée. À-nouveaux générés pour " + newStart + ".");
+        router.go("entries");
+      } catch (error) {
+        button.disabled = false;
+        toast("Clôture non finalisée : " + (error?.message || "erreur inconnue"), 6500);
+      }
     });
   });
+
+  $app.querySelectorAll("[data-period-reopen]").forEach(button => button.addEventListener("click", async () => {
+    const startDate = button.dataset.periodReopen;
+    const endDate = button.dataset.periodEnd;
+    const reason = window.prompt("Motif obligatoire de réouverture (5 à 500 caractères) :");
+    if (reason == null) return;
+    if (reason.trim().length < 5 || reason.trim().length > 500) return toast("Le motif doit comporter entre 5 et 500 caractères.");
+    button.disabled = true;
+    try {
+      await manageCloudAccountingPeriod({ startDate, endDate, action: "reopen", reason: reason.trim() });
+      s.closedPeriods = removeClosedPeriod(s.closedPeriods || [], startDate, endDate);
+      saveStore(store);
+      try { await syncCloudIfReady(); } catch (syncError) { toast("Période rouverte, mais la synchronisation des paramètres sera à relancer : " + (syncError.message || "erreur inconnue"), 6000); }
+      toast("Période rouverte. Les écritures restent dans l'historique.");
+      router.render();
+    } catch (error) {
+      button.disabled = false;
+      toast("Réouverture refusée : " + (error?.message || "erreur inconnue"), 6500);
+    }
+  }));
 
   // ---- Immobilisations ----
   document.getElementById("am-add").addEventListener("click", () => {

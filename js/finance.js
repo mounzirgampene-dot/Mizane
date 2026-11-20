@@ -13,7 +13,7 @@ export function degressifCoefficient(years) {
 
 export function amortRate(years, method = "lineaire") {
   const r = 1 / Math.max(1, Number(years) || 1);
-  return method === "degressif" ? Math.min(1, r * degressifCoefficient(Number(years) || 1)) : r;
+  return method === "degressif" ? Math.round(Math.min(1, r * degressifCoefficient(Number(years) || 1)) * 10000) / 10000 : r;
 }
 
 export function amortizationSchedule(amount, years, method = "lineaire") {
@@ -22,7 +22,7 @@ export function amortizationSchedule(amount, years, method = "lineaire") {
   const rows = [];
   let cumul = 0;
   for (let y = 1; y <= n; y++) {
-    let annuite = round2((amount - cumul) * rate);
+    let annuite = method === "lineaire" ? round2(Number(amount) / n) : round2((amount - cumul) * rate);
     if (y === n || cumul + annuite > amount) annuite = round2(amount - cumul);
     cumul = round2(cumul + annuite);
     rows.push({ year: y, rate: Math.round(rate * 10000) / 100, annuite, cumul, vnc: round2(amount - cumul) });
@@ -150,7 +150,7 @@ export function matchBankLines(store, bankLines, days = 4) {
       match: matched ? first.entryId : null,
       matchAccount: matched ? [...new Set(allocations.map(item => item.account))].join(", ") : null,
       matchDate: matched ? first.date : null,
-      matches: matched ? allocations.map(({ remaining, originalAmount, ...item }) => item) : [],
+      matches: matched ? allocations.map(({ remaining: _remaining, originalAmount: _originalAmount, ...item }) => item) : [],
       matchedAmount: matched ? magnitude : 0,
       partial: matched && allocations.some(item => item.remaining > 0.001),
       partialRemaining: matched ? round2(allocations.reduce((sum, item) => sum + item.remaining, 0)) : 0,
@@ -211,8 +211,9 @@ export function closingProposal(store, start, end, newStart) {
     solde67 = round2(solde67 + s);
   }
   if (closeLines.length) {
-    closeLines.push({ account: "12", label: "Résultat de l'exercice", debit: solde67 < 0 ? -solde67 : 0, credit: solde67 > 0 ? solde67 : 0 });
+    closeLines.push({ account: "12", label: "Résultat de l'exercice", debit: solde67 > 0 ? solde67 : 0, credit: solde67 < 0 ? -solde67 : 0 });
   }
+  const resultat = round2(-solde67);
   const anewLines = [];
   const tb2 = trialBalance(store, "", end);
   for (const r of tb2.rows) {
@@ -221,9 +222,16 @@ export function closingProposal(store, start, end, newStart) {
     if (!s) continue;
     anewLines.push({ account: r.code, label: "À-nouveau " + r.label, debit: s > 0 ? s : 0, credit: s < 0 ? -s : 0 });
   }
+  if (resultat !== 0) {
+    anewLines.push({
+      account: "12", label: "À-nouveau résultat de l'exercice",
+      debit: resultat < 0 ? -resultat : 0,
+      credit: resultat > 0 ? resultat : 0,
+    });
+  }
   return {
     closing: closeLines.length ? { date: end, journal: "OD", reference: "Clôture " + end, lines: closeLines } : null,
     anew: anewLines.length ? { date: newStart, journal: "OD", reference: "À-nouveaux " + newStart, lines: anewLines } : null,
-    resultat: round2(-solde67),
+    resultat,
   };
 }

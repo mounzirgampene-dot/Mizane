@@ -11,7 +11,7 @@ async function getAiSupabase() {
   return aiSupabasePromise;
 }
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
-const activeCompanyId = () => localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
+const activeCompanyId = () => globalThis.localStorage?.getItem(ACTIVE_COMPANY_KEY) || "";
 const aiStatusKey = (companyId, provider) => "mizane_ai_configured_" + companyId + "_" + provider;
 export async function configureCompanyAI(provider, apiKey) {
   const companyId = activeCompanyId();
@@ -74,6 +74,7 @@ export function detectedProviderFromEndpoint(endpoint) {
 
 export function providerOf(store) {
   const stored = store.settings.aiProvider;
+  if (stored === "custom") return "custom";
   if (stored && PROVIDERS[stored]) return stored;
   return detectedProviderFromEndpoint(store.settings.aiEndpoint);
 }
@@ -85,7 +86,7 @@ export function visionModel(store) {
 
 export function aiConfigured(store) {
   const companyId = activeCompanyId();
-  return Boolean(companyId && localStorage.getItem(aiStatusKey(companyId, providerOf(store))) === "1");
+  return Boolean(companyId && globalThis.localStorage?.getItem(aiStatusKey(companyId, providerOf(store))) === "1");
 }
 
 // Messages (format OpenAI) -> corps d'appel Gemini (format generateContent).
@@ -111,8 +112,41 @@ export function toGeminiBody(messages, { json = false, temperature = 0.2 } = {})
 
 async function aiChat(store, messages, { json = false, temperature = 0.2, model } = {}) {
   const companyId = activeCompanyId();
-  if (!companyId) throw new Error("Sélectionnez une entreprise cloud dans votre espace MIZANE.");
   const pid = providerOf(store);
+  if (!companyId) {
+    const apiKey = String(store.settings.aiKey || "").trim();
+    if (!apiKey) throw new Error("Sélectionnez une entreprise cloud ou renseignez une clé API locale.");
+    const endpoint = String(store.settings.aiEndpoint || PROVIDERS[pid]?.endpoint || "").replace(/\\/$/, "");
+    const modelName = model || store.settings.aiModel || PROVIDERS[pid]?.models?.[0] || "";
+    if (!endpoint || !modelName) throw new Error("Configurez le fournisseur, le point d'accès et le modèle IA.");
+    if (pid === "gemini") {
+      const call = modelId => fetch(endpoint + "/models/" + encodeURIComponent(modelId) + ":generateContent?key=" + encodeURIComponent(apiKey), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toGeminiBody(messages, { json, temperature })),
+      });
+      let response = await call(modelName);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        if (response.status === 404 && /model.*(not available|not found|no longer|retired)|no longer available/i.test(errorText) && modelName !== PROVIDERS.gemini.models[0]) {
+          response = await call(PROVIDERS.gemini.models[0]);
+        } else {
+          throw new Error("Erreur Gemini (" + response.status + ") : " + errorText.slice(0, 300));
+        }
+      }
+      let data;
+      try { data = await response.json(); } catch { throw new Error("Réponse Gemini invalide."); }
+      return (data.candidates?.[0]?.content?.parts || []).map(part => part.text || "").join("");
+    }
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+      body: JSON.stringify({ model: modelName, messages, temperature, ...(json ? { response_format: { type: "json_object" } } : {}) }),
+    });
+    let data;
+    try { data = await response.json(); } catch { throw new Error("Réponse du fournisseur IA invalide."); }
+    if (!response.ok) throw new Error(data?.error?.message || "Erreur du fournisseur IA (" + response.status + ").");
+    return data.choices?.[0]?.message?.content || "";
+  }
   if (!PROVIDERS[pid]) throw new Error("Choisissez Mistral, Groq ou Gemini dans les paramètres IA.");
   const aiSupabase = await getAiSupabase();
   const { data: sessionData } = await aiSupabase.auth.getSession();

@@ -13,7 +13,7 @@ export function degressifCoefficient(years) {
 
 export function amortRate(years, method = "lineaire") {
   const r = 1 / Math.max(1, Number(years) || 1);
-  return method === "degressif" ? Math.min(1, r * degressifCoefficient(Number(years) || 1)) : r;
+  return method === "degressif" ? Math.round(Math.min(1, r * degressifCoefficient(Number(years) || 1)) * 10000) / 10000 : r;
 }
 
 export function amortizationSchedule(amount, years, method = "lineaire") {

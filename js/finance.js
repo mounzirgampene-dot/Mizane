@@ -221,6 +221,13 @@ export function closingProposal(store, start, end, newStart) {
     if (!s) continue;
     anewLines.push({ account: r.code, label: "À-nouveau " + r.label, debit: s > 0 ? s : 0, credit: s < 0 ? -s : 0 });
   }
+  if (resultat !== 0) {
+    anewLines.push({
+      account: "12", label: "À-nouveau résultat de l'exercice",
+      debit: resultat < 0 ? -resultat : 0,
+      credit: resultat > 0 ? resultat : 0,
+    });
+  }
   return {
     closing: closeLines.length ? { date: end, journal: "OD", reference: "Clôture " + end, lines: closeLines } : null,
     anew: anewLines.length ? { date: newStart, journal: "OD", reference: "À-nouveaux " + newStart, lines: anewLines } : null,

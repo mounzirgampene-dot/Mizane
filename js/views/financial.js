@@ -103,6 +103,8 @@ export function viewFinancial() {
       </section>
     </div>
     <section class="card table-wrap">
+      <h2>Soldes clients</h2>
+      <table><thead><tr><th>Client</th><th class="num">Créance ouverte</th></tr></thead><tbody>${customers.length ? customers.map(item => "<tr><td>" + esc(item.name) + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"2\" class=\"muted\">Aucun solde client.</td></tr>"}</tbody></table>
       <h2>Factures clients à recouvrer</h2>
       <table><thead><tr><th>Facture</th><th>Client</th><th>Échéance</th><th>Retard</th><th class="num">Solde converti</th></tr></thead>
       <tbody>${docs.length ? docs.map(item => "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.days > 0 ? item.days + " j" : "—") + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>

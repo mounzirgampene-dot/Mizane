@@ -1,4 +1,5 @@
 // MIZANE — Moteur comptable en partie double.
+import { isDateInClosedPeriod } from "./periods.js";
 // Le store est un simple objet persisté (localStorage / export JSON).
 
 export const JOURNALS = [
@@ -122,6 +123,9 @@ export function validateEntry(store, entry) {
 }
 
 export function postEntry(store, entry) {
+  if (isDateInClosedPeriod(entry?.date, store.settings?.closedPeriods || [])) {
+    return { ok: false, errors: ["Période comptable clôturée : aucune nouvelle écriture ne peut être enregistrée à cette date."] };
+  }
   const v = validateEntry(store, entry);
   if (!v.ok) return v;
   const e = {

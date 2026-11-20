@@ -386,6 +386,7 @@ export function viewEntries() {
             const read = (field) => document.querySelector(`[data-edit-line="${index}"][data-edit-field="${field}"]`).value;
             return { account: read("account").trim(), label: read("label"), third: read("third"), debit: Number(read("debit")) || 0, credit: Number(read("credit")) || 0 };
           }) };
+        if (isDateInClosedPeriod(entry.date, store.settings.closedPeriods || []) || isDateInClosedPeriod(updated.date, store.settings.closedPeriods || [])) return toast("Modification refusée : une période comptable concernée est clôturée.");
         const validation = validateEntry(store, updated), errors = document.getElementById("edit-entry-errors");
         if (!validation.ok) { errors.innerHTML = `<ul class="errors">${validation.errors.map((message) => `<li>${esc(message)}</li>`).join("")}</ul>`; return; }
         Object.assign(entry, { date: updated.date, journal: updated.journal, reference: updated.reference,

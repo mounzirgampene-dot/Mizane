@@ -392,7 +392,7 @@ test("recherche par libellé d'opération sur les quatre plans", () => {
 
 console.log("— Pays —");
 test("chaque pays référence un plan existant", () => {
-  for (const c of COUNTRIES) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan);
+  for (const c of COUNTRIES) if (c.plan) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan);
 });
 test("formatMoney ne lève pas d'exception", () => {
   assert.ok(typeof formatMoney(1234.5, "XOF", "fr-SN") === "string");

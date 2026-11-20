@@ -234,7 +234,7 @@ export function viewTools() {
       saveStore(store); renderBankResult(session);
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {
-      downloadBlob(new Blob(["\\ufeff" + toCSV(lines.map(m => ({
+      downloadBlob(new Blob(["\ufeff" + toCSV(lines.map(m => ({
         date:m.date,libelle:m.label,montant:m.amount,ecriture:m.match||"",compte:m.matchAccount||"",
         etat:m.status==="matched"?"Rapprochée":"À vérifier",validation:m.manuallyMatched?"Manuelle":"Automatique"
       })))],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");

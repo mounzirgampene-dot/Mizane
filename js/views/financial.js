@@ -22,6 +22,13 @@ function receivables() {
   }));
 }
 
+function customerBalances(items) {
+  const totals = new Map();
+  for (const item of items) totals.set(item.customer, (totals.get(item.customer) || 0) + item.amount);
+  return [...totals.entries()].map(([name, amount]) => ({ name, amount: round(amount) }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
 function suppliers() {
   const totals = new Map();
   for (const entry of store.entries || []) {
@@ -58,6 +65,7 @@ function forecastRows(receivablesList, manual) {
 export function viewFinancial() {
   const docs = receivables();
   const vendors = suppliers();
+  const customers = customerBalances(docs);
   const manual = Array.isArray(store.settings.cashForecast) ? store.settings.cashForecast.filter(item => item && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) && String(item.label || "").trim() && Number(item.amount) > 0 && ["in", "out"].includes(item.direction)) : [];
   store.settings.cashForecast = manual;
   const outstanding = round(docs.reduce((sum, item) => sum + item.amount, 0));

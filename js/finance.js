@@ -142,7 +142,7 @@ export function matchBankLines(store, bankLines, days = 4) {
       matchDate: matched ? first.date : null,
       matches: matched ? allocations.map(({ remaining, originalAmount, ...item }) => item) : [],
       matchedAmount: matched ? magnitude : 0,
-      partial: matched && allocations.some(item => item.amount + item.remaining + 0.001 < item.originalAmount),
+      partial: matched && allocations.some(item => item.remaining > 0.001),
       partialRemaining: matched ? round2(allocations.reduce((sum, item) => sum + item.remaining, 0)) : 0,
       candidates: [...new Set(exact.map((candidate) => candidate.entryId))],
       dateCandidates: [...new Set(exact.filter(candidate => candidate.delta > days * 86400000).map(candidate => candidate.entryId))],

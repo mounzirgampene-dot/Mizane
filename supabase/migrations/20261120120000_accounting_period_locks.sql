@@ -62,6 +62,16 @@ begin
     if v_role not in ('admin', 'accountant') then
       raise exception 'Seul un administrateur ou un comptable peut clôturer une période.' using errcode = '42501';
     end if;
+    select * into v_period
+    from public.accounting_periods p
+    where p.company_id = p_company_id and p.start_date = p_start_date and p.end_date = p_end_date
+    for update;
+    if found and v_period.status = 'closed' then
+      return pg_catalog.jsonb_build_object(
+        'ok', true, 'action', p_action, 'start_date', p_start_date, 'end_date', p_end_date,
+        'status', v_period.status, 'period_id', v_period.id
+      );
+    end if;
     if exists (
       select 1 from public.accounting_periods p
       where p.company_id = p_company_id and p.status = 'closed'
@@ -71,6 +81,9 @@ begin
     end if;
     insert into public.accounting_periods(company_id, start_date, end_date, status, closed_by, closed_at)
     values (p_company_id, p_start_date, p_end_date, 'closed', v_actor, pg_catalog.now())
+    on conflict (company_id, start_date, end_date) do update
+      set status = 'closed', closed_by = excluded.closed_by, closed_at = excluded.closed_at,
+          reopened_by = null, reopened_at = null, reopen_reason = null
     returning * into v_period;
     insert into public.audit_logs(company_id, actor_user_id, action, entity_type, entity_id, details)
     values (p_company_id, v_actor, 'accounting.period_closed', 'accounting_period', v_period.id::text,
@@ -149,5 +162,54 @@ drop trigger if exists accounting_entries_closed_period_guard on public.accounti
 create trigger accounting_entries_closed_period_guard
 before insert or update or delete on public.accounting_entries
 for each row execute function private.guard_closed_accounting_period();
+
+ 
+create or replace function private.guard_closed_accounting_period_line()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $function$
+declare
+  v_entry_id uuid;
+  v_company_id uuid;
+  v_entry_date date;
+begin
+  if tg_op <> 'INSERT' then
+    v_entry_id := old.entry_id;
+    v_company_id := old.company_id;
+    select e.entry_date into v_entry_date from public.accounting_entries e
+    where e.company_id = v_company_id and e.id = v_entry_id;
+    if exists (
+      select 1 from public.accounting_periods p
+      where p.company_id = v_company_id and p.status = 'closed'
+        and v_entry_date between p.start_date and p.end_date
+    ) then
+      raise exception 'Période comptable clôturée : modification des lignes interdite.' using errcode = '55000';
+    end if;
+  end if;
+  if tg_op <> 'DELETE' then
+    v_entry_id := new.entry_id;
+    v_company_id := new.company_id;
+    select e.entry_date into v_entry_date from public.accounting_entries e
+    where e.company_id = v_company_id and e.id = v_entry_id;
+    if exists (
+      select 1 from public.accounting_periods p
+      where p.company_id = v_company_id and p.status = 'closed'
+        and v_entry_date between p.start_date and p.end_date
+    ) then
+      raise exception 'Période comptable clôturée : modification des lignes interdite.' using errcode = '55000';
+    end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  return new;
+end;
+$function$;
+
+revoke all on function private.guard_closed_accounting_period_line() from public, anon, authenticated;
+drop trigger if exists accounting_entry_lines_closed_period_guard on public.accounting_entry_lines;
+create trigger accounting_entry_lines_closed_period_guard
+before insert or update or delete on public.accounting_entry_lines
+for each row execute function private.guard_closed_accounting_period_line();
 
 commit;

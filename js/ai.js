@@ -116,7 +116,7 @@ async function aiChat(store, messages, { json = false, temperature = 0.2, model 
   if (!companyId) {
     const apiKey = String(store.settings.aiKey || "").trim();
     if (!apiKey) throw new Error("Sélectionnez une entreprise cloud ou renseignez une clé API locale.");
-    const endpoint = String(store.settings.aiEndpoint || PROVIDERS[pid]?.endpoint || "").replace(/\\/+$, "");
+    const endpoint = String(store.settings.aiEndpoint || PROVIDERS[pid]?.endpoint || "").replace(/\/+$/, "");
     const modelName = model || store.settings.aiModel || PROVIDERS[pid]?.models?.[0] || "";
     if (!endpoint || !modelName) throw new Error("Configurez le fournisseur, le point d'accès et le modèle IA.");
     if (pid === "gemini") {
@@ -347,7 +347,7 @@ export function parseEntriesFromTextLocal(store, text) {
   for (const raw of String(text || "").split(/\n+/)) {
     const line = raw.trim();
     if (!line) continue;
-    const m = line.match(/^(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2,6})\s+(\d{2,6})\s+([\d\s.,]+?)\s*(.*)$/);
+    const m = line.match(/^(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{2,6})\s+(\d{2,6})\s+([\d\s.,]+)\s*(.*)$/);
     if (!m) continue;
     const amount = Number(m[4].replace(/[\s,]/g, "").replace(/\.(?=\d{3}\b)/g, "").replace(",", "."));
     if (!amount || amount <= 0) continue;

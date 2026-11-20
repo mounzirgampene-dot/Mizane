@@ -9,7 +9,7 @@ import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js"
 import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney, getCountry, getCurrencyInfo, currencyOptionLabel } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
-import { parseBankCSV, matchBankLines } from "../js/finance.js";
+import { parseBankCSV, matchBankLines, diagnoseBankLine } from "../js/finance.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "../js/billing-accounting.js";
 
@@ -1415,6 +1415,11 @@ test("rapprochement bancaire : import des dates et montants signés", () => {
   assert.equal(rows[0].amount, 1250.5);
   assert.equal(rows[1].amount, -500);
 });
+test("rapprochement bancaire : diagnostic indicatif des frais et encaissements", () => {
+  assert.equal(diagnoseBankLine({ label: "Commission bancaire mensuelle", amount: -35 }).type, "bank_fee");
+  assert.equal(diagnoseBankLine({ label: "Virement reçu client", amount: 1200 }).type, "receipt");
+  assert.equal(diagnoseBankLine({ label: "Libellé inconnu", amount: 0 }).type, "unknown");
+});
 test("rapprochement bancaire : une écriture de trésorerie n'est utilisée qu'une fois", () => {
   const store = { entries: [
     { id: 7, date: "2026-01-10", reference: "BAN-7", lines: [{ account: "521", label: "Virement client", debit: 1000, credit: 0 }] },
@@ -1435,7 +1440,9 @@ test("rapprochement bancaire : la tolérance de date est respectée", () => {
     { id: 8, date: "2026-01-10", lines: [{ account: "521", debit: 0, credit: 250 }] },
   ] };
   assert.equal(matchBankLines(store, [{ date: "2026-01-14", amount: -250 }], 4)[0].match, 8);
-  assert.equal(matchBankLines(store, [{ date: "2026-01-15", amount: -250 }], 4)[0].match, null);
+  const late = matchBankLines(store, [{ date: "2026-01-15", amount: -250 }], 4)[0];
+  assert.equal(late.match, null);
+  assert.deepEqual(late.dateCandidates, [8], "un montant identique hors tolérance est signalé comme écart de date");
 });
 
 

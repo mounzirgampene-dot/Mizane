@@ -47,6 +47,22 @@ export function syncCloudIfReady() {
     }
 
     const accountingResult = await syncAccounting(supabase, companyId, membership.role);
+    if (["admin", "accountant"].includes(membership.role)) {
+      const localRaw = localStorage.getItem("mizane_v1");
+      let periodStore = null;
+      try { periodStore = localRaw ? JSON.parse(localRaw) : null; } catch {}
+      for (const period of (periodStore?.settings?.closedPeriods || [])) {
+        if (!period || period.status === "open") continue;
+        const { error } = await supabase.rpc("manage_accounting_period", {
+          p_company_id: companyId,
+          p_start_date: period.startDate,
+          p_end_date: period.endDate,
+          p_action: "close",
+          p_reason: null,
+        });
+        if (error) throw error;
+      }
+    }
     const localRaw = localStorage.getItem("mizane_v1");
     if (!localRaw) throw new Error("Données locales introuvables après la synchronisation comptable.");
     let localStore;
@@ -99,4 +115,13 @@ export async function manageCloudAccountingPeriod({ startDate, endDate, action, 
   }
   if (!data?.ok) throw new Error("Le serveur n'a pas confirmé l'opération sur la période comptable.");
   return data;
+}
+
+
+export function assertCloudAccountingPeriodReady() {
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+  if (companyId && !localStorage.getItem(SHADOW_PREFIX + companyId)) {
+    throw new Error("Effectuez d'abord la synchronisation initiale de cette entreprise avant de clôturer un exercice.");
+  }
+  return true;
 }

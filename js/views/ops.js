@@ -4,7 +4,7 @@ import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, match
 import { saveStore, downloadBlob } from "../db.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
-import { syncCloudIfReady, manageCloudAccountingPeriod } from "../cloud-sync.js";
+import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady } from "../cloud-sync.js";
 
 export function viewTools() {
   const s = store.settings;
@@ -96,6 +96,7 @@ export function viewTools() {
       if (!window.confirm("Confirmer la clôture de l'exercice " + s.exerciceStart + " au " + s.exerciceEnd + " ? Les écritures de cette période seront ensuite verrouillées.")) return;
       button.disabled = true;
       try {
+        assertCloudAccountingPeriodReady();
         for (const entry of [closing, anew]) {
           if (!entry) continue;
           const exists = (store.entries || []).some(item => item.date === entry.date && item.reference === entry.reference);

@@ -659,6 +659,26 @@ test("matchBankLines : rapprochement par montant à ±4 jours sur classe 5", asy
   assert.equal(matched[1].match, null);
 });
 
+test("rapprochement manuel : valide uniquement une écriture de trésorerie au montant exact", async () => {
+  const { reconcileBankLine } = await import("../js/finance.js");
+  const s = freshStore();
+  postEntry(s, { date:"2025-01-08", journal:"BAN", reference:"V1", lines:[
+    {account:"521",label:"Dépôt",debit:1000,credit:0},
+    {account:"411",label:"Client",debit:0,credit:1000},
+  ]});
+  const result = reconcileBankLine({date:"2025-01-10",label:"Virement",amount:1000},1,s);
+  assert.equal(result.status,"matched");
+  assert.equal(result.manuallyMatched,true);
+  assert.throws(() => reconcileBankLine({date:"2025-01-10",label:"Virement",amount:999},1,s),/ne correspond pas/);
+});
+
+test("rapprochement : identifiant stable pour ignorer les lignes déjà importées", async () => {
+  const { bankLineKey } = await import("../js/finance.js");
+  const line = {date:"2025-01-10",label:"Virement client",amount:1000};
+  assert.equal(bankLineKey(line),bankLineKey({...line,label:" VIREMENT CLIENT "}));
+  assert.notEqual(bankLineKey(line),bankLineKey({...line,amount:1001}));
+});
+
 console.log("— Cas limites —");
 test("validateBackup accepte une sauvegarde équilibrée et nettoie les sections facultatives", () => {
   const backup = {

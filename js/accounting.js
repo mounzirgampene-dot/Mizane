@@ -22,6 +22,8 @@ export function newStore() {
       language: "fr",
       exerciceStart: new Date().getFullYear() + "-01-01",
       exerciceEnd: new Date().getFullYear() + "-12-31",
+      closedPeriods: [],
+      cashForecast: [],
       aiKey: "",
       aiModel: "gemini-3.8-flash",
       aiEndpoint: "https://generativelanguage.googleapis.com/v1beta",

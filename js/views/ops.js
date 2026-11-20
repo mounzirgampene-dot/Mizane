@@ -246,12 +246,7 @@ export function viewTools() {
     const out = document.getElementById("bk-result");
     if (!lines.length) { out.innerHTML = `<p class="errors">Aucune ligne exploitable. Format attendu : <code>date;libellé;montant</code></p>`; return; }
     const priorKeys = new Set((store.settings.bankReconciliations || []).flatMap(session => (session.lines || []).map(bankLineKey)));
-    const seen = new Set();
-    const unique = lines.filter(line => {
-      const key = bankLineKey(line);
-      if (priorKeys.has(key) || seen.has(key)) return false;
-      seen.add(key); return true;
-    });
+    const unique = lines.filter(line => !priorKeys.has(bankLineKey(line)));
     if (!unique.length) { out.innerHTML = '<p class="warn">Toutes les opérations de ce relevé ont déjà été importées. Aucun doublon créé.</p>'; return; }
     const days = Number(document.getElementById("bk-days").value) || 0;
     const matched = matchBankLines(store, unique, days);

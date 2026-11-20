@@ -245,7 +245,7 @@ export function viewTools() {
     const lines = parseBankCSV(document.getElementById("bk-text").value);
     const out = document.getElementById("bk-result");
     if (!lines.length) { out.innerHTML = `<p class="errors">Aucune ligne exploitable. Format attendu : <code>date;libellé;montant</code></p>`; return; }
-    const priorKeys = new Set((store.bankReconciliations || []).flatMap(session => (session.lines || []).map(bankLineKey)));
+    const priorKeys = new Set((store.settings.bankReconciliations || []).flatMap(session => (session.lines || []).map(bankLineKey)));
     const seen = new Set();
     const unique = lines.filter(line => {
       const key = bankLineKey(line);
@@ -256,25 +256,25 @@ export function viewTools() {
     const days = Number(document.getElementById("bk-days").value) || 0;
     const matched = matchBankLines(store, unique, days);
     const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, lines:matched };
-    if (!Array.isArray(store.bankReconciliations)) store.bankReconciliations = [];
-    store.bankReconciliations.unshift(session);
-    store.bankReconciliations = store.bankReconciliations.slice(0,50);
+    if (!Array.isArray(store.settings.bankReconciliations)) store.settings.bankReconciliations = [];
+    store.settings.bankReconciliations.unshift(session);
+    store.settings.bankReconciliations = store.settings.bankReconciliations.slice(0,50);
     saveStore(store);
     renderBankResult(session);
     if (lines.length > unique.length) toast((lines.length-unique.length) + " ligne(s) déjà importée(s) ignorée(s).");
   });
 
   // Historique des relevés déjà traités
-  if ((store.bankReconciliations || []).length) {
+  if ((store.settings.bankReconciliations || []).length) {
     const history = document.createElement("div");
     history.className = "card";
-    history.innerHTML = `<h3>Historique des rapprochements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Opérations</th><th>Rapprochées</th><th>À vérifier</th><th></th></tr></thead><tbody>${store.bankReconciliations.map((session,index) => {
+    history.innerHTML = `<h3>Historique des rapprochements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Opérations</th><th>Rapprochées</th><th>À vérifier</th><th></th></tr></thead><tbody>${store.settings.bankReconciliations.map((session,index) => {
       const ok=(session.lines||[]).filter(line=>line.status==="matched").length;
       return `<tr><td>${esc(session.createdAt.slice(0,10))}</td><td>${session.lines.length}</td><td>${ok}</td><td>${session.lines.length-ok}</td><td><button class="secondary small" data-bk-history="${index}">Ouvrir</button></td></tr>`;
     }).join("")}</tbody></table></div>`;
     document.getElementById("bk-result").after(history);
-    history.querySelectorAll("[data-bk-history]").forEach(button => button.addEventListener("click", () => renderBankResult(store.bankReconciliations[Number(button.dataset.bkHistory)])));
-  });
+    history.querySelectorAll("[data-bk-history]").forEach(button => button.addEventListener("click", () => renderBankResult(store.settings.bankReconciliations[Number(button.dataset.bkHistory)])));
+  }
 }
 
 function nextDay(d) {

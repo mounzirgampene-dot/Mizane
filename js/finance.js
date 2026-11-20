@@ -213,6 +213,7 @@ export function closingProposal(store, start, end, newStart) {
   if (closeLines.length) {
     closeLines.push({ account: "12", label: "Résultat de l'exercice", debit: solde67 > 0 ? solde67 : 0, credit: solde67 < 0 ? -solde67 : 0 });
   }
+  const resultat = round2(-solde67);
   const anewLines = [];
   const tb2 = trialBalance(store, "", end);
   for (const r of tb2.rows) {
@@ -231,6 +232,6 @@ export function closingProposal(store, start, end, newStart) {
   return {
     closing: closeLines.length ? { date: end, journal: "OD", reference: "Clôture " + end, lines: closeLines } : null,
     anew: anewLines.length ? { date: newStart, journal: "OD", reference: "À-nouveaux " + newStart, lines: anewLines } : null,
-    resultat: round2(-solde67),
+    resultat,
   };
 }

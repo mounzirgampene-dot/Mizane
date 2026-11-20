@@ -113,6 +113,32 @@ export function matchBankLines(store, bankLines, days = 4) {
   });
 }
 
+
+// Identifiant déterministe d'une ligne importée : empêche les doubles imports du même relevé.
+export function bankLineKey(line) {
+  const raw = [line.date, String(line.label || "").trim().toLocaleLowerCase(), round2(Number(line.amount) || 0)].join("|");
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i++) hash = Math.imul(hash ^ raw.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(16);
+}
+
+export function reconcileBankLine(line, entryId, store) {
+  const entry = (store.entries || []).find(e => Number(e.id) === Number(entryId));
+  if (!entry || entry.reversed || entry.reverseOf) throw new Error("Écriture comptable introuvable ou contrepassée.");
+  const candidates = [];
+  for (const e of store.entries || []) {
+    if (e.reversed || e.reverseOf) continue;
+    for (const l of e.lines || []) {
+      if (!String(l.account).startsWith("5")) continue;
+      const amount = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));
+      if (amount === round2(Number(line.amount))) candidates.push({entryId:e.id, account:String(l.account)});
+    }
+  }
+  const candidate = candidates.find(x => Number(x.entryId) === Number(entryId));
+  if (!candidate) throw new Error("Cette écriture ne correspond pas au montant du relevé ou ne concerne pas un compte de trésorerie.");
+  return { ...line, match:Number(entryId), matchAccount:candidate.account, status:"matched", manuallyMatched:true };
+}
+
 // Clôture : transfert des soldes des classes 6 et 7 au compte 12 (résultat),
 // puis à-nouveaux : report des soldes des classes 1 à 5 au 1er jour du nouvel exercice.
 export function closingProposal(store, start, end, newStart) {

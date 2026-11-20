@@ -415,6 +415,17 @@ function openPaymentManager(invoiceId) {
         saveBilling();
         return;
       }
+      invoice.paymentHistory ||= [];
+      invoice.paymentHistory.push({
+        eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+        action: "modification",
+        date: today(),
+        paymentId,
+        previous: { ...original },
+        updated: { ...replacement },
+        note: "Règlement modifié ; ancienne écriture contrepassée et nouvelle écriture comptabilisée.",
+        createdAt: new Date().toISOString(),
+      });
       invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
       invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
       saveBilling();

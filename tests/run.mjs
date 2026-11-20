@@ -12,6 +12,7 @@ import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines, diagnoseBankLine } from "../js/finance.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "../js/billing-accounting.js";
+import { addClosedPeriod, isDateInClosedPeriod, removeClosedPeriod, validatePeriodRange } from "../js/periods.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -28,6 +29,25 @@ test("référentiel international : pays uniques et devises locales reconnues", 
   assert.equal(getCountry("BG").currency, "EUR", "la Bulgarie utilise l’euro depuis janvier 2026");
   assert.equal(getCountry("OTHER").currency, "XXX");
 });
+test("périodes comptables : validation des dates et détection des chevauchements", () => {
+  assert.equal(validatePeriodRange("2026-01-01", "2026-12-31").ok, true);
+  assert.equal(validatePeriodRange("2026-12-31", "2026-01-01").ok, false);
+  assert.equal(validatePeriodRange("2026-02-30", "2026-12-31").ok, false);
+  const periods = addClosedPeriod([], { startDate: "2026-01-01", endDate: "2026-12-31" });
+  assert.equal(isDateInClosedPeriod("2026-06-15", periods), true);
+  assert.equal(isDateInClosedPeriod("2027-01-01", periods), false);
+  assert.throws(() => addClosedPeriod(periods, { startDate: "2026-12-01", endDate: "2027-01-31" }), /chevauche/);
+  assert.equal(removeClosedPeriod(periods, "2026-01-01", "2026-12-31").length, 0);
+});
+test("périodes comptables : une écriture nouvelle est refusée dans une période clôturée", () => {
+  const store = newStore();
+  store.settings.closedPeriods = [{ startDate: "2026-01-01", endDate: "2026-12-31", status: "closed" }];
+  const result = postEntry(store, { date: "2026-06-15", journal: "OD", reference: "TEST", lines: [] });
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /Période comptable clôturée/);
+  assert.equal(store.entries.length, 0);
+});
+
 test("présentation des devises : nom, code et symbole", () => {
   const info = getCurrencyInfo("MAD", "fr");
   assert.equal(info.code, "MAD");

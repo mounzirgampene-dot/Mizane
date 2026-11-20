@@ -7,7 +7,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const dayDiff = (date, reference) => Math.floor((Date.parse(reference + "T00:00:00Z") - Date.parse(date + "T00:00:00Z")) / 86400000);
 const invoiceBalance = doc => {
-  const paid = Array.isArray(doc.payments) ? doc.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0) : Number(doc.paidAmount || 0);
+  const paid = Array.isArray(doc.payments) && doc.payments.length ? doc.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0) : Number(doc.paidAmount || 0);
   return Math.max(0, round(Number(doc.totals?.ttc || 0) - paid));
 };
 

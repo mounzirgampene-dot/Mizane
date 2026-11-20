@@ -24,7 +24,7 @@ export function isDateInClosedPeriod(date, periods = []) {
 export function addClosedPeriod(periods = [], period) {
   const check = validatePeriodRange(period?.startDate, period?.endDate);
   if (!check.ok) throw new Error(check.error);
-  const list = Array.isArray(periods) ? periods : [];
+  const list = (Array.isArray(periods) ? periods : []).filter(item => item && typeof item === "object");
   const overlap = list.find(item =>
     item.status !== "open" &&
     period.startDate <= item.endDate && period.endDate >= item.startDate
@@ -35,6 +35,6 @@ export function addClosedPeriod(periods = [], period) {
 
 export function removeClosedPeriod(periods = [], startDate, endDate) {
   return (Array.isArray(periods) ? periods : []).filter(item =>
-    !(item.status === "closed" && item.startDate === startDate && item.endDate === endDate)
+    item && !(item.status === "closed" && item.startDate === startDate && item.endDate === endDate)
   );
 }

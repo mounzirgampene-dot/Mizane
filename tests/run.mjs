@@ -1466,7 +1466,7 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
 
 
 test("rapprochement bancaire : import des dates et montants signés", () => {
-  const rows = parseBankCSV("date;libellé;montant\\n10/01/2026;Virement client;1250,50\\n2026-01-11;Fournisseur;-500");
+  const rows = parseBankCSV("date;libellé;montant\n10/01/2026;Virement client;1250,50\n2026-01-11;Fournisseur;-500");
   assert.equal(rows.length, 2);
   assert.equal(rows[0].date, "2026-01-10");
   assert.equal(rows[0].amount, 1250.5);

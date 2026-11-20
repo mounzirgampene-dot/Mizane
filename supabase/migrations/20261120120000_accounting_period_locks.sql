@@ -46,7 +46,7 @@ begin
     raise exception 'Authentification requise.' using errcode = '42501';
   end if;
   if p_company_id is null or p_start_date is null or p_end_date is null
-     or p_start_date > p_end_date or p_action not in ('close', 'reopen') then
+     or p_start_date > p_end_date or p_action is null or p_action not in ('close', 'reopen') then
     raise exception 'Paramètres de période invalides.' using errcode = '22023';
   end if;
 

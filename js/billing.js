@@ -3,7 +3,7 @@
 // des écritures comptables selon les comptes configurés par l'entreprise.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
-import { postEntry } from "./accounting.js";
+import { postEntry, reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
@@ -342,12 +342,80 @@ function openPaymentManager(invoiceId) {
   const balance = calculatePaymentBalance(total, invoice.payments);
   const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
   const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
-  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td></tr>").join("");
+  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button></td></tr>").join("");
   content.innerHTML = "<h2>Règlements — " + esc(invoice.number) + "</h2><p><strong>Client :</strong> " + esc(invoice.customerName) + "</p>" +
     "<div class=\"grid cols-3\"><section class=\"card kpi\"><div class=\"label\">Total facture</div><div class=\"value\">" + fmt(total, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Déjà réglé</div><div class=\"value\">" + fmt(paid, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Reste à payer</div><div class=\"value\">" + fmt(balance, invoice.currency, store.settings.locale) + "</div></section></div>" +
-    "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"5\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
+    "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th><th>Action</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"6\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
     (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Taux de change vers " + esc(invoice.baseCurrency || store.settings.currency) + " (1 " + esc(invoice.currency) + " = ?)</label><input id=\"bill-payment-rate\" type=\"number\" min=\"0.00000001\" step=\"0.00000001\" value=\"" + number(invoice.exchangeRate) + "\"></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
     "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
+  content.querySelectorAll("[data-bill-payment-edit]").forEach((button) => button.addEventListener("click", () => {
+    const paymentId = Number(button.dataset.billPaymentEdit);
+    const original = invoice.payments.find((item) => Number(item.id) === paymentId);
+    if (!original) return;
+    const editable = { ...original };
+    content.innerHTML = "<h2>Modifier l'avance / le règlement</h2>" +
+      "<p><strong>Facture :</strong> " + esc(invoice.number) + " — " + esc(invoice.customerName) + "</p>" +
+      "<div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-edit-payment-date\" type=\"date\" value=\"" + esc(editable.date || today()) + "\"></div>" +
+      "<div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-edit-payment-amount\" type=\"number\" min=\"0.01\" step=\"0.01\" value=\"" + number(editable.amount) + "\"></div>" +
+      "<div><label>Mode de paiement</label><select id=\"bill-edit-payment-method\">" + methods.map(([key,label]) => "<option value=\"" + key + "\" " + (editable.method === key ? "selected" : "") + ">" + label + "</option>").join("") + (editable.method === "legacy" ? "<option value=\"bank\" selected>Virement bancaire</option>" : "") + "</select></div>" +
+      "<div><label>Taux de change vers " + esc(invoice.baseCurrency || store.settings.currency) + "</label><input id=\"bill-edit-payment-rate\" type=\"number\" min=\"0.00000001\" step=\"0.00000001\" value=\"" + number(editable.exchangeRate == null ? invoice.exchangeRate : editable.exchangeRate) + "\"></div>" +
+      "<div><label>Référence / numéro de transaction</label><input id=\"bill-edit-payment-reference\" maxlength=\"120\" value=\"" + esc(editable.reference || "") + "\"></div></div>" +
+      "<label>Note</label><textarea id=\"bill-edit-payment-notes\" rows=\"2\">" + esc(editable.notes || "") + "</textarea>" +
+      "<div id=\"bill-edit-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button type=\"button\" id=\"bill-edit-payment-save\">Enregistrer les modifications</button><button type=\"button\" class=\"secondary\" id=\"bill-edit-payment-cancel\">Retour</button></div>";
+    content.querySelector("#bill-edit-payment-cancel").addEventListener("click", () => { modal.close(); openPaymentManager(invoiceId); });
+    content.querySelector("#bill-edit-payment-save").addEventListener("click", () => {
+      const updated = {
+        ...editable,
+        date: content.querySelector("#bill-edit-payment-date").value,
+        amount: number(content.querySelector("#bill-edit-payment-amount").value),
+        method: content.querySelector("#bill-edit-payment-method").value,
+        exchangeRate: number(content.querySelector("#bill-edit-payment-rate").value),
+        reference: content.querySelector("#bill-edit-payment-reference").value.trim(),
+        notes: content.querySelector("#bill-edit-payment-notes").value.trim(),
+        currency: invoice.currency,
+      };
+      const otherPayments = invoice.payments.filter((item) => Number(item.id) !== paymentId);
+      const validation = validateBillingPayment(updated, invoice, otherPayments);
+      if (!(updated.exchangeRate > 0) || !Number.isFinite(updated.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
+      if (!validation.ok) { content.querySelector("#bill-edit-payment-error").textContent = [...new Set(validation.errors)].join(" "); return; }
+
+      const oldReference = "REGLEMENT " + String(invoice.number || invoice.id) + " #" + String(original.id);
+      const oldEntry = (store.entries || []).find((entry) => entry.reference === oldReference && !entry.reversed);
+      const nextId = billing.nextPaymentId++;
+      const replacement = { ...updated, id: nextId, updatedAt: new Date().toISOString() };
+      const index = invoice.payments.findIndex((item) => Number(item.id) === paymentId);
+      invoice.payments[index] = replacement;
+      const proposal = buildBillingJournalEntries(store, invoice, getBilling().settings.accountingAccounts || {});
+      if (!proposal.ok) {
+        invoice.payments[index] = original;
+        billing.nextPaymentId = Math.max(1, billing.nextPaymentId - 1);
+        content.querySelector("#bill-edit-payment-error").textContent = "Modification impossible : " + proposal.errors[0];
+        return;
+      }
+      if (oldEntry) {
+        const reversed = reverseEntry(store, oldEntry.id, today());
+        if (!reversed.ok) {
+          invoice.payments[index] = original;
+          billing.nextPaymentId = Math.max(1, billing.nextPaymentId - 1);
+          content.querySelector("#bill-edit-payment-error").textContent = "L'ancienne écriture n'a pas pu être contrepassée : " + reversed.errors[0];
+          return;
+        }
+      }
+      const accountingResult = postInvoiceAccounting(invoice);
+      if (!accountingResult.ok) {
+        invoice.payments[index] = original;
+        content.querySelector("#bill-edit-payment-error").textContent = "L'écriture corrigée n'a pas pu être générée : " + accountingResult.errors[0] + ". L'ancienne écriture a été contrepassée ; demandez une vérification comptable avant toute nouvelle correction.";
+        saveBilling();
+        return;
+      }
+      invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+      invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+      saveBilling();
+      toast("Paiement modifié ; l'ancienne écriture a été contrepassée et la nouvelle comptabilisée.");
+      modal.close();
+      renderList();
+    });
+  }));
   if (balance > 0) content.querySelector("#bill-payment-save").addEventListener("click", () => {
     const payment = {
       date: content.querySelector("#bill-payment-date").value,

@@ -69,7 +69,7 @@ export const PROVIDERS = {
 export function detectedProviderFromEndpoint(endpoint) {
   const ep = endpoint || "";
   for (const [id, p] of Object.entries(PROVIDERS)) if (p.endpoint === ep) return id;
-  return "mistral";
+  return ep ? "custom" : "mistral";
 }
 
 export function providerOf(store) {
@@ -137,10 +137,18 @@ async function aiChat(store, messages, { json = false, temperature = 0.2, model 
       try { data = await response.json(); } catch { throw new Error("Réponse Gemini invalide."); }
       return (data.candidates?.[0]?.content?.parts || []).map(part => part.text || "").join("");
     }
+    const requestMessages = pid === "mistral" ? messages : messages.map(message => ({
+      ...message,
+      content: Array.isArray(message.content) ? message.content.map(part =>
+        part?.type === "image_url" && typeof part.image_url === "string"
+          ? { ...part, image_url: { url: part.image_url } }
+          : part
+      ) : message.content,
+    }));
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
-      body: JSON.stringify({ model: modelName, messages, temperature, ...(json ? { response_format: { type: "json_object" } } : {}) }),
+      body: JSON.stringify({ model: modelName, messages: requestMessages, temperature, ...(json ? { response_format: { type: "json_object" } } : {}) }),
     });
     let data;
     try { data = await response.json(); } catch { throw new Error("Réponse du fournisseur IA invalide."); }

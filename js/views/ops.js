@@ -198,15 +198,15 @@ export function viewTools() {
         <div class="card kpi"><div class="value">${ok} / ${lines.length}</div><div class="label">Opérations rapprochées</div></div>
         <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
       </div>
-      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · Tolérance : ±${session.days} jour(s). Total relevé : ${money(totalBank)} ; total rapproché : ${money(totalMatched)}.</p>
+      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · Tolérance : ±${session.days} jour(s). Total relevé : ${money(totalBank)} ; total rapproché : ${money(totalMatched)}. Les règlements partiels sont cumulés sans dépasser le montant de chaque écriture.</p>
       <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th class="num">Montant</th><th>Écriture</th><th>Compte</th><th>Action / état</th></tr></thead>
       <tbody>${lines.map((m,index) => {
         const options = (m.candidates || []).map(id => `<option value="${Number(id)}" ${Number(id)===Number(m.match)?"selected":""}>Écriture #${Number(id)}</option>`).join("");
         return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
-          <td>${m.match ? `#${m.match} · ${esc(m.matchDate || "")}` : (m.candidates.length ? `Possibles : #${m.candidates.join(", #")}` : "Aucune correspondance")}</td>
+          <td>${m.matches?.length ? m.matches.map(item => `#${item.entryId} (${money(item.amount)})`).join(", ") : (m.match ? `#${m.match} · ${esc(m.matchDate || "")}` : (m.candidates.length ? `Possibles : #${m.candidates.join(", #")}` : "Aucune correspondance"))}${m.partial ? `<p class="muted">Règlement partiel · reste sur les écritures : ${money(m.partialRemaining)}</p>` : ""}${m.amountCandidates?.length ? `<p class="muted">Écart à examiner : ${m.amountCandidates.map(item => `#${item.entryId} : ${money(item.difference)}`).join(" · ")}</p>` : ""}</td>
           <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
-          <td>${m.match ? `<span class="ok-msg">✓ ${m.manuallyMatched ? "Validée manuellement" : "Rapprochée"}</span>` : `<span class="warn">À vérifier</span>`}
+          <td>${m.match ? `<span class="ok-msg">✓ ${m.partial ? "Rapprochée partiellement" : (m.manuallyMatched ? "Validée manuellement" : "Rapprochée")}</span>` : `<span class="warn">À vérifier</span>`}
           ${m.status !== "matched" && m.candidates.length ? `<div class="row"><select data-bk-choice="${index}"><option value="">Choisir l'écriture</option>${options}</select><button class="small" data-bk-match="${index}">Valider</button></div>` : ""}
           ${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return `<p class="muted">${esc(d.label)} — ${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="${index}">Préparer une écriture</button>`; })() : ""}
           ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
@@ -222,7 +222,7 @@ export function viewTools() {
       if (!selected) return toast("Choisissez une écriture comptable.");
       try {
         const updated = reconcileBankLine(session.lines[index], Number(selected), store);
-        const duplicate = session.lines.some((line,i) => i !== index && Number(line.match) === Number(selected));
+        const duplicate = session.lines.some((line,i) => i !== index && (Number(line.match) === Number(selected) || (line.matches || []).some(item => Number(item.entryId) === Number(selected))));
         if (duplicate) return toast("Cette écriture est déjà affectée à une autre ligne du relevé.");
         session.lines[index] = updated;
         saveStore(store);
@@ -275,7 +275,7 @@ export function viewTools() {
     }));
     out.querySelectorAll("[data-bk-unmatch]").forEach(button => button.addEventListener("click", () => {
       const line = session.lines[Number(button.dataset.bkUnmatch)];
-      line.match = null; line.matchAccount = null; line.matchDate = null; line.status = "unmatched"; line.manuallyMatched = false;
+      line.match = null; line.matchAccount = null; line.matchDate = null; line.matches = []; line.matchedAmount = 0; line.partial = false; line.partialRemaining = 0; line.status = "unmatched"; line.manuallyMatched = false;
       saveStore(store); renderBankResult(session);
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {

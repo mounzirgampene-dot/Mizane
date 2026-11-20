@@ -79,7 +79,7 @@ function fallbackUuid() {
 }
 function documentIdentity(doc) {
   const copy = clone(doc);
-  for (const key of ["id", "payments", "paidAmount", "status", "convertedTo", "createdAt", "updatedAt"]) delete copy[key];
+  for (const key of ["id", "payments", "paymentHistory", "paidAmount", "status", "convertedTo", "createdAt", "updatedAt"]) delete copy[key];
   return signature(copy);
 }
 function paymentIdentity(payment) {
@@ -104,6 +104,11 @@ function mergeInitialBilling(localValue, remoteValue) {
           const payments = new Map((existing.doc.payments || []).map(p => [paymentIdentity(p), p]));
           for (const payment of doc.payments || []) payments.set(paymentIdentity(payment), payment);
           existing.doc.payments = [...payments.values()];
+          const history = new Map((existing.doc.paymentHistory || []).map(event => [event.eventId || signature(event), event]));
+          for (const event of doc.paymentHistory || []) history.set(event.eventId || signature(event), event);
+          existing.doc.paymentHistory = [...history.values()];
+          const supersededIds = new Set(existing.doc.paymentHistory.filter(event => ["modification", "annulation"].includes(event.action)).map(event => Number(event.paymentId)).filter(Number.isFinite));
+          existing.doc.payments = existing.doc.payments.filter(payment => !supersededIds.has(Number(payment.id)));
           existing.doc.paidAmount = existing.doc.payments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
         }
         if (doc.id != null) existing.mergedIds ||= [];
@@ -117,6 +122,14 @@ function mergeInitialBilling(localValue, remoteValue) {
   };
   addDocuments(remote, "cloud");
   addDocuments(local, "local");
+  for (const record of records) {
+    const doc = record.doc;
+    if (doc.type !== "invoice") continue;
+    doc.paymentHistory = Array.isArray(doc.paymentHistory) ? doc.paymentHistory : [];
+    const supersededIds = new Set(doc.paymentHistory.filter(event => ["modification", "annulation"].includes(event.action)).map(event => Number(event.paymentId)).filter(Number.isFinite));
+    doc.payments = (Array.isArray(doc.payments) ? doc.payments : []).filter(payment => !supersededIds.has(Number(payment.id)));
+    doc.paidAmount = doc.payments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+  }
 
   let nextId = Math.max(1, Number(local.nextId) || 1, Number(remote.nextId) || 1);
   const idMaps = { cloud: new Map(), local: new Map() };

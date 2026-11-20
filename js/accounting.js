@@ -125,7 +125,7 @@ export function validateEntry(store, entry) {
 }
 
 export function postEntry(store, entry) {
-  if (isDateInClosedPeriod(entry?.date, store.settings?.closedPeriods || [])) {
+  if (isDateInClosedPeriod(entry?.date, (Array.isArray(store.settings?.closedPeriods) ? store.settings.closedPeriods : []))) {
     return { ok: false, errors: ["Période comptable clôturée : aucune nouvelle écriture ne peut être enregistrée à cette date."] };
   }
   const v = validateEntry(store, entry);
@@ -154,7 +154,7 @@ export function reverseEntry(store, id, reversalDate = new Date().toISOString().
   const src = store.entries.find((e) => e.id === id);
   if (!src) return { ok: false, errors: ["Écriture introuvable."] };
   if (src.reversed) return { ok: false, errors: [`Écriture #${id} déjà contrepassée : opération refusée.`] };
-  if (isDateInClosedPeriod(src.date, store.settings?.closedPeriods || [])) return { ok: false, errors: ["Période comptable clôturée : cette écriture ne peut pas être contrepassée."] };
+  if (isDateInClosedPeriod(src.date, (Array.isArray(store.settings?.closedPeriods) ? store.settings.closedPeriods : []))) return { ok: false, errors: ["Période comptable clôturée : cette écriture ne peut pas être contrepassée."] };
   const rev = {
     date: reversalDate,
     journal: src.journal,

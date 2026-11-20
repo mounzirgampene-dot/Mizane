@@ -106,7 +106,7 @@ export function matchBankLines(store, bankLines, days = 4) {
     const inWindow = sameSign.filter(line => line.delta <= days * 86400000 && line.remaining > 0);
     const allocations = [];
     const exactAvailable = inWindow.filter(line => Math.abs(line.remaining - magnitude) <= 0.001);
-    const partialAvailable = inWindow.filter(line => line.remaining > magnitude + 0.001);
+    const partialAvailable = inWindow.filter(line => line.remaining > magnitude + 0.001 && magnitude < line.remaining * 0.95);
     const totalAvailable = round2(inWindow.reduce((sum, line) => sum + line.remaining, 0));
     let selected = [];
     if (exactAvailable.length) {

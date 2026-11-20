@@ -86,31 +86,70 @@ export function matchBankLines(store, bankLines, days = 4) {
       const amount = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));
       if (amount) cash.push({
         entryId: e.id, date: e.date, label: l.label || e.reference || "",
-        account: String(l.account), amount,
+        account: String(l.account), amount, remaining: Math.abs(amount),
       });
     }
   }
 
-  // Une ligne de trésorerie ne peut être affectée qu'à une seule opération bancaire.
-  const used = new Set();
+  // Les montants déjà affectés sont déduits : une écriture peut ainsi recevoir
+  // plusieurs règlements partiels, sans que le total affecté dépasse son montant.
   return bankLines.map((bankLine) => {
     const bankTime = Date.parse(bankLine.date);
-    const sameAmount = cash
+    const bankAmount = round2(Number(bankLine.amount));
+    const magnitude = Math.abs(bankAmount);
+    const sameSign = cash
       .map((line, index) => ({ ...line, index, delta: Math.abs(Date.parse(line.date) - bankTime) }))
-      .filter((line) => line.amount === round2(Number(bankLine.amount)) &&
+      .filter((line) => Math.sign(line.amount) === Math.sign(bankAmount) &&
         Number.isFinite(line.delta) && line.delta <= 30 * 86400000)
       .sort((a, b) => a.delta - b.delta || a.index - b.index);
-    const inWindow = sameAmount.filter(line => line.delta <= days * 86400000);
-    const selected = inWindow.find((candidate) => !used.has(candidate.index));
-    if (selected) used.add(selected.index);
+    const exact = sameSign.filter(line => line.amount === bankAmount);
+    const inWindow = sameSign.filter(line => line.delta <= days * 86400000 && line.remaining > 0);
+    const available = inWindow.reduce((sum, line) => sum + line.remaining, 0);
+    const allocations = [];
+
+    if (available + 0.001 >= magnitude) {
+      let left = magnitude;
+      for (const candidate of inWindow) {
+        if (left <= 0.001) break;
+        const current = cash[candidate.index];
+        const allocated = round2(Math.min(current.remaining, left));
+        if (allocated <= 0) continue;
+        current.remaining = round2(current.remaining - allocated);
+        left = round2(left - allocated);
+        allocations.push({
+          entryId: current.entryId, account: current.account, date: current.date,
+          amount: allocated, remaining: current.remaining,
+        });
+      }
+    }
+
+    const matched = allocations.length > 0 && allocations.reduce((sum, item) => sum + item.amount, 0) + 0.001 >= magnitude;
+    const first = allocations[0];
+    const amountCandidates = matched ? [] : sameSign
+      .filter(line => line.delta <= days * 86400000 && line.remaining > 0)
+      .map(line => ({
+        entryId: line.entryId, account: line.account, date: line.date,
+        entryAmount: line.amount, difference: round2(Math.abs(line.amount) - magnitude),
+      }))
+      .filter(candidate => candidate.difference > 0.001)
+      .sort((a, b) => a.difference - b.difference)
+      .slice(0, 3);
+
     return {
       ...bankLine,
-      match: selected ? selected.entryId : null,
-      matchAccount: selected ? selected.account : null,
-      matchDate: selected ? selected.date : null,
-      candidates: [...new Set(sameAmount.map((candidate) => candidate.entryId))],
-      dateCandidates: [...new Set(sameAmount.filter(candidate => candidate.delta > days * 86400000).map(candidate => candidate.entryId))],
-      status: selected ? "matched" : "unmatched",
+      match: matched ? first.entryId : null,
+      matchAccount: matched ? [...new Set(allocations.map(item => item.account))].join(", ") : null,
+      matchDate: matched ? first.date : null,
+      matches: matched ? allocations.map(({ remaining, ...item }) => item) : [],
+      matchedAmount: matched ? magnitude : 0,
+      partial: matched && allocations.some(item => item.remaining > 0 || item.amount < Math.abs(
+        cash.find(line => Number(line.entryId) === Number(item.entryId) && line.account === item.account)?.amount || item.amount
+      )),
+      partialRemaining: matched ? round2(allocations.reduce((sum, item) => sum + item.remaining, 0)) : 0,
+      candidates: [...new Set(exact.map((candidate) => candidate.entryId))],
+      dateCandidates: [...new Set(exact.filter(candidate => candidate.delta > days * 86400000).map(candidate => candidate.entryId))],
+      amountCandidates,
+      status: matched ? "matched" : "unmatched",
     };
   });
 }

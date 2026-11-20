@@ -222,7 +222,7 @@ export function viewTools() {
       if (!selected) return toast("Choisissez une écriture comptable.");
       try {
         const updated = reconcileBankLine(session.lines[index], Number(selected), store);
-        const duplicate = session.lines.some((line,i) => i !== index && Number(line.match) === Number(selected));
+        const duplicate = session.lines.some((line,i) => i !== index && (Number(line.match) === Number(selected) || (line.matches || []).some(item => Number(item.entryId) === Number(selected))));
         if (duplicate) return toast("Cette écriture est déjà affectée à une autre ligne du relevé.");
         session.lines[index] = updated;
         saveStore(store);
@@ -275,7 +275,7 @@ export function viewTools() {
     }));
     out.querySelectorAll("[data-bk-unmatch]").forEach(button => button.addEventListener("click", () => {
       const line = session.lines[Number(button.dataset.bkUnmatch)];
-      line.match = null; line.matchAccount = null; line.matchDate = null; line.status = "unmatched"; line.manuallyMatched = false;
+      line.match = null; line.matchAccount = null; line.matchDate = null; line.matches = []; line.matchedAmount = 0; line.partial = false; line.partialRemaining = 0; line.status = "unmatched"; line.manuallyMatched = false;
       saveStore(store); renderBankResult(session);
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {

@@ -342,10 +342,17 @@ function openPaymentManager(invoiceId) {
   const balance = calculatePaymentBalance(total, invoice.payments);
   const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
   const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
-  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button></td></tr>").join("");
+  const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button> <button type=\"button\" class=\"danger small\" data-bill-payment-cancel=\"" + Number(payment.id) + "\">Annuler le règlement</button></td></tr>").join("");
+  const auditRows = (invoice.paymentHistory || []).slice().reverse().map((event) => {
+    const previous = event.previous || {};
+    const updated = event.updated || {};
+    const amount = event.action === "modification" ? fmt(previous.amount, invoice.currency, store.settings.locale) + " → " + fmt(updated.amount, invoice.currency, store.settings.locale) : fmt(previous.amount, invoice.currency, store.settings.locale);
+    return "<tr><td>" + esc(event.date || "—") + "</td><td>" + (event.action === "modification" ? "Modification" : "Annulation") + "</td><td>" + esc(previous.date || "—") + "</td><td class=\"num\">" + amount + "</td><td>" + esc(event.note || "") + "</td></tr>";
+  }).join("");
   content.innerHTML = "<h2>Règlements — " + esc(invoice.number) + "</h2><p><strong>Client :</strong> " + esc(invoice.customerName) + "</p>" +
     "<div class=\"grid cols-3\"><section class=\"card kpi\"><div class=\"label\">Total facture</div><div class=\"value\">" + fmt(total, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Déjà réglé</div><div class=\"value\">" + fmt(paid, invoice.currency, store.settings.locale) + "</div></section><section class=\"card kpi\"><div class=\"label\">Reste à payer</div><div class=\"value\">" + fmt(balance, invoice.currency, store.settings.locale) + "</div></section></div>" +
-    "<h3>Historique des paiements</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th><th>Action</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"6\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
+    "<h3>Historique des paiements actifs</h3><div class=\"table-wrap\"><table><thead><tr><th>Date</th><th>Mode</th><th>Référence</th><th class=\"num\">Montant</th><th>Note</th><th>Actions</th></tr></thead><tbody>" + (paymentRows || "<tr><td colspan=\"6\" class=\"muted\">Aucun paiement enregistré.</td></tr>") + "</tbody></table></div>" +
+     "<h3>Historique des corrections et annulations</h3><div class=\"table-wrap\"><table><thead><tr><th>Date opération</th><th>Action</th><th>Date du règlement</th><th class=\"num\">Montant concerné</th><th>Détail</th></tr></thead><tbody>" + (auditRows || "<tr><td colspan=\"5\" class=\"muted\">Aucune correction ni annulation.</td></tr>") + "</tbody></table></div>" +
     (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Taux de change vers " + esc(invoice.baseCurrency || store.settings.currency) + " (1 " + esc(invoice.currency) + " = ?)</label><input id=\"bill-payment-rate\" type=\"number\" min=\"0.00000001\" step=\"0.00000001\" value=\"" + number(invoice.exchangeRate) + "\"></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
     "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
   content.querySelectorAll("[data-bill-payment-edit]").forEach((button) => button.addEventListener("click", () => {
@@ -408,6 +415,17 @@ function openPaymentManager(invoiceId) {
         saveBilling();
         return;
       }
+      invoice.paymentHistory ||= [];
+      invoice.paymentHistory.push({
+        eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+        action: "modification",
+        date: today(),
+        paymentId,
+        previous: { ...original },
+        updated: { ...replacement },
+        note: "Règlement modifié ; ancienne écriture contrepassée et nouvelle écriture comptabilisée.",
+        createdAt: new Date().toISOString(),
+      });
       invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
       invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
       saveBilling();
@@ -415,6 +433,35 @@ function openPaymentManager(invoiceId) {
       modal.close();
       renderList();
     });
+  }));
+  content.querySelectorAll("[data-bill-payment-cancel]").forEach((button) => button.addEventListener("click", () => {
+    const paymentId = Number(button.dataset.billPaymentCancel);
+    const payment = invoice.payments.find((item) => Number(item.id) === paymentId);
+    if (!payment) return;
+    if (!window.confirm("Annuler ce règlement de " + fmt(payment.amount, invoice.currency, store.settings.locale) + " ? Le règlement sera conservé dans l'historique et son écriture comptable sera contrepassée si elle existe.")) return;
+    const reference = "REGLEMENT " + String(invoice.number || invoice.id) + " #" + String(payment.id);
+    const entry = (store.entries || []).find((item) => item.reference === reference && !item.reversed);
+    if (entry) {
+      const reversed = reverseEntry(store, entry.id, today());
+      if (!reversed.ok) return toast("Annulation impossible : " + reversed.errors[0], 5500);
+    }
+    invoice.payments = invoice.payments.filter((item) => Number(item.id) !== paymentId);
+    invoice.paymentHistory ||= [];
+    invoice.paymentHistory.push({
+      eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+      action: "annulation",
+      date: today(),
+      paymentId,
+      previous: { ...payment },
+      note: entry ? "Règlement annulé ; écriture comptable contrepassée." : "Règlement annulé ; aucune écriture comptable active à contrepasser.",
+      createdAt: new Date().toISOString(),
+    });
+    invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+    invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+    saveBilling();
+    toast("Règlement annulé. La trace est conservée dans l'historique.");
+    modal.close();
+    renderList();
   }));
   if (balance > 0) content.querySelector("#bill-payment-save").addEventListener("click", () => {
     const payment = {

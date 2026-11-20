@@ -58,7 +58,7 @@ function forecastRows(receivablesList, manual) {
 export function viewFinancial() {
   const docs = receivables();
   const vendors = suppliers();
-  const manual = Array.isArray(store.settings.cashForecast) ? store.settings.cashForecast.filter(item => item && /^\\d{4}-\\d{2}-\\d{2}$/.test(String(item.date || "")) && String(item.label || "").trim() && Number(item.amount) > 0 && ["in", "out"].includes(item.direction)) : [];
+  const manual = Array.isArray(store.settings.cashForecast) ? store.settings.cashForecast.filter(item => item && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) && String(item.label || "").trim() && Number(item.amount) > 0 && ["in", "out"].includes(item.direction)) : [];
   store.settings.cashForecast = manual;
   const outstanding = round(docs.reduce((sum, item) => sum + item.amount, 0));
   const payable = round(vendors.reduce((sum, item) => sum + item.amount, 0));

@@ -48,6 +48,17 @@ test("périodes comptables : une écriture nouvelle est refusée dans une pério
   assert.equal(store.entries.length, 0);
 });
 
+test("périodes comptables : une écriture clôturée ne peut pas être contrepassée", () => {
+  const store = newStore();
+  store.entries.push({ id: 1, date: "2026-06-15", journal: "OD", reference: "TEST", reversed: false, lines: [] });
+  store.settings.closedPeriods = [{ startDate: "2026-01-01", endDate: "2026-12-31", status: "closed" }];
+  const result = reverseEntry(store, 1, "2027-01-01");
+  assert.equal(result.ok, false);
+  assert.match(result.errors[0], /Période comptable clôturée/);
+  assert.equal(store.entries.length, 1);
+  assert.equal(store.entries[0].reversed, false);
+});
+
 test("présentation des devises : nom, code et symbole", () => {
   const info = getCurrencyInfo("MAD", "fr");
   assert.equal(info.code, "MAD");

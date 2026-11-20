@@ -1,15 +1,22 @@
 // MIZANE — Assistant IA multi-fournisseurs (Mistral, Groq, Gemini) + assistant local de secours.
 import { trialBalance, incomeStatement, checkAnomalies, entryTotals } from "./accounting.js";
 import { formatMoney } from "./countries.js";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
-const aiSupabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let aiSupabasePromise;
+async function getAiSupabase() {
+  if (!aiSupabasePromise) {
+    aiSupabasePromise = import("https://esm.sh/@supabase/supabase-js@2")
+      .then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
+  }
+  return aiSupabasePromise;
+}
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
 const activeCompanyId = () => localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 const aiStatusKey = (companyId, provider) => "mizane_ai_configured_" + companyId + "_" + provider;
 export async function configureCompanyAI(provider, apiKey) {
   const companyId = activeCompanyId();
   if (!companyId) throw new Error("Sélectionnez une entreprise dans votre espace MIZANE.");
+  const aiSupabase = await getAiSupabase();
   const { data, error } = await aiSupabase.functions.invoke("company-ai", { body: { action: "configure", company_id: companyId, provider, api_key: apiKey } });
   if (error) throw new Error(data?.error || "Enregistrement sécurisé de la clé impossible.");
   localStorage.setItem(aiStatusKey(companyId, provider), "1");
@@ -18,6 +25,7 @@ export async function configureCompanyAI(provider, apiKey) {
 export async function deleteCompanyAI(provider) {
   const companyId = activeCompanyId();
   if (!companyId) throw new Error("Aucune entreprise active.");
+  const aiSupabase = await getAiSupabase();
   const { data, error } = await aiSupabase.functions.invoke("company-ai", { body: { action: "delete", company_id: companyId, provider } });
   if (error) throw new Error(data?.error || "Suppression de la clé impossible.");
   localStorage.setItem(aiStatusKey(companyId, provider), "0");
@@ -26,6 +34,7 @@ export async function deleteCompanyAI(provider) {
 export async function refreshCompanyAIStatus(provider) {
   const companyId = activeCompanyId();
   if (!companyId) throw new Error("Sélectionnez une entreprise active.");
+  const aiSupabase = await getAiSupabase();
   const { data, error } = await aiSupabase.functions.invoke("company-ai", { body: { action: "status", company_id: companyId, provider } });
   if (error) throw new Error(data?.error || "État IA indisponible.");
   const configured = Array.isArray(data?.providers) && data.providers.includes(provider);
@@ -105,6 +114,7 @@ async function aiChat(store, messages, { json = false, temperature = 0.2, model 
   if (!companyId) throw new Error("Sélectionnez une entreprise cloud dans votre espace MIZANE.");
   const pid = providerOf(store);
   if (!PROVIDERS[pid]) throw new Error("Choisissez Mistral, Groq ou Gemini dans les paramètres IA.");
+  const aiSupabase = await getAiSupabase();
   const { data: sessionData } = await aiSupabase.auth.getSession();
   const session = sessionData?.session;
   if (!session?.access_token) throw new Error("Connectez-vous à votre espace MIZANE pour utiliser l'assistant IA.");

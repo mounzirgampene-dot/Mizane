@@ -150,7 +150,7 @@ export function matchBankLines(store, bankLines, days = 4) {
       match: matched ? first.entryId : null,
       matchAccount: matched ? [...new Set(allocations.map(item => item.account))].join(", ") : null,
       matchDate: matched ? first.date : null,
-      matches: matched ? allocations.map(({ remaining, originalAmount, ...item }) => item) : [],
+      matches: matched ? allocations.map(({ remaining: _remaining, originalAmount: _originalAmount, ...item }) => item) : [],
       matchedAmount: matched ? magnitude : 0,
       partial: matched && allocations.some(item => item.remaining > 0.001),
       partialRemaining: matched ? round2(allocations.reduce((sum, item) => sum + item.remaining, 0)) : 0,

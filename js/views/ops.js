@@ -1,6 +1,6 @@
 // MIZANE — Écran Outils : clôture d'exercice, immobilisations & amortissements, rapprochement bancaire.
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
-import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, closingProposal } from "../finance.js";
+import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 
@@ -208,10 +208,11 @@ export function viewTools() {
           <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
           <td>${m.match ? `<span class="ok-msg">✓ ${m.manuallyMatched ? "Validée manuellement" : "Rapprochée"}</span>` : `<span class="warn">À vérifier</span>`}
           ${m.status !== "matched" && m.candidates.length ? `<div class="row"><select data-bk-choice="${index}"><option value="">Choisir l'écriture</option>${options}</select><button class="small" data-bk-match="${index}">Valider</button></div>` : ""}
+          ${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return `<p class="muted">${esc(d.label)} — ${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="${index}">Préparer une écriture</button>`; })() : ""}
           ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>
       <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button></div>
-      <p class="muted">Les rapprochements validés sont conservés dans cet appareil. Les lignes importées déjà présentes dans un relevé précédent sont détectées pour éviter les doublons.</p>`;
+      <p class="muted">Les rapprochements et écritures de régularisation sont enregistrés dans les données synchronisées de l’entreprise. Vérifiez toujours les comptes proposés avant de comptabiliser ; la TVA n’est pas calculée automatiquement.</p>`;
     document.getElementById("bk-unmatched-only")?.addEventListener("change", event => {
       out.querySelectorAll("[data-bk-row]").forEach(row => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
     });
@@ -227,6 +228,50 @@ export function viewTools() {
         saveStore(store);
         renderBankResult(session);
       } catch(error) { toast(error.message); }
+    }));
+    out.querySelectorAll("[data-bk-adjust]").forEach(button => button.addEventListener("click", () => {
+      const index = Number(button.dataset.bkAdjust);
+      const line = session.lines[index];
+      if (!line || line.status === "matched") return;
+      const diagnosis = diagnoseBankLine(line);
+      const bankAccounts = planAccounts.filter(account => /^5/.test(String(account.code)));
+      const otherAccounts = planAccounts.filter(account => !/^5/.test(String(account.code)));
+      if (!bankAccounts.length || !otherAccounts.length) return toast("Le plan comptable ne contient pas les comptes nécessaires.");
+      const preferred = diagnosis.type === "bank_fee"
+        ? otherAccounts.find(account => /frais|commission|agios|banque/i.test(account.label || ""))
+        : diagnosis.type === "financial_income"
+          ? otherAccounts.find(account => /^[67]/.test(String(account.code)) && /financier|interet/i.test(account.label || ""))
+          : null;
+      openModal(
+        "<h2>Préparer une écriture de régularisation</h2>" +
+        "<p class=\"muted\">" + esc(line.date) + " · " + esc(line.label) + " · " + money(line.amount) + "</p>" +
+        "<p>" + esc(diagnosis.label) + ". Vérifiez la nature de l’opération et choisissez les comptes.</p>" +
+        "<label for=\"bk-adjust-bank\">Compte bancaire (classe 5)</label>" +
+        "<select id=\"bk-adjust-bank\">" + bankAccounts.map(account => "<option value=\"" + esc(account.code) + "\">" + esc(account.code) + " — " + esc(account.label) + "</option>").join("") + "</select>" +
+        "<label for=\"bk-adjust-counter\">Compte de contrepartie</label>" +
+        "<select id=\"bk-adjust-counter\">" + otherAccounts.map(account => "<option value=\"" + esc(account.code) + "\" " + (preferred && account.code === preferred.code ? "selected" : "") + ">" + esc(account.code) + " — " + esc(account.label) + "</option>").join("") + "</select>" +
+        "<p class=\"muted\">Aucune écriture ne sera créée avant votre validation. La proposition ne calcule pas automatiquement la TVA.</p>" +
+        "<div class=\"actions\"><button type=\"button\" class=\"secondary\" data-close>Annuler</button><button type=\"button\" id=\"bk-adjust-confirm\">Valider et comptabiliser</button></div>"
+      );
+      document.getElementById("bk-adjust-confirm")?.addEventListener("click", () => {
+        const bankCode = document.getElementById("bk-adjust-bank")?.value;
+        const counterCode = document.getElementById("bk-adjust-counter")?.value;
+        if (!bankCode || !counterCode || bankCode === counterCode) return toast("Sélectionnez deux comptes différents.");
+        const amount = Math.round(Math.abs(Number(line.amount)) * 100) / 100;
+        const entry = { date: line.date, journal: "BQ", reference: "RAPPRO-" + line.date + "-" + (index + 1), lines: [
+          { account: bankCode, label: line.label, debit: line.amount > 0 ? amount : 0, credit: line.amount < 0 ? amount : 0 },
+          { account: counterCode, label: line.label, debit: line.amount < 0 ? amount : 0, credit: line.amount > 0 ? amount : 0 },
+        ] };
+        const validation = validateEntry(store, entry);
+        if (!validation.ok) return toast(validation.errors[0]);
+        const result = postEntry(store, entry);
+        if (!result.ok) return toast(result.errors?.[0] || "Impossible de comptabiliser cette écriture.");
+        session.lines[index] = { ...line, match: result.entry.id, matchAccount: bankCode, matchDate: line.date, status: "matched", manuallyMatched: true, adjustment: true };
+        saveStore(store);
+        closeModal();
+        toast("Écriture de régularisation comptabilisée.");
+        renderBankResult(session);
+      });
     }));
     out.querySelectorAll("[data-bk-unmatch]").forEach(button => button.addEventListener("click", () => {
       const line = session.lines[Number(button.dataset.bkUnmatch)];

@@ -95,25 +95,36 @@ export function matchBankLines(store, bankLines, days = 4) {
   const used = new Set();
   return bankLines.map((bankLine) => {
     const bankTime = Date.parse(bankLine.date);
-    const candidates = cash
+    const sameAmount = cash
       .map((line, index) => ({ ...line, index, delta: Math.abs(Date.parse(line.date) - bankTime) }))
       .filter((line) => line.amount === round2(Number(bankLine.amount)) &&
-        Number.isFinite(line.delta) && line.delta <= days * 86400000)
+        Number.isFinite(line.delta) && line.delta <= 30 * 86400000)
       .sort((a, b) => a.delta - b.delta || a.index - b.index);
-    const selected = candidates.find((candidate) => !used.has(candidate.index));
+    const inWindow = sameAmount.filter(line => line.delta <= days * 86400000);
+    const selected = inWindow.find((candidate) => !used.has(candidate.index));
     if (selected) used.add(selected.index);
     return {
       ...bankLine,
       match: selected ? selected.entryId : null,
       matchAccount: selected ? selected.account : null,
       matchDate: selected ? selected.date : null,
-      candidates: [...new Set(candidates.map((candidate) => candidate.entryId))],
+      candidates: [...new Set(sameAmount.map((candidate) => candidate.entryId))],
+      dateCandidates: [...new Set(sameAmount.filter(candidate => candidate.delta > days * 86400000).map(candidate => candidate.entryId))],
       status: selected ? "matched" : "unmatched",
     };
   });
 }
 
 
+// Diagnostic indicatif d'une opération non rapprochée. Ne remplace pas la vérification comptable.
+export function diagnoseBankLine(line) {
+  const label = String(line.label || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/frais|commission|agios|tenue de compte/.test(label)) return { type: "bank_fee", label: "Frais ou commission bancaire", hint: "Charge bancaire à vérifier" };
+  if (/interet crediteur|interets recus|produit financier/.test(label)) return { type: "financial_income", label: "Produit financier possible", hint: "Produit financier à vérifier" };
+  if (/virement recu|versement|remise|encaissement|reglement client/.test(label) || Number(line.amount) > 0) return { type: "receipt", label: "Encaissement possible", hint: "Identifier le client ou le produit" };
+  if (/achat|paiement|prelevement|retrait|fournisseur|loyer/.test(label) || Number(line.amount) < 0) return { type: "payment", label: "Décaissement possible", hint: "Identifier la charge ou le fournisseur" };
+  return { type: "unknown", label: "Opération à qualifier", hint: "Choisir le compte de contrepartie" };
+}
 // Identifiant déterministe d'une ligne importée : empêche les doubles imports du même relevé.
 export function bankLineKey(line) {
   const raw = [line.date, String(line.label || "").trim().toLocaleLowerCase(), round2(Number(line.amount) || 0)].join("|");

@@ -104,23 +104,33 @@ export function matchBankLines(store, bankLines, days = 4) {
       .sort((a, b) => a.delta - b.delta || a.index - b.index);
     const exact = sameSign.filter(line => line.amount === bankAmount);
     const inWindow = sameSign.filter(line => line.delta <= days * 86400000 && line.remaining > 0);
-    const available = inWindow.reduce((sum, line) => sum + line.remaining, 0);
     const allocations = [];
+    const exactAvailable = inWindow.filter(line => Math.abs(line.remaining - magnitude) <= 0.001);
+    const partialAvailable = inWindow.filter(line => line.remaining > magnitude + 0.001);
+    const totalAvailable = round2(inWindow.reduce((sum, line) => sum + line.remaining, 0));
+    let selected = [];
+    if (exactAvailable.length) {
+      selected = [exactAvailable[0]];
+    } else if (partialAvailable.length) {
+      // Un seul règlement partiel est affecté à une seule écriture : pas de cumul arbitraire.
+      selected = [partialAvailable[0]];
+    } else if (Math.abs(totalAvailable - magnitude) <= 0.001 && inWindow.length > 1) {
+      // Plusieurs écritures ne sont regroupées que si leur total correspond exactement au relevé.
+      selected = inWindow;
+    }
 
-    if (available + 0.001 >= magnitude) {
-      let left = magnitude;
-      for (const candidate of inWindow) {
-        if (left <= 0.001) break;
-        const current = cash[candidate.index];
-        const allocated = round2(Math.min(current.remaining, left));
-        if (allocated <= 0) continue;
-        current.remaining = round2(current.remaining - allocated);
-        left = round2(left - allocated);
-        allocations.push({
-          entryId: current.entryId, account: current.account, date: current.date,
-          amount: allocated, remaining: current.remaining, originalAmount: Math.abs(current.amount),
-        });
-      }
+    let left = magnitude;
+    for (const candidate of selected) {
+      if (left <= 0.001) break;
+      const current = cash[candidate.index];
+      const allocated = round2(Math.min(current.remaining, left));
+      if (allocated <= 0) continue;
+      current.remaining = round2(current.remaining - allocated);
+      left = round2(left - allocated);
+      allocations.push({
+        entryId: current.entryId, account: current.account, date: current.date,
+        amount: allocated, remaining: current.remaining, originalAmount: Math.abs(current.amount),
+      });
     }
 
     const matched = allocations.length > 0 && allocations.reduce((sum, item) => sum + item.amount, 0) + 0.001 >= magnitude;

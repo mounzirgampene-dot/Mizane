@@ -118,7 +118,7 @@ export function matchBankLines(store, bankLines, days = 4) {
         left = round2(left - allocated);
         allocations.push({
           entryId: current.entryId, account: current.account, date: current.date,
-          amount: allocated, remaining: current.remaining,
+          amount: allocated, remaining: current.remaining, originalAmount: Math.abs(current.amount),
         });
       }
     }
@@ -129,7 +129,7 @@ export function matchBankLines(store, bankLines, days = 4) {
       .filter(line => line.delta <= days * 86400000 && line.remaining > 0)
       .map(line => ({
         entryId: line.entryId, account: line.account, date: line.date,
-        entryAmount: line.amount, difference: round2(Math.abs(line.amount) - magnitude),
+        entryAmount: line.amount, difference: round2(Math.abs(Math.abs(line.amount) - magnitude)),
       }))
       .filter(candidate => candidate.difference > 0.001)
       .sort((a, b) => a.difference - b.difference)
@@ -140,11 +140,9 @@ export function matchBankLines(store, bankLines, days = 4) {
       match: matched ? first.entryId : null,
       matchAccount: matched ? [...new Set(allocations.map(item => item.account))].join(", ") : null,
       matchDate: matched ? first.date : null,
-      matches: matched ? allocations.map(({ remaining, ...item }) => item) : [],
+      matches: matched ? allocations.map(({ remaining, originalAmount, ...item }) => item) : [],
       matchedAmount: matched ? magnitude : 0,
-      partial: matched && allocations.some(item => item.remaining > 0 || item.amount < Math.abs(
-        cash.find(line => Number(line.entryId) === Number(item.entryId) && line.account === item.account)?.amount || item.amount
-      )),
+      partial: matched && allocations.some(item => item.amount + item.remaining + 0.001 < item.originalAmount),
       partialRemaining: matched ? round2(allocations.reduce((sum, item) => sum + item.remaining, 0)) : 0,
       candidates: [...new Set(exact.map((candidate) => candidate.entryId))],
       dateCandidates: [...new Set(exact.filter(candidate => candidate.delta > days * 86400000).map(candidate => candidate.entryId))],

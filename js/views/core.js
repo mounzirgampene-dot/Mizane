@@ -1,5 +1,6 @@
 // MIZANE — Écrans : tableau de bord, saisie, écritures, grand livre.
 import { JOURNALS, postEntry, reverseEntry, validateEntry, trialBalance, ledger, incomeStatement, checkAnomalies, cashBalance, toCSV, validDate } from "../accounting.js";
+import { isDateInClosedPeriod } from "../periods.js";
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
@@ -323,7 +324,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> ${!e.reversed && !e.reverseOf ? `<button class="secondary small" data-edit-entry="${e.id}" title="Modifier cette écriture">Modifier</button>` : ""} <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> ${!e.reversed && !e.reverseOf && !isDateInClosedPeriod(e.date, store.settings.closedPeriods || []) ? `<button class="secondary small" data-edit-entry="${e.id}" title="Modifier cette écriture">Modifier</button>` : ""} <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf || isDateInClosedPeriod(e.date, store.settings.closedPeriods || []) ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -363,7 +364,7 @@ export function viewEntries() {
     $app.querySelectorAll("[data-edit-entry]").forEach((b) => {
     b.addEventListener("click", () => {
       const entry = store.entries.find((item) => item.id === Number(b.dataset.editEntry));
-      if (!entry || entry.reversed || entry.reverseOf) return toast("Cette écriture ne peut pas être modifiée.");
+      if (!entry || entry.reversed || entry.reverseOf || isDateInClosedPeriod(entry.date, store.settings.closedPeriods || [])) return toast("Cette écriture ne peut pas être modifiée : période clôturée ou écriture déjà contrepassée.");
       openModal(`<h2>Modifier l’écriture #${entry.id}</h2>
         <div class="row"><div><label>Date</label><input type="date" id="edit-entry-date" value="${esc(entry.date)}"></div>
         <div><label>Journal</label><select id="edit-entry-journal">${JOURNALS.map((j) => `<option value="${j.id}" ${entry.journal === j.id ? "selected" : ""}>${j.id} — ${esc(j.name)}</option>`).join("")}</select></div>

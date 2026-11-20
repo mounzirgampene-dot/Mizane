@@ -324,7 +324,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> ${!e.reversed && !e.reverseOf && !isDateInClosedPeriod(e.date, store.settings.closedPeriods || []) ? `<button class="secondary small" data-edit-entry="${e.id}" title="Modifier cette écriture">Modifier</button>` : ""} <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf || isDateInClosedPeriod(e.date, store.settings.closedPeriods || []) ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> ${!e.reversed && !e.reverseOf && !isDateInClosedPeriod(e.date, (Array.isArray(store.settings.closedPeriods) ? store.settings.closedPeriods : [])) ? `<button class="secondary small" data-edit-entry="${e.id}" title="Modifier cette écriture">Modifier</button>` : ""} <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf || isDateInClosedPeriod(e.date, (Array.isArray(store.settings.closedPeriods) ? store.settings.closedPeriods : [])) ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -364,7 +364,7 @@ export function viewEntries() {
     $app.querySelectorAll("[data-edit-entry]").forEach((b) => {
     b.addEventListener("click", () => {
       const entry = store.entries.find((item) => item.id === Number(b.dataset.editEntry));
-      if (!entry || entry.reversed || entry.reverseOf || isDateInClosedPeriod(entry.date, store.settings.closedPeriods || [])) return toast("Cette écriture ne peut pas être modifiée : période clôturée ou écriture déjà contrepassée.");
+      if (!entry || entry.reversed || entry.reverseOf || isDateInClosedPeriod(entry.date, (Array.isArray(store.settings.closedPeriods) ? store.settings.closedPeriods : []))) return toast("Cette écriture ne peut pas être modifiée : période clôturée ou écriture déjà contrepassée.");
       openModal(`<h2>Modifier l’écriture #${entry.id}</h2>
         <div class="row"><div><label>Date</label><input type="date" id="edit-entry-date" value="${esc(entry.date)}"></div>
         <div><label>Journal</label><select id="edit-entry-journal">${JOURNALS.map((j) => `<option value="${j.id}" ${entry.journal === j.id ? "selected" : ""}>${j.id} — ${esc(j.name)}</option>`).join("")}</select></div>
@@ -386,7 +386,7 @@ export function viewEntries() {
             const read = (field) => document.querySelector(`[data-edit-line="${index}"][data-edit-field="${field}"]`).value;
             return { account: read("account").trim(), label: read("label"), third: read("third"), debit: Number(read("debit")) || 0, credit: Number(read("credit")) || 0 };
           }) };
-        if (isDateInClosedPeriod(entry.date, store.settings.closedPeriods || []) || isDateInClosedPeriod(updated.date, store.settings.closedPeriods || [])) return toast("Modification refusée : une période comptable concernée est clôturée.");
+        if (isDateInClosedPeriod(entry.date, (Array.isArray(store.settings.closedPeriods) ? store.settings.closedPeriods : [])) || isDateInClosedPeriod(updated.date, (Array.isArray(store.settings.closedPeriods) ? store.settings.closedPeriods : []))) return toast("Modification refusée : une période comptable concernée est clôturée.");
         const validation = validateEntry(store, updated), errors = document.getElementById("edit-entry-errors");
         if (!validation.ok) { errors.innerHTML = `<ul class="errors">${validation.errors.map((message) => `<li>${esc(message)}</li>`).join("")}</ul>`; return; }
         Object.assign(entry, { date: updated.date, journal: updated.journal, reference: updated.reference,

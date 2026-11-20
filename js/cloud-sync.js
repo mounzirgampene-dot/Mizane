@@ -69,3 +69,34 @@ export function syncCloudIfReady() {
   });
   return activeSync;
 }
+
+
+// Gestion des périodes comptables : le serveur demeure l'autorité de verrouillage.
+export async function manageCloudAccountingPeriod({ startDate, endDate, action, reason = null }) {
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+  if (!companyId) return { skipped: true, reason: "no-company" };
+  if (!localStorage.getItem(SHADOW_PREFIX + companyId)) {
+    throw new Error("Effectuez d'abord la synchronisation initiale de cette entreprise avant de gérer ses périodes comptables.");
+  }
+  const supabase = await getClient();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!sessionData?.session?.user) throw new Error("Connectez-vous à votre espace professionnel pour gérer les périodes comptables.");
+  const { data, error } = await supabase.rpc("manage_accounting_period", {
+    p_company_id: companyId,
+    p_start_date: startDate,
+    p_end_date: endDate,
+    p_action: action,
+    p_reason: reason,
+  });
+  if (error) {
+    let message = error.message || "Opération sur la période comptable impossible.";
+    try {
+      const body = error.context && typeof error.context.clone === "function" ? await error.context.clone().json() : null;
+      if (body?.message) message = body.message;
+    } catch {}
+    throw new Error(message);
+  }
+  if (!data?.ok) throw new Error("Le serveur n'a pas confirmé l'opération sur la période comptable.");
+  return data;
+}

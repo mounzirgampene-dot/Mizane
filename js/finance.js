@@ -211,7 +211,7 @@ export function closingProposal(store, start, end, newStart) {
     solde67 = round2(solde67 + s);
   }
   if (closeLines.length) {
-    closeLines.push({ account: "12", label: "Résultat de l'exercice", debit: solde67 < 0 ? -solde67 : 0, credit: solde67 > 0 ? solde67 : 0 });
+    closeLines.push({ account: "12", label: "Résultat de l'exercice", debit: solde67 > 0 ? solde67 : 0, credit: solde67 < 0 ? -solde67 : 0 });
   }
   const anewLines = [];
   const tb2 = trialBalance(store, "", end);

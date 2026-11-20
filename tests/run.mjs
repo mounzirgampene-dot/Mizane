@@ -1435,6 +1435,40 @@ test("rapprochement bancaire : une écriture de trésorerie n'est utilisée qu'u
   assert.equal(result[1].status, "unmatched");
   assert.deepEqual(result[1].candidates, [7]);
 });
+test("rapprochement bancaire : plusieurs règlements partiels épuisent progressivement une écriture", () => {
+  const store = { entries: [
+    { id: 21, date: "2026-01-10", lines: [{ account: "521", debit: 1000, credit: 0 }] },
+  ] };
+  const result = matchBankLines(store, [
+    { date: "2026-01-10", label: "Acompte 1", amount: 400 },
+    { date: "2026-01-11", label: "Acompte 2", amount: 600 },
+  ], 4);
+  assert.equal(result[0].match, 21);
+  assert.equal(result[0].partial, true);
+  assert.equal(result[0].partialRemaining, 600);
+  assert.equal(result[1].match, 21);
+  assert.equal(result[1].partialRemaining, 0);
+  assert.equal(result[0].matchedAmount + result[1].matchedAmount, 1000);
+});
+test("rapprochement bancaire : une ligne peut rapprocher plusieurs écritures de trésorerie", () => {
+  const store = { entries: [
+    { id: 31, date: "2026-01-10", lines: [{ account: "521", debit: 300, credit: 0 }] },
+    { id: 32, date: "2026-01-10", lines: [{ account: "512", debit: 700, credit: 0 }] },
+  ] };
+  const result = matchBankLines(store, [{ date: "2026-01-10", label: "Versement groupé", amount: 1000 }], 4)[0];
+  assert.equal(result.status, "matched");
+  assert.equal(result.matches.length, 2);
+  assert.equal(result.matches.reduce((sum, item) => sum + item.amount, 0), 1000);
+});
+test("rapprochement bancaire : un écart de montant est signalé sans rapprochement automatique", () => {
+  const store = { entries: [
+    { id: 41, date: "2026-01-10", lines: [{ account: "521", debit: 1000, credit: 0 }] },
+  ] };
+  const result = matchBankLines(store, [{ date: "2026-01-10", label: "Virement net", amount: 980 }], 4)[0];
+  assert.equal(result.status, "unmatched");
+  assert.equal(result.amountCandidates[0].entryId, 41);
+  assert.equal(result.amountCandidates[0].difference, 20);
+});
 test("rapprochement bancaire : la tolérance de date est respectée", () => {
   const store = { entries: [
     { id: 8, date: "2026-01-10", lines: [{ account: "521", debit: 0, credit: 250 }] },

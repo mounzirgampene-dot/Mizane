@@ -10,7 +10,7 @@ import { searchAccountsByDescription } from "../js/account-autocomplete.js";
 import { COUNTRIES, formatMoney, getCountry, getCurrencyInfo, currencyOptionLabel } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { parseBankCSV, matchBankLines, diagnoseBankLine } from "../js/finance.js";
-import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
+import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "../js/billing-core.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "../js/billing-accounting.js";
 
 let passed = 0, failed = 0;
@@ -68,6 +68,32 @@ test("paiements de facture : paiements partiels et solde restant", () => {
   const payments = [{ amount: 300 }, { amount: 200 }];
   assert.equal(calculatePaymentBalance(1200, payments), 700);
   assert.equal(calculatePaymentBalance(1200, [...payments, { amount: 700 }]), 0);
+});
+test("facturation : une ancienne avance avec paiements absents est reprise dans l'historique", () => {
+  const invoice = { type: "invoice", date: "2026-05-10", currency: "MAD", paidAmount: 350, totals: { ttc: 1000 } };
+  const migrated = migrateLegacyInvoicePayment(invoice, 12);
+  assert.equal(migrated.payments.length, 1);
+  assert.equal(migrated.payments[0].id, 12);
+  assert.equal(migrated.payments[0].amount, 350);
+  assert.equal(migrated.payments[0].method, "legacy");
+  assert.equal(migrated.payments[0].legacyImported, true);
+  assert.equal(migrated.nextPaymentId, 13);
+  assert.equal(calculatePaymentBalance(1000, migrated.payments), 650);
+});
+test("facturation : une ancienne avance est aussi reprise si la liste des paiements est vide", () => {
+  const invoice = { type: "invoice", date: "2026-05-11", currency: "MAD", paidAmount: 125, payments: [] };
+  const first = migrateLegacyInvoicePayment(invoice, 4);
+  const second = migrateLegacyInvoicePayment({ ...invoice, payments: first.payments }, first.nextPaymentId);
+  assert.equal(first.payments.length, 1);
+  assert.equal(second.payments.length, 1, "la migration ne doit pas créer de doublon");
+  assert.equal(second.nextPaymentId, 5);
+});
+test("facturation : les paiements existants et les factures sans avance ne sont pas modifiés", () => {
+  const existing = [{ id: 2, amount: 80, method: "bank" }];
+  assert.equal(migrateLegacyInvoicePayment({ paidAmount: 80, payments: existing }, 3).payments, existing);
+  const empty = migrateLegacyInvoicePayment({ paidAmount: 0, payments: [] }, 3);
+  assert.equal(empty.payments.length, 0);
+  assert.equal(empty.nextPaymentId, 3);
 });
 test("paiements de facture : validation et refus du trop-perçu", () => {
   const invoice = { type: "invoice", status: "issued", currency: "EUR", totals: { ttc: 1000 } };

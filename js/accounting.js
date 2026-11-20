@@ -154,6 +154,7 @@ export function reverseEntry(store, id, reversalDate = new Date().toISOString().
   const src = store.entries.find((e) => e.id === id);
   if (!src) return { ok: false, errors: ["Écriture introuvable."] };
   if (src.reversed) return { ok: false, errors: [`Écriture #${id} déjà contrepassée : opération refusée.`] };
+  if (isDateInClosedPeriod(src.date, store.settings?.closedPeriods || [])) return { ok: false, errors: ["Période comptable clôturée : cette écriture ne peut pas être contrepassée."] };
   const rev = {
     date: reversalDate,
     journal: src.journal,

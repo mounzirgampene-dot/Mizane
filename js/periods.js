@@ -1,5 +1,10 @@
 // MIZANE — Règles locales de contrôle des périodes comptables.
-import { validDate } from "./accounting.js";
+const validDate = value => {
+  const match = String(value || "").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  if (!match) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]);
+};
 
 export function validatePeriodRange(startDate, endDate) {
   if (!validDate(startDate) || !validDate(endDate)) return { ok: false, error: "Dates de période invalides." };

@@ -22,7 +22,7 @@ export function amortizationSchedule(amount, years, method = "lineaire") {
   const rows = [];
   let cumul = 0;
   for (let y = 1; y <= n; y++) {
-    let annuite = round2((amount - cumul) * rate);
+    let annuite = method === "lineaire" ? round2(Number(amount) / n) : round2((amount - cumul) * rate);
     if (y === n || cumul + annuite > amount) annuite = round2(amount - cumul);
     cumul = round2(cumul + annuite);
     rows.push({ year: y, rate: Math.round(rate * 10000) / 100, annuite, cumul, vnc: round2(amount - cumul) });

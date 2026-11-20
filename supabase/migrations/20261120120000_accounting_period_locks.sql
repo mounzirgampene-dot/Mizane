@@ -22,7 +22,7 @@ create index if not exists accounting_periods_company_status_dates_idx
 alter table public.accounting_periods enable row level security;
 alter table public.accounting_periods force row level security;
 create policy accounting_periods_select_members on public.accounting_periods
-  for select to authenticated using (public.is_active_company_member(company_id));
+  for select to authenticated using (private.is_active_company_member(company_id));
 revoke all on public.accounting_periods from public, anon, authenticated;
 grant select on public.accounting_periods to authenticated;
 

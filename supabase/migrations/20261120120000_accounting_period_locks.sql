@@ -58,6 +58,10 @@ begin
     raise exception 'Accès à cette entreprise refusé.' using errcode = '42501';
   end if;
 
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(p_company_id::text || ':accounting-periods', 0)
+  );
+
   if p_action = 'close' then
     if v_role not in ('admin', 'accountant') then
       raise exception 'Seul un administrateur ou un comptable peut clôturer une période.' using errcode = '42501';

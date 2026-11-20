@@ -76,6 +76,7 @@ export function viewTools() {
     const newStart = document.getElementById("cl-start").value;
     const newEnd = document.getElementById("cl-end").value;
     if (!newStart || !newEnd) return toast("Renseignez les dates du nouvel exercice.");
+    if (newStart <= s.exerciceEnd || newEnd < newStart) return toast("Le nouvel exercice doit commencer après la fin de l’exercice clôturé et se terminer après sa date de début.");
     const { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
     const out = document.getElementById("cl-result");
     if (!closing && !anew) { out.innerHTML = `<p class="muted">Rien à clôturer : aucune écriture sur cet exercice.</p>`; return; }

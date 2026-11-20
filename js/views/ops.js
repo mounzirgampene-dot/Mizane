@@ -1,6 +1,6 @@
 // MIZANE — Écran Outils : clôture d'exercice, immobilisations & amortissements, rapprochement bancaire.
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
-import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, closingProposal } from "../finance.js";
+import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 
@@ -185,41 +185,95 @@ export function viewTools() {
   });
 
   // ---- Rapprochement bancaire ----
+  const renderBankResult = (session) => {
+    const out = document.getElementById("bk-result");
+    if (!out) return;
+    const lines = session.lines || [];
+    const ok = lines.filter(m => m.status === "matched").length;
+    const pending = lines.length - ok;
+    const totalBank = lines.reduce((sum,line) => sum + Number(line.amount || 0),0);
+    const totalMatched = lines.filter(line => line.status === "matched").reduce((sum,line) => sum + Number(line.amount || 0),0);
+    out.innerHTML = `
+      <div class="grid cols-2">
+        <div class="card kpi"><div class="value">${ok} / ${lines.length}</div><div class="label">Opérations rapprochées</div></div>
+        <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
+      </div>
+      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · Tolérance : ±${session.days} jour(s). Total relevé : ${money(totalBank)} ; total rapproché : ${money(totalMatched)}.</p>
+      <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th class="num">Montant</th><th>Écriture</th><th>Compte</th><th>Action / état</th></tr></thead>
+      <tbody>${lines.map((m,index) => {
+        const options = (m.candidates || []).map(id => `<option value="${Number(id)}" ${Number(id)===Number(m.match)?"selected":""}>Écriture #${Number(id)}</option>`).join("");
+        return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
+          <td>${m.match ? `#${m.match} · ${esc(m.matchDate || "")}` : (m.candidates.length ? `Possibles : #${m.candidates.join(", #")}` : "Aucune correspondance")}</td>
+          <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
+          <td>${m.match ? `<span class="ok-msg">✓ ${m.manuallyMatched ? "Validée manuellement" : "Rapprochée"}</span>` : `<span class="warn">À vérifier</span>`}
+          ${m.status !== "matched" && m.candidates.length ? `<div class="row"><select data-bk-choice="${index}"><option value="">Choisir l'écriture</option>${options}</select><button class="small" data-bk-match="${index}">Valider</button></div>` : ""}
+          ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
+      }).join("")}</tbody></table></div>
+      <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button></div>
+      <p class="muted">Les rapprochements validés sont conservés dans cet appareil. Les lignes importées déjà présentes dans un relevé précédent sont détectées pour éviter les doublons.</p>`;
+    document.getElementById("bk-unmatched-only")?.addEventListener("change", event => {
+      out.querySelectorAll("[data-bk-row]").forEach(row => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
+    });
+    out.querySelectorAll("[data-bk-match]").forEach(button => button.addEventListener("click", () => {
+      const index = Number(button.dataset.bkMatch);
+      const selected = out.querySelector(`[data-bk-choice="${index}"]`)?.value;
+      if (!selected) return toast("Choisissez une écriture comptable.");
+      try {
+        const updated = reconcileBankLine(session.lines[index], Number(selected), store);
+        const duplicate = session.lines.some((line,i) => i !== index && Number(line.match) === Number(selected));
+        if (duplicate) return toast("Cette écriture est déjà affectée à une autre ligne du relevé.");
+        session.lines[index] = updated;
+        saveStore(store);
+        renderBankResult(session);
+      } catch(error) { toast(error.message); }
+    }));
+    out.querySelectorAll("[data-bk-unmatch]").forEach(button => button.addEventListener("click", () => {
+      const line = session.lines[Number(button.dataset.bkUnmatch)];
+      line.match = null; line.matchAccount = null; line.matchDate = null; line.status = "unmatched"; line.manuallyMatched = false;
+      saveStore(store); renderBankResult(session);
+    }));
+    document.getElementById("bk-csv")?.addEventListener("click", () => {
+      downloadBlob(new Blob(["\\ufeff" + toCSV(lines.map(m => ({
+        date:m.date,libelle:m.label,montant:m.amount,ecriture:m.match||"",compte:m.matchAccount||"",
+        etat:m.status==="matched"?"Rapprochée":"À vérifier",validation:m.manuallyMatched?"Manuelle":"Automatique"
+      })))],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
+    });
+  };
+
   document.getElementById("bk-run").addEventListener("click", () => {
     const lines = parseBankCSV(document.getElementById("bk-text").value);
     const out = document.getElementById("bk-result");
     if (!lines.length) { out.innerHTML = `<p class="errors">Aucune ligne exploitable. Format attendu : <code>date;libellé;montant</code></p>`; return; }
+    const priorKeys = new Set((store.bankReconciliations || []).flatMap(session => (session.lines || []).map(bankLineKey)));
+    const seen = new Set();
+    const unique = lines.filter(line => {
+      const key = bankLineKey(line);
+      if (priorKeys.has(key) || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    if (!unique.length) { out.innerHTML = '<p class="warn">Toutes les opérations de ce relevé ont déjà été importées. Aucun doublon créé.</p>'; return; }
     const days = Number(document.getElementById("bk-days").value) || 0;
-    const matched = matchBankLines(store, lines, days);
-    const ok = matched.filter((m) => m.status === "matched").length;
-    const pending = matched.length - ok;
-    const totalBank = matched.reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    const totalMatched = matched.filter((line) => line.status === "matched").reduce((sum, line) => sum + Number(line.amount || 0), 0);
-    out.innerHTML = `
-      <div class="grid cols-2">
-        <div class="card kpi"><div class="value">${ok} / ${matched.length}</div><div class="label">Opérations rapprochées</div></div>
-        <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
-      </div>
-      <p class="muted">Tolérance appliquée : ±${days} jour(s). Montant du relevé : ${money(totalBank)} ; montant des opérations rapprochées : ${money(totalMatched)}.</p>
-      <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
-      <div class="table-wrap"><table><thead><tr><th>Date relevé</th><th>Libellé</th><th class="num">Montant</th><th>Écriture MIZANE</th><th>Compte</th><th>État</th></tr></thead>
-      <tbody>${matched.map((m) => `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
-        <td>${m.match ? `#${m.match} — ${esc(m.matchDate || "")}` : (m.candidates.length ? `Correspondances possibles : #${m.candidates.join(", #")}` : "Aucune correspondance exacte")}</td>
-        <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
-        <td>${m.match ? `<span class="ok-msg">✓ Rapprochée</span>` : `<span class="warn">⚠ À vérifier</span>`}</td></tr>`).join("")}</tbody></table></div>
-      <p class="muted">Une même ligne comptable ne peut plus être affectée à plusieurs opérations du relevé. Les lignes non rapprochées nécessitent un contrôle manuel.</p>
-      <div class="actions">
-        <button class="secondary" id="bk-csv">⬇ Exporter le rapprochement (CSV)</button>
-      </div>`;
-    document.getElementById("bk-unmatched-only").addEventListener("change", (event) => {
-      out.querySelectorAll("[data-bk-row]").forEach((row) => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
-    });
-    document.getElementById("bk-csv").addEventListener("click", () => {
-      downloadBlob(new Blob(["\ufeff" + toCSV(matched.map((m) => ({
-        date: m.date, libelle: m.label, montant: m.amount, ecriture: m.match || "",
-        compte: m.matchAccount || "", etat: m.status === "matched" ? "Rapprochée" : "À vérifier",
-      })))], { type: "text/csv;charset=utf-8" }), "mizane-rapprochement.csv");
-    });
+    const matched = matchBankLines(store, unique, days);
+    const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, lines:matched };
+    if (!Array.isArray(store.bankReconciliations)) store.bankReconciliations = [];
+    store.bankReconciliations.unshift(session);
+    store.bankReconciliations = store.bankReconciliations.slice(0,50);
+    saveStore(store);
+    renderBankResult(session);
+    if (lines.length > unique.length) toast((lines.length-unique.length) + " ligne(s) déjà importée(s) ignorée(s).");
+  });
+
+  // Historique des relevés déjà traités
+  if ((store.bankReconciliations || []).length) {
+    const history = document.createElement("div");
+    history.className = "card";
+    history.innerHTML = `<h3>Historique des rapprochements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Opérations</th><th>Rapprochées</th><th>À vérifier</th><th></th></tr></thead><tbody>${store.bankReconciliations.map((session,index) => {
+      const ok=(session.lines||[]).filter(line=>line.status==="matched").length;
+      return `<tr><td>${esc(session.createdAt.slice(0,10))}</td><td>${session.lines.length}</td><td>${ok}</td><td>${session.lines.length-ok}</td><td><button class="secondary small" data-bk-history="${index}">Ouvrir</button></td></tr>`;
+    }).join("")}</tbody></table></div>`;
+    document.getElementById("bk-result").after(history);
+    history.querySelectorAll("[data-bk-history]").forEach(button => button.addEventListener("click", () => renderBankResult(store.bankReconciliations[Number(button.dataset.bkHistory)])));
   });
 }
 

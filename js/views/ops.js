@@ -208,8 +208,8 @@ export function viewTools() {
           <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
           <td>${m.match ? `<span class="ok-msg">✓ ${m.manuallyMatched ? "Validée manuellement" : "Rapprochée"}</span>` : `<span class="warn">À vérifier</span>`}
           ${m.status !== "matched" && m.candidates.length ? `<div class="row"><select data-bk-choice="${index}"><option value="">Choisir l'écriture</option>${options}</select><button class="small" data-bk-match="${index}">Valider</button></div>` : ""}
-          \${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return \`<p class="muted">\${esc(d.label)} — \${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="\${index}">Préparer une écriture</button>\`; })() : ""}
-          \${m.status === "matched" ? \`<button class="secondary small" data-bk-unmatch="\${index}">Défaire</button>\` : ""}</td></tr>`;
+          ${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return `<p class="muted">${esc(d.label)} — ${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="${index}">Préparer une écriture</button>`; })() : ""}
+          ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>
       <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button></div>
       <p class="muted">Les rapprochements et écritures de régularisation sont enregistrés dans les données synchronisées de l’entreprise. Vérifiez toujours les comptes proposés avant de comptabiliser ; la TVA n’est pas calculée automatiquement.</p>`;

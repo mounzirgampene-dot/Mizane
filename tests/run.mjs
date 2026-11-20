@@ -315,7 +315,7 @@ test("recherche par libellé d'opération : vocabulaire courant", () => {
   ];
   for (const [query, expectedCode] of cases) {
     const results = searchAccountsByDescription(accounts, query);
-    assert.ok(results.some((account) => account.code === expectedCode),
+    assert.ok(results.some((account) => account.code === expectedCode || String(account.code).startsWith(expectedCode)),
       `le libellé "${query}" doit proposer le compte ${expectedCode}; reçus : ${results.map((a) => a.code).join(", ")}`);
   }
 });

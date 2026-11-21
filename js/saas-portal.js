@@ -12,6 +12,8 @@ let activeCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || "";
 let pendingInvitationToken = new URLSearchParams(location.hash.slice(1)).get("invitation") || "";
 let passwordRecoveryMode = false;
 let accountingCloudReady = false;
+let loginCountdownTimer = null;
+const LOGIN_LOCK_KEY = "mizane_login_lock_v1";
 const recoveryLinkDetected = new URLSearchParams(location.hash.slice(1)).get("type") === "recovery";
 if (pendingInvitationToken) history.replaceState(null, "", location.pathname + location.search);
 
@@ -20,6 +22,14 @@ const roleLabel = (role) => ({admin:"Administrateur",accountant:"Comptable",read
 function toast(message){toastNode.textContent=message;toastNode.classList.add("show");setTimeout(()=>toastNode.classList.remove("show"),3500)}
 function showError(error){const msg=error?.message||String(error);toast(msg);const box=root.querySelector("[data-error]");if(box){box.textContent=msg;box.classList.remove("hidden")}}
 function busy(button,on){if(button){button.disabled=on;button.dataset.oldText ||= button.textContent;button.textContent=on?"Patientez…":button.dataset.oldText}}
+function loginLockStorageKey(email){return LOGIN_LOCK_KEY+":"+String(email||"").trim().toLowerCase()}
+function readLoginLock(email){try{return JSON.parse(localStorage.getItem(loginLockStorageKey(email))||"{\"failures\":0,\"level\":0,\"lockUntil\":0}")}catch{return {failures:0,level:0,lockUntil:0}}}
+function writeLoginLock(email,state){localStorage.setItem(loginLockStorageKey(email),JSON.stringify(state))}
+function clearLoginLock(email){localStorage.removeItem(loginLockStorageKey(email))}
+function registerLoginFailure(email){const state=readLoginLock(email);state.failures=(state.failures||0)+1;if(state.failures>=5){const delays=[30,60,120];const seconds=delays[Math.min(state.level||0,2)];state.failures=0;state.lockUntil=Date.now()+seconds*1000;state.level=Math.min((state.level||0)+1,2);writeLoginLock(email,state);updateLoginLockUI();return seconds}writeLoginLock(email,state);return 0}
+function updateLoginLockUI(){const form=root.querySelector("#auth-form"),notice=root.querySelector("#login-lockout");if(!form||!notice)return;const email=form.querySelector("#email")?.value||"",state=readLoginLock(email),remaining=Math.max(0,Math.ceil((state.lockUntil-Date.now())/1000)),submit=form.querySelector("button[type=submit]");if(remaining>0){notice.textContent="Trop de tentatives de connexion. Vous pourrez réessayer dans "+remaining+" seconde"+(remaining>1?"s":"")+".";notice.classList.remove("hidden");if(submit){submit.disabled=true;submit.textContent="Réessayez dans "+remaining+" s"}}else{notice.textContent="";notice.classList.add("hidden");if(submit){submit.disabled=false;submit.textContent="Se connecter"}if(state.lockUntil){state.lockUntil=0;writeLoginLock(email,state)}}}
+function startLoginLockCountdown(){if(loginCountdownTimer)clearInterval(loginCountdownTimer);updateLoginLockUI();loginCountdownTimer=setInterval(()=>{if(!root.querySelector("#auth-form")){clearInterval(loginCountdownTimer);loginCountdownTimer=null;return}updateLoginLockUI()},250)}
+
 function configError(){
  root.innerHTML=`<section class="panel"><p class="eyebrow">Configuration requise</p><h1>Connecter MIZANE à Supabase</h1><p>Le portail SaaS est séparé de l'application comptable locale. Pour l'activer, configurez l'URL du projet et la clé publique Supabase.</p><div class="notice">Copiez <code>js/supabase-config.example.js</code> vers <code>js/supabase-config.js</code>, puis remplacez les deux valeurs d'exemple. Utilisez uniquement la clé publique anon/publishable.</div><div class="actions"><a class="button secondary" href="index.html">Ouvrir la comptabilité locale</a></div></section>`;
 }
@@ -28,7 +38,9 @@ function recoveryView(){
 }
 function authView(mode="login"){
  const signup=mode==="signup";
- root.innerHTML=`<section class="panel"><p class="eyebrow">MIZANE · Compte utilisateur unique</p><h1>${signup?"Créer votre compte":"Connexion à votre espace"}</h1><p>Un seul compte peut accéder à plusieurs entreprises, avec un rôle indépendant dans chacune.</p><div class="tabs"><button data-mode="login" aria-pressed="${!signup}">Connexion</button><button class="secondary" data-mode="signup" aria-pressed="${signup}">Créer un compte</button></div><form id="auth-form"><div class="field ${signup?"":"hidden"}" id="name-field"><label for="display-name">Nom complet</label><input id="display-name" autocomplete="name" maxlength="100" ${signup?"required":"disabled"}></div><div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" minlength="${signup?12:8}" autocomplete="${signup?"new-password":"current-password"}" required></div><p class="notice hidden" data-error></p><div class="actions"><button type="submit">${signup?"Créer mon compte":"Se connecter"}</button><button type="button" class="secondary" data-action="forgot">Mot de passe oublié</button></div></form><p class="muted">L'application comptable locale reste accessible indépendamment du compte SaaS.</p><a href="index.html">← Retour à la comptabilité locale</a></section>`;
+ if(loginCountdownTimer){clearInterval(loginCountdownTimer);loginCountdownTimer=null;}
+ root.innerHTML=`<section class="panel"><p class="eyebrow">MIZANE · Compte utilisateur unique</p><h1>${signup?"Créer votre compte":"Connexion à votre espace"}</h1><p>Un seul compte peut accéder à plusieurs entreprises, avec un rôle indépendant dans chacune.</p><div class="tabs"><button data-mode="login" aria-pressed="${!signup}">Connexion</button><button class="secondary" data-mode="signup" aria-pressed="${signup}">Créer un compte</button></div><form id="auth-form"><div class="field ${signup?"":"hidden"}" id="name-field"><label for="display-name">Nom complet</label><input id="display-name" autocomplete="name" maxlength="100" ${signup?"required":"disabled"}></div><div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" minlength="${signup?12:8}" autocomplete="${signup?"new-password":"current-password"}" required>${signup?`<div class="password-guidance" id="password-guidance" aria-live="polite"><p>Votre mot de passe doit respecter les critères suivants :</p><ul><li data-password-rule="length">Au moins 12 caractères</li><li data-password-rule="lower">Une lettre minuscule (a-z)</li><li data-password-rule="upper">Une lettre majuscule (A-Z)</li><li data-password-rule="number">Un chiffre (0-9)</li><li data-password-rule="symbol">Un caractère spécial (ex. @, #, !, $)</li></ul></div>`:""}</div><p class="notice hidden" data-error></p><p id="login-lockout" class="notice lockout-notice hidden" role="status" aria-live="polite"></p><div class="actions"><button type="submit">${signup?"Créer mon compte":"Se connecter"}</button><button type="button" class="secondary" data-action="forgot">Mot de passe oublié</button></div></form><p class="muted">L'application comptable locale reste accessible indépendamment du compte SaaS.</p><a href="index.html">← Retour à la comptabilité locale</a></section>`;
+ if(!signup)startLoginLockCountdown();
 }
 function dashboardView(){
  const active=memberships.find(x=>x.company.id===activeCompanyId);
@@ -198,6 +210,15 @@ async function loadManagement(){
   invitesNode.innerHTML=inviteData.invitations.length?inviteData.invitations.map(i=>'<article class="company"><div class="topline"><strong>'+esc(i.email)+'</strong><span class="role">'+esc(roleLabel(i.role))+'</span></div><p class="company-meta">Expire le '+esc(new Date(i.expires_at).toLocaleString("fr-FR"))+'</p><button class="danger" data-action="revoke-invitation" data-invitation-id="'+esc(i.id)+'">Révoquer l’invitation</button></article>').join(""):"<div class=\"empty\">Aucune invitation en attente.</div>";
  }catch(error){membersNode.textContent=error.message;invitesNode.textContent="Impossible de charger les invitations."}
 }
+root.addEventListener("input",(e)=>{
+ if(e.target?.id!=="password")return;
+ const value=e.target.value;
+ const checks={length:value.length>=12,lower:/[a-z]/.test(value),upper:/[A-Z]/.test(value),number:/[0-9]/.test(value),symbol:/[^A-Za-z0-9]/.test(value)};
+ for(const [rule,valid] of Object.entries(checks)){
+  const item=root.querySelector(`[data-password-rule="${rule}"]`);
+  if(item){item.classList.toggle("valid",valid);item.setAttribute("aria-label",item.textContent+(valid?" : satisfait":" : non satisfait"));}
+ }
+});
 root.addEventListener("click",async(e)=>{
  const mode=e.target.closest("[data-mode]");if(mode){authView(mode.dataset.mode);return}
  const button=e.target.closest("[data-action]");if(!button)return;
@@ -254,7 +275,7 @@ root.addEventListener("change",async(e)=>{
  try{await edge("set_member_role",{company_id:activeCompanyId,user_id:select.dataset.userId,role:nextRole});await loadManagement();toast("Rôle du collaborateur mis à jour.")}catch(error){showError(error);await loadManagement()}
 });
 root.addEventListener("submit",async(e)=>{
- e.preventDefault();const form=e.target;const submit=form.querySelector('button[type="submit"]');busy(submit,true);
+ e.preventDefault();const form=e.target;const submit=form.querySelector('button[type="submit"]');if(form.id==="auth-form"&&form.querySelector("#name-field")?.classList.contains("hidden")){const lock=readLoginLock(form.querySelector("#email").value.trim());if(lock.lockUntil>Date.now()){updateLoginLockUI();return}}busy(submit,true);
  try{
   if(form.id==="recovery-form"){
    const password=form.querySelector("#new-password").value;
@@ -266,8 +287,11 @@ root.addEventListener("submit",async(e)=>{
   }
   if(form.id==="auth-form"){
    const email=form.querySelector("#email").value.trim();const password=form.querySelector("#password").value;const signup=!!form.querySelector("#display-name")&&!form.querySelector("#name-field").classList.contains("hidden");
+   // Apply the same strong-password rule to new accounts and password recovery.
+   // Existing users can still sign in with their current password.
+   if(signup&&!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{12,}$/.test(password))throw new Error("Le mot de passe doit contenir au moins 12 caractères, une majuscule, une minuscule, un chiffre et un symbole.");
    if(signup){const display_name=form.querySelector("#display-name").value.trim();const {data,error}=await supabase.auth.signUp({email,password,options:{data:{display_name},emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(!data.session){toast("Compte créé. Vérifiez votre boîte e-mail pour confirmer l'inscription.");authView("login");return}session=data.session;await refresh();}
-   else{const {data,error}=await supabase.auth.signInWithPassword({email,password});if(error)throw error;session=data.session;await refresh();}
+   else{const {data,error}=await supabase.auth.signInWithPassword({email,password});if(error){if(error.code==="invalid_credentials"||(error.status===400&&/invalid login credentials/i.test(error.message||"")))registerLoginFailure(email);throw error;}clearLoginLock(email);session=data.session;await refresh();}
   }
   if(form.id==="create-form"){
    const {data,error}=await supabase.rpc("create_company",{p_legal_name:form.querySelector("#legal-name").value.trim(),p_country_code:form.querySelector("#country").value.toUpperCase(),p_base_currency:form.querySelector("#currency").value.toUpperCase(),p_accounting_standard:form.querySelector("#standard").value,p_timezone:form.querySelector("#timezone").value.trim()});if(error)throw error;activeCompanyId=data;await refresh();toast("Entreprise créée. Vous êtes administrateur de cet espace.");
@@ -284,7 +308,7 @@ root.addEventListener("submit",async(e)=>{
    target.innerHTML=`Invitation créée pour <strong>${esc(result.invitation.email)}</strong>. Elle expire le ${esc(expires)}.<div class="field" style="margin-top:12px"><label for="created-invitation-link">Lien à transmettre au collaborateur</label><input id="created-invitation-link" type="url" readonly value="${link}"></div><div class="actions"><button type="button" data-action="copy-invitation-link" data-link="${link}">Copier le lien</button><a class="button secondary" href="${link}" target="_blank" rel="noopener">Ouvrir le lien</a></div><p class="muted">Transmettez ce lien uniquement à ${esc(result.invitation.email)}.</p>`;
    target.classList.remove("hidden");form.reset();await loadManagement();
   }
- }catch(error){showError(error)}finally{busy(submit,false)}
+ }catch(error){showError(error)}finally{busy(submit,false);if(form.id==="auth-form"&&form.querySelector("#name-field")?.classList.contains("hidden"))updateLoginLockUI()}
 });
 root.addEventListener("click",async(e)=>{const b=e.target.closest('[data-action="copy-invitation-link"]');if(b){try{await navigator.clipboard.writeText(b.dataset.link);toast("Lien d’invitation copié.")}catch{const field=root.querySelector("#created-invitation-link");field?.select();toast("Sélectionnez le lien puis copiez-le manuellement.")}}});
 async function start(){

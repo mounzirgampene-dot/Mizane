@@ -26,3 +26,16 @@ button,.button{border:0;border-radius:9px;padding:11px 16px;background:#0f766e;c
 .history-item strong{color:#174f4e}
 .history-summary{margin:5px 0;font-size:.9rem;color:#415b62}
 @media(max-width:760px){.portal-layout{grid-template-columns:1fr;gap:12px}.portal-sidebar{position:static;flex-direction:row;overflow-x:auto;gap:6px;padding:9px}.portal-sidebar-label{display:none}.portal-side-link{width:auto;white-space:nowrap;flex:0 0 auto;padding:10px 12px}}
+
+/* Critères du mot de passe à l’inscription */
+.password-guidance{margin-top:10px;padding:12px 14px;border:1px solid #dce7e8;border-radius:9px;background:#f7fafb}
+.password-guidance p{margin:0 0 7px;font-size:.82rem;font-weight:650;color:#354e55}
+.password-guidance ul{margin:0;padding-left:20px;display:grid;gap:4px}
+.password-guidance li{font-size:.82rem;color:#8a5550}
+.password-guidance li::marker{content:"○  "}
+.password-guidance li.valid{color:#17653a}
+.password-guidance li.valid::marker{content:"✓  "}
+
+/* Compte à rebours après plusieurs échecs de connexion */
+.lockout-notice{margin:12px 0;padding:12px 14px;border:1px solid #e7c98d;border-radius:9px;background:#fff8e8;color:#80520d;font-weight:650;font-variant-numeric:tabular-nums}
+.lockout-notice.hidden{display:none}

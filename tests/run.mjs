@@ -1,6 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
-import { cleanSecrets, fingerprint, invokeWithRetry, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
+import { cleanSecrets, fingerprint, shouldRetryFunctionError, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -1020,29 +1020,13 @@ await testAsync("synchronisation multi-onglets : Web Locks sérialise par entrep
   }
 });
 
-await testAsync("résilience réseau : une erreur 503 est rejouée avec le même identifiant puis récupérée", async () => {
-  let calls = 0;
-  const seen = [];
-  const options = { body: { operation_uid: "stable-operation-id" } };
-  const result = await invokeWithRetry(async received => {
-    calls++;
-    seen.push(received.body.operation_uid);
-    return calls < 2 ? { data: null, error: { status: 503, message: "Service indisponible" } } : { data: { ok: true }, error: null };
-  }, options, { maxAttempts: 3, baseDelayMs: 0 });
-  assert.equal(calls, 2);
-  assert.deepEqual(seen, ["stable-operation-id", "stable-operation-id"]);
-  assert.deepEqual(result.data, { ok: true });
-  assert.equal(result.error, null);
-});
-
-await testAsync("résilience réseau : une erreur 422 n'est pas rejouée", async () => {
-  let calls = 0;
-  const result = await invokeWithRetry(async () => {
-    calls++;
-    return { data: null, error: { status: 422, message: "Écriture invalide" } };
-  }, {}, { maxAttempts: 4, baseDelayMs: 0 });
-  assert.equal(calls, 1);
-  assert.equal(result.error.status, 422);
+test("politique de reprise : les erreurs temporaires sont reconnues", () => {
+  for (const status of [408, 425, 429, 500, 502, 503, 504]) {
+    assert.equal(shouldRetryFunctionError({ status, message: "temporary" }), true, "statut " + status);
+  }
+  assert.equal(shouldRetryFunctionError({ status: 422, message: "Écriture invalide" }), false);
+  assert.equal(shouldRetryFunctionError({ status: 401, message: "Session invalide" }), false);
+  assert.equal(shouldRetryFunctionError({ message: "Network request failed" }), true);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

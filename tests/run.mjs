@@ -1,6 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
-import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
+import { cleanSecrets, fingerprint, invokeWithRetry, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -998,6 +998,40 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;
   }
+});
+
+await testAsync("résilience réseau : une erreur 503 est rejouée puis récupérée", async () => {
+  let calls = 0;
+  const result = await invokeWithRetry(async () => {
+    calls++;
+    return calls < 2 ? { data: null, error: { status: 503, message: "Service indisponible" } } : { data: { ok: true }, error: null };
+  }, { body: { operation_uid: "stable-operation-id" } }, { maxAttempts: 3, baseDelayMs: 0 });
+  assert.equal(calls, 2);
+  assert.deepEqual(result.data, { ok: true });
+  assert.equal(result.error, null);
+});
+
+await testAsync("résilience réseau : une erreur 422 n'est pas rejouée", async () => {
+  let calls = 0;
+  const result = await invokeWithRetry(async () => {
+    calls++;
+    return { data: null, error: { status: 422, message: "Écriture invalide" } };
+  }, {}, { maxAttempts: 4, baseDelayMs: 0 });
+  assert.equal(calls, 1);
+  assert.equal(result.error.status, 422);
+});
+
+await testAsync("résilience réseau : les tentatives conservent le même identifiant de lot", async () => {
+  const seen = [];
+  let calls = 0;
+  const options = { body: { operation_uid: "operation-id-inchange", operations: [{ client_uid: "entry-1" }] } };
+  await invokeWithRetry(async received => {
+    seen.push(received.body.operation_uid);
+    calls++;
+    return calls < 3 ? { data: null, error: { status: 504, message: "Gateway timeout" } } : { data: { ok: true }, error: null };
+  }, options, { maxAttempts: 3, baseDelayMs: 0 });
+  assert.equal(calls, 3);
+  assert.deepEqual(seen, ["operation-id-inchange", "operation-id-inchange", "operation-id-inchange"]);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

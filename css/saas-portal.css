@@ -35,3 +35,7 @@ button,.button{border:0;border-radius:9px;padding:11px 16px;background:#0f766e;c
 .password-guidance li::marker{content:"○  "}
 .password-guidance li.valid{color:#17653a}
 .password-guidance li.valid::marker{content:"✓  "}
+
+/* Compte à rebours après plusieurs échecs de connexion */
+.lockout-notice{margin:12px 0;padding:12px 14px;border:1px solid #e7c98d;border-radius:9px;background:#fff8e8;color:#80520d;font-weight:650;font-variant-numeric:tabular-nums}
+.lockout-notice.hidden{display:none}

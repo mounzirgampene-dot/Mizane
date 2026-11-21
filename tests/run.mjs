@@ -1002,17 +1002,21 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
 
 await testAsync("synchronisation multi-onglets : Web Locks sérialise par entreprise", async () => {
   const previousNavigator = globalThis.navigator;
+  const previousStorage = globalThis.localStorage;
   let captured = null;
   globalThis.navigator = { locks: { request: async (name, options, callback) => {
     captured = { name, mode: options.mode };
     return callback();
   } } };
+  globalThis.localStorage = { getItem: () => null };
   try {
-    await assert.rejects(syncAccounting({}, "", "admin"), /Aucune entreprise cloud sélectionnée/);
-    assert.deepEqual(captured, { name: "mizane-accounting-sync:", mode: "exclusive" });
+    await assert.rejects(syncAccounting({}, "company-test", "admin"), /Aucune comptabilité locale/);
+    assert.deepEqual(captured, { name: "mizane-accounting-sync:company-test", mode: "exclusive" });
   } finally {
     if (previousNavigator === undefined) delete globalThis.navigator;
     else globalThis.navigator = previousNavigator;
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
   }
 });
 

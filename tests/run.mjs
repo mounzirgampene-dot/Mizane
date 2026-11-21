@@ -1000,6 +1000,22 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
   }
 });
 
+await testAsync("synchronisation multi-onglets : Web Locks sérialise par entreprise", async () => {
+  const previousNavigator = globalThis.navigator;
+  let captured = null;
+  globalThis.navigator = { locks: { request: async (name, options, callback) => {
+    captured = { name, mode: options.mode };
+    return callback();
+  } } };
+  try {
+    await assert.rejects(syncAccounting({}, "", "admin"), /Aucune entreprise cloud sélectionnée/);
+    assert.deepEqual(captured, { name: "mizane-accounting-sync:", mode: "exclusive" });
+  } finally {
+    if (previousNavigator === undefined) delete globalThis.navigator;
+    else globalThis.navigator = previousNavigator;
+  }
+});
+
 await testAsync("résilience réseau : une erreur 503 est rejouée puis récupérée", async () => {
   let calls = 0;
   const result = await invokeWithRetry(async () => {

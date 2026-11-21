@@ -116,11 +116,28 @@ function localSnapshot(store) {
   };
   return records;
 }
+export async function invokeWithRetry(invoke, options, { maxAttempts = 4, baseDelayMs = 250 } = {}) {
+  let lastResult = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try { lastResult = await invoke(options); }
+    catch (error) { lastResult = { data: null, error }; }
+    if (!lastResult?.error) return lastResult;
+    const error = lastResult.error;
+    const status = Number(error?.context?.status ?? error?.status ?? 0);
+    const message = String(error?.message || "");
+    const retryable = [408, 425, 429, 500, 502, 503, 504].includes(status) ||
+      (!status && /network|fetch|timeout|temporar|connection/i.test(message));
+    if (!retryable || attempt === maxAttempts - 1) return lastResult;
+    await new Promise(resolve => setTimeout(resolve, baseDelayMs * (2 ** attempt)));
+  }
+  return lastResult || { data: null, error: new Error("Échec temporaire de la requête.") };
+}
+
 async function readCloud(supabase, companyId) {
   const all={settings:null,custom_accounts:[],thirds:[],assets:[],entries:[]};
   let offset=0, first=true;
   do {
-    const {data,error}=await supabase.functions.invoke("read-accounting",{body:{company_id:companyId,limit:100,offset,changes_since:0}});
+    const {data,error}=await invokeWithRetry(options => supabase.functions.invoke("read-accounting",options),{body:{company_id:companyId,limit:100,offset,changes_since:0}});
     if(error) throw await edgeError(error,"Lecture cloud impossible.");
     if(!data||data.company_id!==companyId) throw new Error("Réponse cloud incohérente.");
     if(first){all.settings=data.settings;all.custom_accounts=data.custom_accounts||[];all.thirds=data.thirds||[];all.assets=data.assets||[];first=false;}
@@ -250,7 +267,7 @@ function saveShadow(companyId, records) {
   }
   localStorage.setItem(SHADOW_PREFIX+companyId,JSON.stringify(clean));
 }
-export async function syncAccounting(supabase, companyId, role) {
+async function syncAccountingUnlocked(supabase, companyId, role) {
   if(running)throw new Error("Une synchronisation est déjà en cours sur cet appareil.");
   running=true;
   try {
@@ -383,6 +400,16 @@ export async function syncAccounting(supabase, companyId, role) {
     saveShadow(companyId,finalShadow);
     return {pushed:operations.length,pulled,conflicts:0,initialized:false};
   } finally { running=false; }
+}
+
+export async function syncAccounting(supabase, companyId, role) {
+  const locks = globalThis.navigator?.locks;
+  if (companyId && typeof locks?.request === "function") {
+    return locks.request(`mizane-accounting-sync:${companyId}`, { mode: "exclusive" }, () =>
+      syncAccountingUnlocked(supabase, companyId, role)
+    );
+  }
+  return syncAccountingUnlocked(supabase, companyId, role);
 }
 
 export { cleanSecrets, fingerprint, localSnapshot, orderOperations, validateSyncStore };

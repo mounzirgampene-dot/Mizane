@@ -57,9 +57,14 @@ Deno.serve(async (request) => {
   const admin = createClient(url, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { data: authData, error: authError } = await admin.auth.getUser(jwt);
-  const actor = authData.user;
-  if (authError || !actor) return fail(401, "Session invalide ou expirée.");
+  // Vérifie cryptographiquement le JWT. Avec une clé asymétrique, getClaims
+  // utilise le JWKS mis en cache et évite un aller-retour Auth à chaque lecture.
+  // Avec HS256, le SDK conserve la validation côté Auth : aucun affaiblissement.
+  const { data: claimsData, error: claimsError } = await admin.auth.getClaims(jwt);
+  const actorId = claimsData?.claims?.sub;
+  if (claimsError || typeof actorId !== "string" || !validUuid(actorId)) {
+    return fail(401, "Session invalide ou expirée.");
+  }
 
   let body: Record<string, unknown>;
   try {
@@ -84,7 +89,7 @@ Deno.serve(async (request) => {
     .from("company_memberships")
     .select("role,status")
     .eq("company_id", companyId)
-    .eq("user_id", actor.id)
+    .eq("user_id", actorId)
     .maybeSingle();
 
   if (membershipError) {

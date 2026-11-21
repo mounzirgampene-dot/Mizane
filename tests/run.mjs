@@ -1,6 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
-import { cleanSecrets, fingerprint, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
+import { cleanSecrets, fingerprint, shouldRetryFunctionError, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
   incomeStatement, balanceSheet, checkAnomalies, cashBalance, toCSV, buildAccountCache,
@@ -998,6 +998,35 @@ await testAsync("rôle lecteur : les données locales en attente ne sont jamais 
     if (previousStorage === undefined) delete globalThis.localStorage;
     else globalThis.localStorage = previousStorage;
   }
+});
+
+await testAsync("synchronisation multi-onglets : Web Locks sérialise par entreprise", async () => {
+  const previousNavigator = globalThis.navigator;
+  const previousStorage = globalThis.localStorage;
+  let captured = null;
+  globalThis.navigator = { locks: { request: async (name, options, callback) => {
+    captured = { name, mode: options.mode };
+    return callback();
+  } } };
+  globalThis.localStorage = { getItem: () => null };
+  try {
+    await assert.rejects(syncAccounting({}, "company-test", "admin"), /Aucune comptabilité locale/);
+    assert.deepEqual(captured, { name: "mizane-accounting-sync:company-test", mode: "exclusive" });
+  } finally {
+    if (previousNavigator === undefined) delete globalThis.navigator;
+    else globalThis.navigator = previousNavigator;
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
+
+test("politique de reprise : les erreurs temporaires sont reconnues", () => {
+  for (const status of [408, 425, 429, 500, 502, 503, 504]) {
+    assert.equal(shouldRetryFunctionError({ status, message: "temporary" }), true, "statut " + status);
+  }
+  assert.equal(shouldRetryFunctionError({ status: 422, message: "Écriture invalide" }), false);
+  assert.equal(shouldRetryFunctionError({ status: 401, message: "Session invalide" }), false);
+  assert.equal(shouldRetryFunctionError({ message: "Network request failed" }), true);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

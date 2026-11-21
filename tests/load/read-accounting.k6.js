@@ -8,6 +8,7 @@ const companyId = __ENV.COMPANY_ID || "";
 const peakVus = Math.max(1, Number(__ENV.MAX_VUS || 50));
 
 export const options = {
+  summaryTrendStats: ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"],
   stages: [
     { duration: "30s", target: Math.max(1, Math.ceil(peakVus * 0.1)) },
     { duration: "60s", target: Math.ceil(peakVus * 0.5) },

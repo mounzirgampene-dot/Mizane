@@ -27,7 +27,7 @@ jobs:
           node-version: 20
           cache: npm
       - name: Installer les dépendances
-        run: npm ci
+        run: npm ci || npm install
       - name: Vérifier le style et les erreurs
         run: npm run lint
       - name: Exécuter les tests fonctionnels et de résilience

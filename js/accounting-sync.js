@@ -116,19 +116,21 @@ function localSnapshot(store) {
   };
   return records;
 }
+export function shouldRetryFunctionError(error) {
+  const status = Number(error?.context?.status ?? error?.status ?? 0);
+  const message = String(error?.message || "");
+  return [408, 425, 429, 500, 502, 503, 504].includes(status) ||
+    (!status && /network|fetch|timeout|temporar|connection/i.test(message));
+}
+
 export async function invokeWithRetry(invoke, options, { maxAttempts = 4, baseDelayMs = 250 } = {}) {
   let lastResult = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try { lastResult = await invoke(options); }
     catch (error) { lastResult = { data: null, error }; }
     if (!lastResult?.error) return lastResult;
-    const error = lastResult.error;
-    const status = Number(error?.context?.status ?? error?.status ?? 0);
-    const message = String(error?.message || "");
-    const retryable = [408, 425, 429, 500, 502, 503, 504].includes(status) ||
-      (!status && /network|fetch|timeout|temporar|connection/i.test(message));
-    if (!retryable || attempt === maxAttempts - 1) return lastResult;
-    await new Promise(resolve => setTimeout(resolve, baseDelayMs * (2 ** attempt)));
+    if (!shouldRetryFunctionError(lastResult.error) || attempt === maxAttempts - 1) return lastResult;
+    if (baseDelayMs > 0) await new Promise(resolve => setTimeout(resolve, baseDelayMs * (2 ** attempt)));
   }
   return lastResult || { data: null, error: new Error("Échec temporaire de la requête.") };
 }

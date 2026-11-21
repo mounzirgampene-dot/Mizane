@@ -28,7 +28,7 @@ function recoveryView(){
 }
 function authView(mode="login"){
  const signup=mode==="signup";
- root.innerHTML=`<section class="panel"><p class="eyebrow">MIZANE · Compte utilisateur unique</p><h1>${signup?"Créer votre compte":"Connexion à votre espace"}</h1><p>Un seul compte peut accéder à plusieurs entreprises, avec un rôle indépendant dans chacune.</p><div class="tabs"><button data-mode="login" aria-pressed="${!signup}">Connexion</button><button class="secondary" data-mode="signup" aria-pressed="${signup}">Créer un compte</button></div><form id="auth-form"><div class="field ${signup?"":"hidden"}" id="name-field"><label for="display-name">Nom complet</label><input id="display-name" autocomplete="name" maxlength="100" ${signup?"required":"disabled"}></div><div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" minlength="${signup?12:8}" autocomplete="${signup?"new-password":"current-password"}" required></div><p class="notice hidden" data-error></p><div class="actions"><button type="submit">${signup?"Créer mon compte":"Se connecter"}</button><button type="button" class="secondary" data-action="forgot">Mot de passe oublié</button></div></form><p class="muted">L'application comptable locale reste accessible indépendamment du compte SaaS.</p><a href="index.html">← Retour à la comptabilité locale</a></section>`;
+ root.innerHTML=`<section class="panel"><p class="eyebrow">MIZANE · Compte utilisateur unique</p><h1>${signup?"Créer votre compte":"Connexion à votre espace"}</h1><p>Un seul compte peut accéder à plusieurs entreprises, avec un rôle indépendant dans chacune.</p><div class="tabs"><button data-mode="login" aria-pressed="${!signup}">Connexion</button><button class="secondary" data-mode="signup" aria-pressed="${signup}">Créer un compte</button></div><form id="auth-form"><div class="field ${signup?"":"hidden"}" id="name-field"><label for="display-name">Nom complet</label><input id="display-name" autocomplete="name" maxlength="100" ${signup?"required":"disabled"}></div><div class="field"><label for="email">Adresse e-mail</label><input id="email" type="email" autocomplete="email" required></div><div class="field"><label for="password">Mot de passe</label><input id="password" type="password" minlength="${signup?12:8}" autocomplete="${signup?"new-password":"current-password"}" required>${signup?`<div class="password-guidance" id="password-guidance" aria-live="polite"><p>Votre mot de passe doit respecter les critères suivants :</p><ul><li data-password-rule="length">Au moins 12 caractères</li><li data-password-rule="lower">Une lettre minuscule (a-z)</li><li data-password-rule="upper">Une lettre majuscule (A-Z)</li><li data-password-rule="number">Un chiffre (0-9)</li><li data-password-rule="symbol">Un caractère spécial (ex. @, #, !, $)</li></ul></div>`:""}</div><p class="notice hidden" data-error></p><div class="actions"><button type="submit">${signup?"Créer mon compte":"Se connecter"}</button><button type="button" class="secondary" data-action="forgot">Mot de passe oublié</button></div></form><p class="muted">L'application comptable locale reste accessible indépendamment du compte SaaS.</p><a href="index.html">← Retour à la comptabilité locale</a></section>`;
 }
 function dashboardView(){
  const active=memberships.find(x=>x.company.id===activeCompanyId);
@@ -198,6 +198,15 @@ async function loadManagement(){
   invitesNode.innerHTML=inviteData.invitations.length?inviteData.invitations.map(i=>'<article class="company"><div class="topline"><strong>'+esc(i.email)+'</strong><span class="role">'+esc(roleLabel(i.role))+'</span></div><p class="company-meta">Expire le '+esc(new Date(i.expires_at).toLocaleString("fr-FR"))+'</p><button class="danger" data-action="revoke-invitation" data-invitation-id="'+esc(i.id)+'">Révoquer l’invitation</button></article>').join(""):"<div class=\"empty\">Aucune invitation en attente.</div>";
  }catch(error){membersNode.textContent=error.message;invitesNode.textContent="Impossible de charger les invitations."}
 }
+root.addEventListener("input",(e)=>{
+ if(e.target?.id!=="password")return;
+ const value=e.target.value;
+ const checks={length:value.length>=12,lower:/[a-z]/.test(value),upper:/[A-Z]/.test(value),number:/[0-9]/.test(value),symbol:/[^A-Za-z0-9]/.test(value)};
+ for(const [rule,valid] of Object.entries(checks)){
+  const item=root.querySelector(`[data-password-rule="${rule}"]`);
+  if(item){item.classList.toggle("valid",valid);item.setAttribute("aria-label",item.textContent+(valid?" : satisfait":" : non satisfait"));}
+ }
+});
 root.addEventListener("click",async(e)=>{
  const mode=e.target.closest("[data-mode]");if(mode){authView(mode.dataset.mode);return}
  const button=e.target.closest("[data-action]");if(!button)return;

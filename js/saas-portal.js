@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
-import { syncAccounting } from "./accounting-sync.js";
+import { syncAccounting, restoreAccountingFromCloud } from "./accounting-sync.js";
 
 const root = document.querySelector("#portal");
 const toastNode = document.querySelector("#portal-toast");
@@ -48,7 +48,7 @@ function dashboardView(){
  <section class="panel"><div class="topline"><h2>Mes entreprises</h2><button data-action="show-create">＋ Créer une entreprise</button></div><div class="company-list">${memberships.length?memberships.map(({company,role,status})=>`<article class="company ${company.id===activeCompanyId?"active":""}"><div class="topline"><h3>${esc(company.legal_name)}</h3><span class="role">${esc(roleLabel(role))}</span></div><p class="company-meta">${esc(company.country_code)} · ${esc(company.base_currency)} · ${esc(company.accounting_standard)}</p><p class="company-meta">Statut : ${esc(status==="active"?"Actif":"Suspendu")}</p><button class="${company.id===activeCompanyId?"":"secondary"}" data-action="select-company" data-id="${company.id}" ${status!=="active"?"disabled":""}>${company.id===activeCompanyId?"Entreprise active":"Ouvrir cet espace"}</button></article>`).join(""):`<div class="empty">Aucune entreprise associée à ce compte. Créez votre premier espace ou acceptez une invitation.</div>`}</div></section>
  ${active?`<section class="panel"><p class="eyebrow">Espace sélectionné</p><h2>${esc(active.company.legal_name)}</h2><p>Votre rôle : <strong>${esc(roleLabel(active.role))}</strong>. La sélection est mémorisée sur cet appareil.</p><div class="actions"><a class="button" href="/index.html">Ouvrir la comptabilité locale</a><button class="secondary" data-action="show-invite" ${active.role!=="admin"?"disabled":""}>Inviter un collaborateur</button></div><section class="sync-panel" aria-labelledby="sync-heading"><div class="topline"><h3 id="sync-heading">Synchronisation comptable</h3><span class="role">${accountingCloudReady ? "Cloud initialisé" : "Import initial requis"}</span></div>
  <p class="muted">${accountingCloudReady ? "Votre comptabilité est reliée au cloud. Vous pouvez envoyer vos changements locaux et récupérer ceux des autres appareils." : "L'espace cloud existe, mais il ne contient pas encore votre comptabilité. Lancez l'import initial depuis l'appareil qui contient vos données."}</p>
- ${accountingCloudReady && ["admin","accountant","reader"].includes(active.role) ? `<div class="actions"><button data-action="sync-accounting">⇄ Synchroniser maintenant</button></div><p class="muted">Les modifications simultanées sont signalées sans écrasement automatique.</p>` : ""}
+ ${accountingCloudReady && ["admin","accountant","reader"].includes(active.role) ? `<div class="actions"><button data-action="sync-accounting">⇄ Synchroniser maintenant</button><button class="secondary" data-action="restore-cloud">Récupérer les données du cloud sur cet appareil</button></div><p class="muted">La récupération remplace les données comptables locales de cet appareil par la copie cloud. Une sauvegarde JSON locale sera téléchargée avant l’opération. Cette action ne transmet aucune donnée locale au cloud.</p><p class="muted">Les modifications simultanées sont signalées sans écrasement automatique.</p>` : ""}
  ${!accountingCloudReady && ["admin","accountant"].includes(active.role) ? `<div class="actions"><button data-action="import-accounting">Préparer l'import initial de cette comptabilité</button></div>` : ""}
  ${!accountingCloudReady && active.role==="reader" ? `<p class="muted">Un administrateur ou un comptable doit effectuer le premier import.</p>` : ""}
  </section>
@@ -125,6 +125,36 @@ async function importAccountingSnapshot(button){
   if(data?.imported!==true)throw new Error("Le serveur n'a pas confirmé l'import comptable.");
   await refresh();
   toast("Import initial terminé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+ }finally{busy(button,false)}
+}
+async function restoreCloudToThisDevice(button){
+ const active=memberships.find(m=>m.company.id===activeCompanyId);
+ if(!active||active.status!=="active")throw new Error("Vous devez être membre actif de cette entreprise.");
+ const raw=localStorage.getItem("mizane_v1");
+ const details=[
+  "Cette opération va remplacer la comptabilité locale de cet appareil par la copie cloud de l'entreprise sélectionnée.",
+  "",
+  "Entreprise : "+active.company.legal_name,
+  "Sauvegarde locale : "+(raw?"disponible et téléchargée avant restauration":"aucune donnée locale trouvée"),
+  "",
+  "Aucune donnée locale ne sera envoyée au cloud.",
+  "Les anciennes données locales seront conservées dans un fichier JSON téléchargé.",
+  "Continuer ?"
+ ].join("\\n");
+ if(!confirm(details))return;
+ if(raw){
+  const blob=new Blob([raw],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const link=document.createElement("a");
+  link.href=url;
+  link.download="mizane-sauvegarde-locale-avant-restauration-"+new Date().toISOString().slice(0,10)+".json";
+  document.body.appendChild(link);link.click();link.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),5000);
+ }
+ busy(button,true);
+ try{
+  const result=await restoreAccountingFromCloud(supabase,activeCompanyId);
+  toast("Récupération terminée : "+result.entries+" écriture(s), "+result.thirds+" tiers, "+result.assets+" immobilisation(s) et "+result.customAccounts+" compte(s) personnalisé(s).");
  }finally{busy(button,false)}
 }
 async function refresh(){
@@ -246,6 +276,7 @@ root.addEventListener("click",async(e)=>{
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
   if(action==="import-accounting"){await importAccountingSnapshot(button);return;}
+  if(action==="restore-cloud"){await restoreCloudToThisDevice(button);return;}
   if(action==="sync-accounting"){
    busy(button,true);
    try{

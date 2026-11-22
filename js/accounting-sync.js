@@ -144,8 +144,11 @@ async function readCloud(supabase, companyId) {
     if(!data||data.company_id!==companyId) throw new Error("Réponse cloud incohérente.");
     if(first){all.settings=data.settings;all.custom_accounts=data.custom_accounts||[];all.thirds=data.thirds||[];all.assets=data.assets||[];first=false;}
     all.entries.push(...(data.entries||[]));
-    if(data.pagination?.has_more){offset=data.pagination.next_offset;if(!Number.isInteger(offset))throw new Error("Pagination cloud invalide.");}
-    else break;
+    if(data.pagination?.has_more){
+      const nextOffset=data.pagination.next_offset;
+      if(!Number.isInteger(nextOffset)||nextOffset<=offset)throw new Error("Pagination cloud invalide : le curseur n'avance pas.");
+      offset=nextOffset;
+    } else break;
   } while(true);
   return all;
 }
@@ -247,9 +250,12 @@ async function pushBatches(supabase,companyId,operations) {
   const orderedOperations = orderOperations(operations);
   for(let i=0;i<orderedOperations.length;i+=100) {
     const operationUid=uuid();
-    const {data,error}=await supabase.functions.invoke("push-accounting-changes",{body:{
-      company_id:companyId,operation_uid:operationUid,operations:orderedOperations.slice(i,i+100)
-    }});
+    const {data,error}=await invokeWithRetry(
+      options => supabase.functions.invoke("push-accounting-changes", options),
+      {body:{
+        company_id:companyId,operation_uid:operationUid,operations:orderedOperations.slice(i,i+100)
+      }}
+    );
     if(error)throw await edgeError(error,"Envoi cloud impossible.");
     if(data?.conflict||data?.ok===false) {
       const list=(data.conflicts||[]).map(x=>x.entity_type+(x.client_uid?":"+x.client_uid:"")).join(", ");

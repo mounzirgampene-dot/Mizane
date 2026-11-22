@@ -1,0 +1,40 @@
+// MIZANE — Règles locales de contrôle des périodes comptables.
+const validDate = value => {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  return date.getUTCFullYear() === Number(match[1]) && date.getUTCMonth() === Number(match[2]) - 1 && date.getUTCDate() === Number(match[3]);
+};
+
+export function validatePeriodRange(startDate, endDate) {
+  if (!validDate(startDate) || !validDate(endDate)) return { ok: false, error: "Dates de période invalides." };
+  if (startDate > endDate) return { ok: false, error: "La date de début doit précéder la date de fin." };
+  return { ok: true };
+}
+
+export function isDateInClosedPeriod(date, periods = []) {
+  if (!validDate(date)) return false;
+  return periods.some(period =>
+    period && period.status !== "open" &&
+    validDate(period.startDate) && validDate(period.endDate) &&
+    date >= period.startDate && date <= period.endDate
+  );
+}
+
+export function addClosedPeriod(periods = [], period) {
+  const check = validatePeriodRange(period?.startDate, period?.endDate);
+  if (!check.ok) throw new Error(check.error);
+  const list = (Array.isArray(periods) ? periods : []).filter(item => item && typeof item === "object");
+  const overlap = list.find(item =>
+    item.status !== "open" &&
+    period.startDate <= item.endDate && period.endDate >= item.startDate
+  );
+  if (overlap) throw new Error("Cette période chevauche une période déjà clôturée.");
+  return [...list, { ...period, status: "closed" }].sort((a, b) => a.startDate.localeCompare(b.startDate));
+}
+
+export function removeClosedPeriod(periods = [], startDate, endDate) {
+  return (Array.isArray(periods) ? periods : []).filter(item =>
+    item && !(item.status === "closed" && item.startDate === startDate && item.endDate === endDate)
+  );
+}

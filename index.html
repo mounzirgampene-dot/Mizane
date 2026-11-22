@@ -15,13 +15,12 @@
       <img src="icons/icon.svg" alt="" width="28" height="28">
       <span>MIZANE</span>
       <small id="company-tag"></small>
-      <a id="account-menu" class="account-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>
       <button id="theme-toggle" class="secondary small" aria-label="Basculer le mode sombre" title="Mode sombre / clair" style="margin-left:auto">🌙</button>
     </div>
-    <nav id="main-nav"></nav>
+    <nav id="main-nav" aria-label="Navigation principale"></nav>
   </header>
 
-  <main id="app" aria-live="polite"></main>
+  <main class="workspace"><aside id="work-sidebar" hidden aria-label="Historique et travaux"></aside><section id="app" aria-live="polite"></section></main>
 
   <div id="toast" class="toast hidden"></div>
 

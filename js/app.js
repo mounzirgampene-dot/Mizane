@@ -6,7 +6,11 @@ import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
-import { viewTools } from "./views/ops.js";
+import { viewTools, viewCalculator } from "./views/ops.js";
+import { viewFinancial } from "./views/financial.js";
+import { viewBilling } from "./billing.js";
+import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
+import { syncCloudIfReady } from "./cloud-sync.js";
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -17,7 +21,10 @@ const NAV = [
   ["income", "Résultat"],
   ["sheet", "Bilan"],
   ["thirds", "Tiers"],
+  ["financial", "Pilotage"],
+  ["billing", "Facturation"],
   ["tools", "Outils"],
+  ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
   ["settings", "Paramètres"],
 ];
@@ -25,14 +32,31 @@ const NAV = [
 const VIEWS = {
   dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
-  tools: viewTools, assistant: viewAssistant, settings: viewSettings,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, calculator: viewCalculator,
+  assistant: viewAssistant, settings: viewSettings,
+  history: viewActivityHistory, "my-work": viewMyWork,
 };
 
+function renderWorkSidebar() {
+  const sidebar = document.getElementById("work-sidebar");
+  const workspace = document.querySelector(".workspace");
+  const enabled = canAccessWorkHistory();
+  if (!sidebar || !workspace) return;
+  sidebar.hidden = !enabled;
+  workspace.classList.toggle("has-work-sidebar", enabled);
+  if (!enabled) { sidebar.innerHTML = ""; return; }
+  sidebar.innerHTML = `
+    <p class="work-sidebar-title">Espace de travail</p>
+    <button type="button" data-route="history" class="${currentRoute === "history" ? "active" : ""}">Historique des actions</button>
+    <button type="button" data-route="my-work" class="${currentRoute === "my-work" ? "active" : ""}">Mes travaux</button>`;
+}
+
 function renderNav() {
-  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("");
+  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
 }
 
 function render() {
+  renderWorkSidebar();
   setLang(store.settings.language);
   document.getElementById("company-tag").textContent =
     `${store.settings.companyName} · ${store.settings.country} · ${store.settings.currency}`;
@@ -42,6 +66,7 @@ function render() {
 }
 
 function go(route) {
+  if (["history", "my-work"].includes(route) && !canAccessWorkHistory()) route = "dashboard";
   setRoute(route);
   location.hash = route;
   renderNav();
@@ -84,20 +109,42 @@ $nav.addEventListener("click", (e) => {
   if (btn) go(btn.dataset.route);
 });
 
+document.getElementById("work-sidebar")?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-route]");
+  if (btn) go(btn.dataset.route);
+});
+
 async function start() {
   const hash = location.hash.replace("#", "");
   setRoute(NAV.some(([id]) => id === hash) ? hash : "dashboard");
   initStore(loadStore(allAccounts("syscohada")));
   renderNav();
   render();
+  const historyAccess = await initWorkHistory();
+  if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);
+  else if (!historyAccess && ["history", "my-work"].includes(hash)) setRoute("dashboard");
+  renderNav();
+  render();
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("sw.js"); } catch (_e) { /* PWA optionnel */ }
+  }
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
   }
 }
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,
  // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
-window.addEventListener("storage", (event) => {
+window.addEventListener("storage", async (event) => {
+  if (event.key === "mizane_active_company_v1") {
+    const allowed = await initWorkHistory();
+    if (!allowed && ["history", "my-work"].includes(currentRoute)) setRoute("dashboard");
+    renderNav();
+    render();
+    return;
+  }
   if (event.key !== "mizane_v1" || !event.newValue) return;
   try {
     initStore(loadStore(allAccounts("syscohada")));
@@ -108,5 +155,35 @@ window.addEventListener("storage", (event) => {
     toast("Mise à jour cloud reçue, mais le rechargement local a échoué : " + (error?.message || "erreur inconnue"), 5000);
   }
 });
+
+
+window.addEventListener("mizane:billing-changed", () => {
+  void syncCloudIfReady().catch(error => {
+    toast("Synchronisation de la facturation impossible : " + (error?.message || "erreur inconnue"), 5500);
+  });
+});
+
+window.addEventListener("mizane:cloud-synced", (event) => {
+  if (!(Number(event.detail?.pulled) > 0)) return;
+  try {
+    initStore(loadStore(allAccounts("syscohada")));
+    renderNav();
+    render();
+    toast("Données actualisées depuis le cloud.");
+  } catch (error) {
+    toast("Données cloud reçues, mais actualisation impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+});
+
+async function syncWhenActive() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+}
+window.addEventListener("focus", syncWhenActive);
+document.addEventListener("visibilitychange", syncWhenActive);
 
 start();

@@ -39,8 +39,14 @@ test("searchAccounts par mot-clé", () => {
 });
 
 console.log("— Pays —");
-test("chaque pays référence un plan existant", () => {
-  for (const c of COUNTRIES) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan);
+test("chaque plan comptable renseigné pour un pays existe", () => {
+  for (const c of COUNTRIES) {
+    if (c.plan) assert.ok(PLANS[c.plan], "plan inconnu " + c.plan + " pour " + c.code);
+  }
+  assert.ok(COUNTRIES.some(c => c.plan === "syscohada"));
+  assert.ok(COUNTRIES.some(c => c.plan === "pcg"));
+  assert.ok(COUNTRIES.some(c => c.plan === "nct"));
+  assert.ok(COUNTRIES.some(c => c.plan === "cgnc"));
 });
 test("formatMoney ne lève pas d'exception", () => {
   assert.ok(typeof formatMoney(1234.5, "XOF", "fr-SN") === "string");

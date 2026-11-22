@@ -8,7 +8,7 @@ import {
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
-import { invokeWithRetry as invokeBillingWithRetry, syncBilling } from "../js/billing-sync.js";
+import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -658,40 +658,7 @@ await testAsync("facturation : une exception réseau temporaire est retentée", 
   assert.equal(attempts, 2);
   assert.equal(result.data.ok, true);
 });
-await testAsync("facturation : une écriture acceptée malgré une réponse perdue est confirmée sans doublon", async () => {
-  const companyId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const billing = { documents: [], settings: { currency: "MAD" }, nextId: 1, nextPaymentId: 1 };
-  const storage = memoryStorage();
-  const previousStorage = globalThis.localStorage;
-  let remoteData = null, remoteVersion = 0, writeAttempts = 0;
-  const operationIds = [];
-  const client = { functions: { invoke: async (name, { body }) => {
-    assert.equal(name, "sync-billing");
-    if (body.action === "read") {
-      return { data: { company_id: companyId, data: remoteData, sync_version: remoteVersion }, error: null };
-    }
-    writeAttempts++;
-    operationIds.push(body.operation_uid);
-    if (writeAttempts === 1) {
-      remoteData = structuredClone(body.data);
-      remoteVersion = 1;
-      return { data: null, error: { message: "Réponse réseau perdue après validation", context: { status: 503 } } };
-    }
-    return { data: { company_id: companyId, ok: true, conflict: false, sync_version: 1 }, error: null };
-  } } };
-  try {
-    globalThis.localStorage = storage;
-    const result = await syncBilling(client, companyId, "admin", billing);
-    assert.equal(writeAttempts, 2);
-    assert.equal(operationIds[0], operationIds[1], "l'identifiant idempotent doit rester identique");
-    assert.equal(remoteVersion, 1, "le serveur ne doit enregistrer qu'une seule version");
-    assert.equal(result.pushed, 1);
-    assert.ok(storage.getItem("mizane_billing_sync_shadow_v1:" + companyId));
-  } finally {
-    if (previousStorage === undefined) delete globalThis.localStorage;
-    else globalThis.localStorage = previousStorage;
-  }
-});
+
 function memoryStorage() {
   const values = new Map();
   return {

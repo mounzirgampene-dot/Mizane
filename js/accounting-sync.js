@@ -422,7 +422,7 @@ export async function syncAccounting(supabase, companyId, role) {
 
 // Restauration explicite : le cloud est la source d'autorité sur un appareil déjà utilisé.
 // Cette opération ne pousse jamais de données locales et ne valide pas les anciennes écritures.
-export async function restoreAccountingFromCloud(supabase, companyId) {
+async function restoreAccountingFromCloudUnlocked(supabase, companyId) {
   if (running) throw new Error("Une synchronisation est déjà en cours sur cet appareil.");
   running = true;
   try {
@@ -471,6 +471,17 @@ export async function restoreAccountingFromCloud(supabase, companyId) {
   } finally {
     running = false;
   }
+}
+
+
+export async function restoreAccountingFromCloud(supabase, companyId) {
+  const locks = globalThis.navigator?.locks;
+  if (companyId && typeof locks?.request === "function") {
+    return locks.request(`mizane-accounting-sync:${companyId}`, { mode: "exclusive" }, () =>
+      restoreAccountingFromCloudUnlocked(supabase, companyId)
+    );
+  }
+  return restoreAccountingFromCloudUnlocked(supabase, companyId);
 }
 
 

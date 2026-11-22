@@ -144,8 +144,11 @@ async function readCloud(supabase, companyId) {
     if(!data||data.company_id!==companyId) throw new Error("Réponse cloud incohérente.");
     if(first){all.settings=data.settings;all.custom_accounts=data.custom_accounts||[];all.thirds=data.thirds||[];all.assets=data.assets||[];first=false;}
     all.entries.push(...(data.entries||[]));
-    if(data.pagination?.has_more){offset=data.pagination.next_offset;if(!Number.isInteger(offset))throw new Error("Pagination cloud invalide.");}
-    else break;
+    if(data.pagination?.has_more){
+      const nextOffset=data.pagination.next_offset;
+      if(!Number.isInteger(nextOffset)||nextOffset<=offset)throw new Error("Pagination cloud invalide : le curseur n'avance pas.");
+      offset=nextOffset;
+    } else break;
   } while(true);
   return all;
 }
@@ -247,9 +250,12 @@ async function pushBatches(supabase,companyId,operations) {
   const orderedOperations = orderOperations(operations);
   for(let i=0;i<orderedOperations.length;i+=100) {
     const operationUid=uuid();
-    const {data,error}=await supabase.functions.invoke("push-accounting-changes",{body:{
-      company_id:companyId,operation_uid:operationUid,operations:orderedOperations.slice(i,i+100)
-    }});
+    const {data,error}=await invokeWithRetry(
+      options => supabase.functions.invoke("push-accounting-changes", options),
+      {body:{
+        company_id:companyId,operation_uid:operationUid,operations:orderedOperations.slice(i,i+100)
+      }}
+    );
     if(error)throw await edgeError(error,"Envoi cloud impossible.");
     if(data?.conflict||data?.ok===false) {
       const list=(data.conflicts||[]).map(x=>x.entity_type+(x.client_uid?":"+x.client_uid:"")).join(", ");
@@ -413,5 +419,70 @@ export async function syncAccounting(supabase, companyId, role) {
   }
   return syncAccountingUnlocked(supabase, companyId, role);
 }
+
+// Restauration explicite : le cloud est la source d'autorité sur un appareil déjà utilisé.
+// Cette opération ne pousse jamais de données locales et ne valide pas les anciennes écritures.
+async function restoreAccountingFromCloudUnlocked(supabase, companyId) {
+  if (running) throw new Error("Une synchronisation est déjà en cours sur cet appareil.");
+  running = true;
+  try {
+    if (!companyId) throw new Error("Aucune entreprise cloud sélectionnée.");
+    const raw = localStorage.getItem(LOCAL_KEY);
+    let store;
+    try {
+      store = raw ? JSON.parse(raw) : null;
+    } catch {
+      store = null;
+    }
+    if (!store || typeof store !== "object" || Array.isArray(store)) store = {};
+    store.settings = store.settings && typeof store.settings === "object" ? store.settings : {};
+    store.settings.customAccounts = [];
+    store.thirds = [];
+    store.assets = [];
+    store.entries = [];
+    store.nextId = 1;
+
+    const cloud = await readCloud(supabase, companyId);
+    if (!cloud.settings) throw new Error("La comptabilité cloud n'est pas initialisée pour cette entreprise.");
+    const remote = remoteSnapshot(cloud, store);
+
+    // Les données comptables locales sont remplacées uniquement après lecture cloud complète.
+    installRemote(store, "settings", "settings", remote.settings.settings, remote);
+    for (const kind of ["custom_account", "third", "asset", "entry"]) {
+      for (const [uid, record] of Object.entries(remote[kind] || {})) {
+        installRemote(store, kind, uid, record, remote);
+      }
+    }
+
+    if (localStorage.getItem(LOCAL_KEY) !== raw) {
+      throw new Error("Les données locales ont changé pendant la récupération. Aucune donnée n'a été remplacée ; relancez l'opération.");
+    }
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(store));
+    // Le shadow doit correspondre exactement aux données effectivement installées.
+    // Les changements cloud ultérieurs seront récupérés lors de la synchronisation suivante.
+    saveShadow(companyId, remote);
+    return {
+      restored: true,
+      thirds: store.thirds.length,
+      entries: store.entries.length,
+      assets: store.assets.length,
+      customAccounts: store.settings.customAccounts.length,
+    };
+  } finally {
+    running = false;
+  }
+}
+
+
+export async function restoreAccountingFromCloud(supabase, companyId) {
+  const locks = globalThis.navigator?.locks;
+  if (companyId && typeof locks?.request === "function") {
+    return locks.request(`mizane-accounting-sync:${companyId}`, { mode: "exclusive" }, () =>
+      restoreAccountingFromCloudUnlocked(supabase, companyId)
+    );
+  }
+  return restoreAccountingFromCloudUnlocked(supabase, companyId);
+}
+
 
 export { cleanSecrets, fingerprint, localSnapshot, orderOperations, validateSyncStore };

@@ -109,19 +109,19 @@ export function viewSheet() {
     printHTML(`Bilan — ${store.settings.companyName} au ${exerciceEnd}`, body));
 }
 
-export function viewThirds() {
+export function viewThirds(readOnly = false) {
   const rows = store.thirds.map((t) => {
     let solde = 0;
     for (const e of store.entries) for (const l of e.lines) if (l.third === t.name) solde += (Number(l.debit) || 0) - (Number(l.credit) || 0);
     return { t, solde };
   });
   const table = store.thirds.length === 0 ? `<p class="muted">Aucun tiers enregistré.</p>` : `
-    <table><thead><tr><th>Nom</th><th>Type</th><th>Téléphone</th><th>Email</th><th class="num">Solde</th><th></th></tr></thead>
+    <table><thead><tr><th>Nom</th><th>Type</th><th>Téléphone</th><th>Email</th><th class="num">Solde</th>${readOnly ? "" : "<th></th>"}</tr></thead>
     <tbody>${rows.map(({ t, solde }, i) => `<tr><td>${esc(t.name)}</td><td><span class="tag">${esc(t.type)}</span></td><td>${esc(t.phone || "")}</td><td>${esc(t.email || "")}</td><td class="num">${money(solde)}</td>
-    <td><button class="danger small" data-del-third="${i}">✕</button></td></tr>`).join("")}</tbody></table>`;
+    ${readOnly ? "" : `<td><button class="danger small" data-del-third="${i}">✕</button></td>`}</tr>`).join("")}</tbody></table>`;
   $app.innerHTML = `
     <h1>Tiers (clients & fournisseurs)</h1>
-    <div class="card">
+    ${readOnly ? `<p class="muted">Mode lecture seule : vous pouvez consulter les tiers, sans les ajouter, modifier ni supprimer.</p>` : `<div class="card">
       <div class="row">
         <div><label>Nom</label><input id="t-name" placeholder="Nom du tiers"></div>
         <div><label>Type</label><select id="t-type"><option value="client">Client</option><option value="fournisseur">Fournisseur</option><option value="autre">Autre</option></select></div>
@@ -129,12 +129,12 @@ export function viewThirds() {
         <div><label>Email</label><input id="t-email"></div>
         <div class="nogrow"><button id="t-add">Ajouter</button></div>
       </div>
-    </div>
+    </div>`}
     <div class="card table-wrap">${table}
       ${store.thirds.length ? `<div class="actions"><button class="secondary" id="t-print">🖨 Imprimer</button></div>` : ""}
     </div>
   `;
-  document.getElementById("t-add").addEventListener("click", () => {
+  if (!readOnly) document.getElementById("t-add").addEventListener("click", () => {
     const name = document.getElementById("t-name").value.trim();
     if (!name) return toast("Le nom est obligatoire.");
     store.thirds.push({ name, type: document.getElementById("t-type").value, phone: document.getElementById("t-phone").value, email: document.getElementById("t-email").value });
@@ -142,7 +142,7 @@ export function viewThirds() {
     toast("✓ Tiers ajouté.");
     router.render();
   });
-  $app.querySelectorAll("[data-del-third]").forEach((b) => {
+  if (!readOnly) $app.querySelectorAll("[data-del-third]").forEach((b) => {
     b.addEventListener("click", () => {
       store.thirds.splice(Number(b.dataset.delThird), 1);
       saveStore(store);

@@ -8,7 +8,7 @@ import {
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
 } from "../state.js";
 
-export function viewDashboard() {
+export function viewDashboard(readOnly = false) {
   const { exerciceStart, exerciceEnd } = store.settings;
   const is = incomeStatement(store, exerciceStart, exerciceEnd);
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
@@ -30,9 +30,9 @@ export function viewDashboard() {
       <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée" : "⚠ Balance déséquilibrée : " + money(tb.totals.debit) + " / " + money(tb.totals.credit)}</p>
       <p class="muted">Exercice du ${esc(exerciceStart)} au ${esc(exerciceEnd)} — Plan ${esc(store.settings.plan)}</p>
       <div class="actions">
-        <button class="secondary" data-act="go-entry">➕ Nouvelle écriture</button>
+        ${readOnly ? "" : '<button class="secondary" data-act="go-entry">➕ Nouvelle écriture</button>'}
         <button class="secondary" data-act="go-assistant">🤖 Ouvrir l'assistant IA</button>
-        ${store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
+        ${!readOnly && store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
       </div>
     </div>
     ${anomalies.length ? `<div class="card"><h2>Anomalies</h2><ul class="errors">${anomalies.slice(0, 8).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul></div>` : ""}

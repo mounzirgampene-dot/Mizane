@@ -1,5 +1,6 @@
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
 import { cleanSecrets, fingerprint, shouldRetryFunctionError, localSnapshot, orderOperations, syncAccounting, validateSyncStore } from "../js/accounting-sync.js";
 import {
   newStore, validDate, validateEntry, postEntry, reverseEntry, trialBalance, ledger,
@@ -10,6 +11,18 @@ import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 
 let passed = 0, failed = 0;
+const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
+const invitationFunction = readFileSync(new URL("../supabase/functions/manage-company-members/index.ts", import.meta.url), "utf8");
+test("invitations : création atomique protégée par verrou et vérification admin", () => {
+  assert.match(invitationMigration, /pg_advisory_xact_lock/);
+  assert.match(invitationMigration, /role = 'admin'[\s\S]*status = 'active'/);
+  assert.match(invitationMigration, /accepted_at is null[\s\S]*revoked_at is null[\s\S]*expires_at > pg_catalog\.clock_timestamp\(\)/);
+  assert.match(invitationMigration, /grant execute[\s\S]*to service_role/i);
+  assert.match(invitationFunction, /rpc\("create_company_invitation"/);
+  assert.match(invitationFunction, /error\.code === "P0001"[\s\S]*fail\(409/);
+  assert.doesNotMatch(invitationFunction, /\.from\("company_invitations"\)\s*\.insert\(/);
+});
+
 function test(name, fn) {
   try { fn(); passed++; console.log("  ✓ " + name); }
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }

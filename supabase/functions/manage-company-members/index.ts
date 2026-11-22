@@ -222,17 +222,6 @@ Deno.serve(async (request) => {
         return fail(400, "Le rôle d'invitation doit être comptable ou lecteur.");
       }
 
-      const { data: existing } = await adminClient
-        .from("company_invitations")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("email", email)
-        .is("accepted_at", null)
-        .is("revoked_at", null)
-        .gt("expires_at", new Date().toISOString())
-        .limit(1);
-      if (existing?.length) return fail(409, "Une invitation active existe déjà pour cette adresse.");
-
       const token = makeToken();
       const tokenHash = await hashToken(token);
       const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -260,19 +249,28 @@ Deno.serve(async (request) => {
         .from("companies").select("legal_name").eq("id", companyId).single();
       if (companyError || !company) return fail(500, "Impossible de retrouver l'entreprise.");
 
-      const { data: invitation, error } = await adminClient
-        .from("company_invitations")
-        .insert({
-          company_id: companyId,
-          email,
-          role,
-          token_hash: tokenHash,
-          invited_by: actor.id,
-          expires_at: expiresAt,
-        })
-        .select("id,email,role,expires_at")
-        .single();
-      if (error || !invitation) return fail(500, "Impossible de créer l'invitation.");
+      const { data: invitationResult, error } = await adminClient.rpc("create_company_invitation", {
+        p_company_id: companyId,
+        p_invited_by: actor.id,
+        p_email: email,
+        p_role: role,
+        p_token_hash: tokenHash,
+        p_expires_at: expiresAt,
+      });
+      if (error) {
+        if (error.code === "P0001") return fail(409, "Une invitation active existe déjà pour cette adresse.");
+        if (error.code === "42501") return fail(403, "Seul un administrateur actif peut inviter un collaborateur.");
+        if (error.code === "22023") return fail(400, "Paramètres d'invitation invalides.");
+        console.error("create_company_invitation:", error.message);
+        return fail(500, "Impossible de créer l'invitation.");
+      }
+      const invitation = invitationResult as {
+        id: string;
+        email: string;
+        role: string;
+        expires_at: string;
+      } | null;
+      if (!invitation?.id) return fail(500, "Impossible de créer l'invitation.");
 
       const invitationUrl = new URL("espace.html", appBaseUrl);
       invitationUrl.hash = new URLSearchParams({ invitation: token }).toString();

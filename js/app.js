@@ -10,7 +10,24 @@ import { viewTools, viewCalculator } from "./views/ops.js";
 import { viewFinancial } from "./views/financial.js";
 import { viewBilling } from "./billing.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
-import { syncCloudIfReady } from "./cloud-sync.js";
+import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
+
+let currentCompanyRole = null;
+
+async function refreshCompanyRole() {
+  const companyId = localStorage.getItem("mizane_active_company_v1");
+  if (!companyId) { currentCompanyRole = null; return; }
+  try {
+    currentCompanyRole = await getCurrentCompanyRole();
+    if (!["admin", "accountant", "reader"].includes(currentCompanyRole)) currentCompanyRole = "reader";
+  } catch (error) {
+    console.warn("Vérification du rôle MIZANE impossible :", error?.message || error);
+    currentCompanyRole = "reader";
+  }
+}
+
+const isReader = () => currentCompanyRole === "reader";
+const readerRestrictedRoutes = ["entry", "tools"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -30,8 +47,8 @@ const NAV = [
 ];
 
 const VIEWS = {
-  dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
-  balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
+  dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
+  balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
   tools: viewTools, financial: viewFinancial, billing: viewBilling, calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork,
@@ -52,7 +69,8 @@ function renderWorkSidebar() {
 }
 
 function renderNav() {
-  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
+  const visibleNav = NAV.filter(([id]) => !isReader() || !readerRestrictedRoutes.includes(id));
+  $nav.innerHTML = visibleNav.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
 }
 
 function render() {
@@ -66,6 +84,10 @@ function render() {
 }
 
 function go(route) {
+  if (isReader() && readerRestrictedRoutes.includes(route)) {
+    toast("Accès réservé à l’administrateur et au comptable.");
+    route = "dashboard";
+  }
   if (["history", "my-work"].includes(route) && !canAccessWorkHistory()) route = "dashboard";
   setRoute(route);
   location.hash = route;
@@ -115,8 +137,10 @@ document.getElementById("work-sidebar")?.addEventListener("click", (e) => {
 });
 
 async function start() {
+  await refreshCompanyRole();
   const hash = location.hash.replace("#", "");
-  setRoute(NAV.some(([id]) => id === hash) ? hash : "dashboard");
+  const initialRoute = isReader() && readerRestrictedRoutes.includes(hash) ? "dashboard" : hash;
+  setRoute(NAV.some(([id]) => id === initialRoute) ? initialRoute : "dashboard");
   initStore(loadStore(allAccounts("syscohada")));
   renderNav();
   render();
@@ -139,7 +163,9 @@ async function start() {
  // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
 window.addEventListener("storage", async (event) => {
   if (event.key === "mizane_active_company_v1") {
+    await refreshCompanyRole();
     const allowed = await initWorkHistory();
+    if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
     if (!allowed && ["history", "my-work"].includes(currentRoute)) setRoute("dashboard");
     renderNav();
     render();
@@ -177,6 +203,10 @@ window.addEventListener("mizane:cloud-synced", (event) => {
 
 async function syncWhenActive() {
   if (document.visibilityState !== "visible") return;
+  await refreshCompanyRole();
+  if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
+  renderNav();
+  render();
   try {
     await syncCloudIfReady();
   } catch (error) {

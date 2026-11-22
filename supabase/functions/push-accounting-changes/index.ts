@@ -10,7 +10,9 @@ const allowedOrigins = new Set([
 // sans ouvrir les fonctions à tous les sous-domaines pages.dev.
 const isAllowedOrigin = (origin: string) =>
   allowedOrigins.has(origin) ||
-  /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(origin);
+  /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(origin) ||
+  origin === "https://mizane-test-preview.pages.dev" ||
+  /^https:\/\/[a-z0-9-]+\.mizane-test-preview\.pages\.dev$/i.test(origin);
 const validUuid = (v: unknown): v is string =>
   typeof v === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);

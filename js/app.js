@@ -6,7 +6,10 @@ import { setLang, applyI18n, t } from "./i18n.js";
 import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.js";
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
-import { viewTools } from "./views/ops.js";
+import { viewTools, viewCalculator } from "./views/ops.js";
+import { viewFinancial } from "./views/financial.js";
+import { viewBilling } from "./billing.js";
+import { syncCloudIfReady } from "./cloud-sync.js";
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -17,7 +20,10 @@ const NAV = [
   ["income", "Résultat"],
   ["sheet", "Bilan"],
   ["thirds", "Tiers"],
+  ["financial", "Pilotage"],
+  ["billing", "Facturation"],
   ["tools", "Outils"],
+  ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
   ["settings", "Paramètres"],
 ];
@@ -25,11 +31,12 @@ const NAV = [
 const VIEWS = {
   dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
-  tools: viewTools, assistant: viewAssistant, settings: viewSettings,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, calculator: viewCalculator,
+  assistant: viewAssistant, settings: viewSettings,
 };
 
 function renderNav() {
-  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("");
+  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
 }
 
 function render() {
@@ -108,5 +115,35 @@ window.addEventListener("storage", (event) => {
     toast("Mise à jour cloud reçue, mais le rechargement local a échoué : " + (error?.message || "erreur inconnue"), 5000);
   }
 });
+
+
+window.addEventListener("mizane:billing-changed", () => {
+  void syncCloudIfReady().catch(error => {
+    toast("Synchronisation de la facturation impossible : " + (error?.message || "erreur inconnue"), 5500);
+  });
+});
+
+window.addEventListener("mizane:cloud-synced", (event) => {
+  if (!(Number(event.detail?.pulled) > 0)) return;
+  try {
+    initStore(loadStore(allAccounts("syscohada")));
+    renderNav();
+    render();
+    toast("Données actualisées depuis le cloud.");
+  } catch (error) {
+    toast("Données cloud reçues, mais actualisation impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+});
+
+async function syncWhenActive() {
+  if (document.visibilityState !== "visible") return;
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
+}
+window.addEventListener("focus", syncWhenActive);
+document.addEventListener("visibilitychange", syncWhenActive);
 
 start();

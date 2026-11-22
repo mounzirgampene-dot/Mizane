@@ -7,8 +7,10 @@ import { viewDashboard, viewEntry, viewEntries, viewLedger } from "./views/core.
 import { viewBalance, viewIncome, viewSheet, viewThirds } from "./views/reports.js";
 import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools } from "./views/ops.js";
+import { viewBilling, viewCalculator } from "./views/business-tools.js";
 
 const NAV = [
+  ["pilotage", "Pilotage"],
   ["dashboard", "Tableau de bord"],
   ["entry", "Saisie"],
   ["entries", "Écritures"],
@@ -17,19 +19,22 @@ const NAV = [
   ["income", "Résultat"],
   ["sheet", "Bilan"],
   ["thirds", "Tiers"],
+  ["billing", "Facturation"],
+  ["calculator", "Calculatrice"],
   ["tools", "Outils"],
   ["assistant", "Assistant IA"],
   ["settings", "Paramètres"],
 ];
 
 const VIEWS = {
-  dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
+  pilotage: viewDashboard, dashboard: viewDashboard, entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: viewThirds,
-  tools: viewTools, assistant: viewAssistant, settings: viewSettings,
+  billing: viewBilling, calculator: viewCalculator, tools: viewTools, assistant: viewAssistant, settings: viewSettings,
 };
 
 function renderNav() {
-  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("");
+  $nav.innerHTML = NAV.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") +
+    '<a class="account-nav-link" href="espace.html">Compte</a>';
 }
 
 function render() {
@@ -52,11 +57,11 @@ function go(route) {
 router.go = go;
 router.render = render;
 
-function applyTheme(t) {
-  document.documentElement.dataset.theme = t;
-  localStorage.setItem("mizane_theme", t);
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("mizane_theme", theme);
   const btn = document.getElementById("theme-toggle");
-  if (btn) btn.textContent = t === "dark" ? "☀️" : "🌙";
+  if (btn) btn.textContent = theme === "dark" ? "☀️" : "🌙";
 }
 
 document.addEventListener("click", (e) => {
@@ -86,7 +91,7 @@ $nav.addEventListener("click", (e) => {
 
 async function start() {
   const hash = location.hash.replace("#", "");
-  setRoute(NAV.some(([id]) => id === hash) ? hash : "dashboard");
+  setRoute(NAV.some(([id]) => id === hash) ? hash : "pilotage");
   initStore(loadStore(allAccounts("syscohada")));
   renderNav();
   render();
@@ -96,7 +101,7 @@ async function start() {
 }
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,
- // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
+// recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
 window.addEventListener("storage", (event) => {
   if (event.key !== "mizane_v1" || !event.newValue) return;
   try {

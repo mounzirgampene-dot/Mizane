@@ -8,6 +8,7 @@ import {
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
+import { calculate } from "../js/views/business-tools.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -269,6 +270,20 @@ test("données de démonstration équilibrées", async () => {
   const tb = trialBalance(s);
   assert.equal(tb.totals.debit, tb.totals.credit);
   assert.ok(s.entries.length >= 8);
+});
+
+
+console.log("— Modules de gestion —");
+test("calculatrice : opérations arithmétiques et précision", () => {
+  assert.equal(calculate(12, "+", 3), 15);
+  assert.equal(calculate(12, "-", 3), 9);
+  assert.equal(calculate(12, "*", 3), 36);
+  assert.equal(calculate(12, "/", 3), 4);
+  assert.equal(calculate(1, "/", 3), 0.33333333);
+});
+test("calculatrice : division par zéro et opérateur inconnu refusés", () => {
+  assert.throws(() => calculate(5, "/", 0), /division par zéro/i);
+  assert.throws(() => calculate(5, "%", 2), /non reconnue/i);
 });
 
 console.log("— Amortissements (finance.js) —");

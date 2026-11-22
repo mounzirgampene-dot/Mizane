@@ -39,8 +39,28 @@ function saveShadow(companyId, data, version) {
     hash: hash(data), sync_version: Number(version) || 0,
   }));
 }
+export async function invokeWithRetry(request, { maxAttempts = 4, baseDelayMs = 250 } = {}) {
+  let lastResult = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      lastResult = await request();
+    } catch (error) {
+      lastResult = { data: null, error };
+    }
+    if (!lastResult?.error) return lastResult;
+    const status = Number(lastResult.error?.context?.status ?? lastResult.error?.status ?? 0);
+    const message = String(lastResult.error?.message || "");
+    const retryable = [408, 425, 429, 500, 502, 503, 504].includes(status) ||
+      (!status && /network|fetch|timeout|temporar|connection|failed to send a request/i.test(message));
+    if (!retryable || attempt === maxAttempts - 1) return lastResult;
+    if (baseDelayMs > 0) await new Promise(resolve => setTimeout(resolve, baseDelayMs * (2 ** attempt)));
+  }
+  return lastResult || { data: null, error: new Error("Échec temporaire de la synchronisation.") };
+}
 async function invoke(supabase, body, fallback) {
-  const { data, error } = await supabase.functions.invoke("sync-billing", { body });
+  const { data, error } = await invokeWithRetry(
+    () => supabase.functions.invoke("sync-billing", { body })
+  );
   if (error) {
     let message = error.message || fallback;
     try {

@@ -9,6 +9,7 @@ import {
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
+import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -633,6 +634,44 @@ async function testAsync(name, fn) {
   try { await fn(); passed++; console.log("  ✓ " + name); }
   catch (e) { failed++; console.error("  ✗ " + name + "\\n    " + (e.stack || e.message)); }
 }
+
+console.log("— Résilience de la synchronisation de facturation —");
+await testAsync("facturation : une réponse réseau perdue est retentée avec le même identifiant idempotent", async () => {
+  const operation = { operation_uid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", expected_sync_version: 7 };
+  const seen = [];
+  let attempts = 0;
+  const result = await invokeBillingWithRetry(async () => {
+    attempts++;
+    seen.push(operation.operation_uid);
+    if (attempts === 1) return { data: null, error: { message: "Service temporairement indisponible", context: { status: 503 } } };
+    return { data: { ok: true, sync_version: 8 }, error: null };
+  }, { maxAttempts: 4, baseDelayMs: 0 });
+  assert.equal(attempts, 2);
+  assert.deepEqual(seen, [operation.operation_uid, operation.operation_uid]);
+  assert.equal(result.data.sync_version, 8);
+});
+await testAsync("facturation : les erreurs d'authentification et de validation ne sont pas retentées", async () => {
+  for (const status of [401, 403, 422]) {
+    let attempts = 0;
+    const result = await invokeBillingWithRetry(async () => {
+      attempts++;
+      return { data: null, error: { message: "Erreur définitive", context: { status } } };
+    }, { maxAttempts: 4, baseDelayMs: 0 });
+    assert.equal(attempts, 1, "statut " + status);
+    assert.ok(result.error);
+  }
+});
+await testAsync("facturation : une exception réseau temporaire est retentée", async () => {
+  let attempts = 0;
+  const result = await invokeBillingWithRetry(async () => {
+    attempts++;
+    if (attempts === 1) throw new Error("Failed to send a request to the edge function");
+    return { data: { ok: true }, error: null };
+  }, { maxAttempts: 3, baseDelayMs: 0 });
+  assert.equal(attempts, 2);
+  assert.equal(result.data.ok, true);
+});
+
 function memoryStorage() {
   const values = new Map();
   return {

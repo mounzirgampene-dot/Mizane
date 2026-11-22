@@ -17,6 +17,25 @@ async function getClient() {
   return clientPromise;
 }
 
+export async function getCurrentCompanyRole() {
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+  if (!companyId) return null;
+  const supabase = await getClient();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  const user = sessionData?.session?.user;
+  if (!user) return null;
+  const { data: membership, error } = await supabase
+    .from("company_memberships")
+    .select("role,status")
+    .eq("company_id", companyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!membership || membership.status !== "active") return null;
+  return membership.role;
+}
+
 export function syncCloudIfReady() {
   if (activeSync) return activeSync;
   activeSync = (async () => {

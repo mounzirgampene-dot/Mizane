@@ -11,7 +11,9 @@ const allowedOrigins = new Set([
 // Autorise uniquement les prévisualisations Cloudflare Pages du projet DEV.
 const isAllowedOrigin = (origin: string) =>
   allowedOrigins.has(origin) ||
-  /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(origin);
+  /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(origin) ||
+  origin === "https://mizane-test-preview.pages.dev" ||
+  /^https:\/\/[a-z0-9-]+\.mizane-test-preview\.pages\.dev$/i.test(origin);
 
 const validUuid = (value: unknown): value is string =>
   typeof value === "string" &&

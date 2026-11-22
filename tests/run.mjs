@@ -8,7 +8,7 @@ import {
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
-import { calculate } from "../js/views/business-tools.js";
+import { calculate } from "../js/calculator.js";
 
 let passed = 0, failed = 0;
 function test(name, fn) {

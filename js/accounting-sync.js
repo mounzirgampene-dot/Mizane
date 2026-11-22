@@ -420,4 +420,58 @@ export async function syncAccounting(supabase, companyId, role) {
   return syncAccountingUnlocked(supabase, companyId, role);
 }
 
+// Restauration explicite : le cloud est la source d'autorité sur un appareil déjà utilisé.
+// Cette opération ne pousse jamais de données locales et ne valide pas les anciennes écritures.
+export async function restoreAccountingFromCloud(supabase, companyId) {
+  if (running) throw new Error("Une synchronisation est déjà en cours sur cet appareil.");
+  running = true;
+  try {
+    if (!companyId) throw new Error("Aucune entreprise cloud sélectionnée.");
+    const raw = localStorage.getItem(LOCAL_KEY);
+    let store;
+    try {
+      store = raw ? JSON.parse(raw) : null;
+    } catch {
+      store = null;
+    }
+    if (!store || typeof store !== "object" || Array.isArray(store)) store = {};
+    store.settings = store.settings && typeof store.settings === "object" ? store.settings : {};
+    store.settings.customAccounts = [];
+    store.thirds = [];
+    store.assets = [];
+    store.entries = [];
+    store.nextId = 1;
+
+    const cloud = await readCloud(supabase, companyId);
+    if (!cloud.settings) throw new Error("La comptabilité cloud n'est pas initialisée pour cette entreprise.");
+    const remote = remoteSnapshot(cloud, store);
+
+    // Les données comptables locales sont remplacées uniquement après lecture cloud complète.
+    installRemote(store, "settings", "settings", remote.settings.settings, remote);
+    for (const kind of ["custom_account", "third", "asset", "entry"]) {
+      for (const [uid, record] of Object.entries(remote[kind] || {})) {
+        installRemote(store, kind, uid, record, remote);
+      }
+    }
+
+    if (localStorage.getItem(LOCAL_KEY) !== raw) {
+      throw new Error("Les données locales ont changé pendant la récupération. Aucune donnée n'a été remplacée ; relancez l'opération.");
+    }
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(store));
+    // Le shadow doit correspondre exactement aux données effectivement installées.
+    // Les changements cloud ultérieurs seront récupérés lors de la synchronisation suivante.
+    saveShadow(companyId, remote);
+    return {
+      restored: true,
+      thirds: store.thirds.length,
+      entries: store.entries.length,
+      assets: store.assets.length,
+      customAccounts: store.settings.customAccounts.length,
+    };
+  } finally {
+    running = false;
+  }
+}
+
+
 export { cleanSecrets, fingerprint, localSnapshot, orderOperations, validateSyncStore };

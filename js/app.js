@@ -100,6 +100,11 @@ async function start() {
   if ("serviceWorker" in navigator) {
     try { await navigator.serviceWorker.register("sw.js"); } catch (_e) { /* PWA optionnel */ }
   }
+  try {
+    await syncCloudIfReady();
+  } catch (error) {
+    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+  }
 }
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,

@@ -27,7 +27,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],

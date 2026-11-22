@@ -16,6 +16,12 @@ const CURRENCIES = [...new Set([
 const today = () => new Date().toISOString().slice(0, 10);
 const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round = (value) => Math.round((number(value) + Number.EPSILON) * 100) / 100;
+function bindBillingModalClose(content) {
+  content.querySelectorAll("[data-close]").forEach((button) => {
+    button.addEventListener("click", () => document.getElementById("modal").close());
+  });
+}
+
 function saveBilling() {
   saveNow();
   window.dispatchEvent(new Event("mizane:billing-changed"));
@@ -175,6 +181,7 @@ function openEditor(type, source = null) {
     ${type === "invoice" && !source ? '<div><label>Mode d’encaissement de l’avance</label><select id="bill-advance-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option><option value="mobile">Paiement mobile</option><option value="cheque">Chèque</option><option value="card">Carte bancaire</option><option value="other">Autre</option></select></div>' : ""}
     <label>Conditions de paiement</label><input id="bill-terms" value="${esc(doc.paymentTerms || settings.paymentTerms || "")}"><label>Notes / mentions</label><textarea id="bill-notes" rows="2">${esc(doc.notes || "")}</textarea>
     <div class="actions"><button type="button" id="bill-save">Enregistrer ${type === "quote" ? "le devis" : "la facture"}</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-error" class="errors" role="alert"></div>`;
+  bindBillingModalClose(content);
   const addLine = (line = { description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }) => {
     const body = content.querySelector("#bill-lines");
     body.insertAdjacentHTML("beforeend", lineMarkup(line, body.querySelectorAll("tr").length));
@@ -352,6 +359,7 @@ function openPaymentManager(invoiceId) {
      "<h3>Historique des corrections et annulations</h3><div class=\"table-wrap\"><table><thead><tr><th>Date opération</th><th>Action</th><th>Date du règlement</th><th class=\"num\">Montant concerné</th><th>Détail</th></tr></thead><tbody>" + (auditRows || "<tr><td colspan=\"5\" class=\"muted\">Aucune correction ni annulation.</td></tr>") + "</tbody></table></div>" +
     (balance > 0 ? "<h3>Enregistrer un paiement</h3><div class=\"grid cols-2\"><div><label>Date du paiement</label><input id=\"bill-payment-date\" type=\"date\" value=\"" + today() + "\"></div><div><label>Montant (" + esc(invoice.currency) + ")</label><input id=\"bill-payment-amount\" type=\"number\" min=\"0.01\" max=\"" + balance + "\" step=\"0.01\" value=\"" + balance + "\"></div><div><label>Mode de paiement</label><select id=\"bill-payment-method\">" + methods.map(([key, label]) => "<option value=\"" + key + "\">" + label + "</option>").join("") + "</select></div><div><label>Taux de change vers " + esc(invoice.baseCurrency || store.settings.currency) + " (1 " + esc(invoice.currency) + " = ?)</label><input id=\"bill-payment-rate\" type=\"number\" min=\"0.00000001\" step=\"0.00000001\" value=\"" + number(invoice.exchangeRate) + "\"></div><div><label>Référence / numéro de transaction</label><input id=\"bill-payment-reference\" maxlength=\"120\"></div></div><label>Note (facultatif)</label><textarea id=\"bill-payment-notes\" rows=\"2\"></textarea><div id=\"bill-payment-error\" class=\"errors\" role=\"alert\"></div><div class=\"actions\"><button id=\"bill-payment-save\">Enregistrer le paiement</button></div>" : "<p class=\"ok-msg\">Cette facture est entièrement réglée.</p>") +
     "<div class=\"actions\"><button class=\"secondary\" data-close>Fermer</button></div>";
+  bindBillingModalClose(content);
   content.querySelectorAll("[data-bill-payment-edit]").forEach((button) => button.addEventListener("click", () => {
     const paymentId = Number(button.dataset.billPaymentEdit);
     const original = invoice.payments.find((item) => Number(item.id) === paymentId);
@@ -566,6 +574,7 @@ function openSettings() {
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
     <div class="actions"><button id="bill-settings-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  bindBillingModalClose(content);
 
   const countrySelect = content.querySelector("#bill-company-country");
   const countrySearch = content.querySelector("#bill-company-country-search");

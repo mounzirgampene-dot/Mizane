@@ -1,5 +1,5 @@
 // MIZANE — Service worker : cache hors-ligne.
-const CACHE = "mizane-v31";
+const CACHE = "mizane-v32";
 const ASSETS = [
   "./",
   "index.html",
@@ -49,15 +49,41 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  e.respondWith(
-    caches.match(e.request).then((cached) => {
-      const fetchPromise = fetch(e.request)
-        .then((res) => {
-          if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fetchPromise;
-    })
-  );
+  // Les navigations HTML passent d'abord par le réseau pour éviter
+  // qu'un ancien cache ne bloque le retour depuis l'espace professionnel.
+  if (e.request.mode === "navigate") {
+    e.respondWith((async () => {
+      try {
+        const response = await fetch(e.request);
+        if (response.ok) {
+          const cache = await caches.open(CACHE);
+          await cache.put(e.request, response.clone());
+        }
+        return response;
+      } catch (_error) {
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+        const home = await caches.match(new URL("/index.html", self.location.origin).href);
+        if (home) return home;
+        return new Response("MIZANE est temporairement indisponible hors connexion.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }
+    })());
+    return;
+  }
+
+  e.respondWith(caches.match(e.request).then((cached) => {
+    const fetchPromise = fetch(e.request)
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
+        return res;
+      })
+      .catch(() => cached || new Response("Ressource temporairement indisponible.", {
+        status: 503,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      }));
+    return cached || fetchPromise;
+  }));
 });

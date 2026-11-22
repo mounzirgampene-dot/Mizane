@@ -32,7 +32,9 @@ Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
   const isAllowedOrigin = (value: string) =>
     allowedOrigins.has(value) ||
-    /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(value);
+    /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/.test(value) ||
+    value === "https://mizane-test-preview.pages.dev" ||
+    /^https:\/\/[a-z0-9-]+\.mizane-test-preview\.pages\.dev$/i.test(value);
   const corsHeaders = {
     ...(origin && isAllowedOrigin(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
     "Vary": "Origin",

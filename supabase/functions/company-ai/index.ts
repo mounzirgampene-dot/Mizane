@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const origins = new Set(["https://mounzirgampene-dot.github.io","http://localhost:8000"]);
-const allowedOrigin = (origin: string | null) => Boolean(origin && (origins.has(origin) || /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/i.test(origin)));
+const allowedOrigin = (origin: string | null) => Boolean(origin && (origins.has(origin) || /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/i.test(origin) || origin === "https://mizane-test-preview.pages.dev" || /^https:\/\/[a-z0-9-]+\.mizane-test-preview\.pages\.dev$/i.test(origin)));
 const providers = {
   mistral: { endpoint:"https://api.mistral.ai/v1/chat/completions", models:["mistral-small-latest","mistral-medium-latest","mistral-large-latest","open-mistral-nemo","ministral-8b-latest","pixtral-12b-2409"] },
   groq: { endpoint:"https://api.groq.com/openai/v1/chat/completions", models:["llama-3.3-70b-versatile","meta-llama/llama-4-scout-17b-16e-instruct","openai/gpt-oss-120b","llama-3.1-8b-instant"] },

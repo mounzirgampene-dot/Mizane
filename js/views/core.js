@@ -32,7 +32,7 @@ export function viewDashboard(readOnly = false) {
       <div class="actions">
         ${readOnly ? "" : '<button class="secondary" data-act="go-entry">➕ Nouvelle écriture</button>'}
         <button class="secondary" data-act="go-assistant">🤖 Ouvrir l'assistant IA</button>
-        ${store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
+        ${!readOnly && store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
       </div>
     </div>
     ${anomalies.length ? `<div class="card"><h2>Anomalies</h2><ul class="errors">${anomalies.slice(0, 8).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul></div>` : ""}

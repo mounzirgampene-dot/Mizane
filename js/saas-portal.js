@@ -148,7 +148,20 @@ async function refresh(){
  if(pendingInvitationToken){const tokenField=root.querySelector("#invite-token");if(tokenField){tokenField.value=pendingInvitationToken;toast("Invitation détectée : connectez-vous avec l’adresse destinataire, puis acceptez-la.")}}
 }
 async function edge(action,payload={}){
- const {data,error}=await supabase.functions.invoke("manage-company-members",{body:{action,...payload}});
+ const invoke = () => supabase.functions.invoke("manage-company-members",{body:{action,...payload}});
+ let result = await invoke();
+ // Une Edge Function peut renvoyer 401 avant que le client ait renouvelé
+ // un access token devenu invalide. On renouvelle la session une seule fois,
+ // puis on rejoue exactement la même action et le même payload.
+ const status = Number(result.error?.context?.status ?? result.error?.status ?? 0);
+ if(result.error && status === 401){
+  const {data: refreshed,error: refreshError}=await supabase.auth.refreshSession();
+  if(!refreshError && refreshed?.session){
+   session=refreshed.session;
+   result=await invoke();
+  }
+ }
+ const {data,error}=result;
  if(error){
   let serverMessage="";
   try{

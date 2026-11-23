@@ -338,7 +338,7 @@ async function reverseStockDocument(documentId, companyRole) {
     const operationUid=globalThis.crypto?.randomUUID?.();
     if (!operationUid) throw new Error("Génération sécurisée de l'identifiant d'opération indisponible.");
     await reverseCloudStockDocument(documentId,operationUid,reason.trim());
-    toast("Contrepassation enregistrée. Les valeurs et couches de valorisation ont été restaurées.");
+    toast("Contrepassation enregistrée. Les quantités, valeurs, lots et numéros de série ont été restaurés.");
     viewStock(false,companyRole);
   } catch(error) {
     toast(error?.message||"Contrepassation impossible.",6000);

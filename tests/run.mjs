@@ -10,6 +10,7 @@ import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js"
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
+import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1085,6 +1086,65 @@ test("politique de reprise : les erreurs temporaires sont reconnues", () => {
   assert.equal(shouldRetryFunctionError({ status: 422, message: "Écriture invalide" }), false);
   assert.equal(shouldRetryFunctionError({ status: 401, message: "Session invalide" }), false);
   assert.equal(shouldRetryFunctionError({ message: "Network request failed" }), true);
+});
+
+
+console.log("— Gestion de stock —");
+function freshStockStore() { return { settings: { currency: "MAD" } }; }
+test("stock : article physique et service avec règles de traçabilité", () => {
+  const s = freshStockStore();
+  assert.equal(addProduct(s, { sku: "ART-001", name: "Carton", type: "goods", unit: "pièce", tracking: "none" }).ok, true);
+  assert.equal(addProduct(s, { sku: "SRV-001", name: "Conseil", type: "service", unit: "heure", tracking: "none" }).ok, true);
+  assert.equal(addProduct(s, { sku: "SRV-002", name: "Service interdit", type: "service", unit: "heure", tracking: "serial" }).ok, false);
+  assert.equal(addProduct(s, { sku: "ART-001", name: "Doublon", type: "goods", unit: "pièce", tracking: "none" }).ok, false);
+});
+test("stock : entrée, sortie et valorisation CUMP cohérentes", () => {
+  const s = freshStockStore(), stock = getStock(s);
+  const p = addProduct(s, { sku: "CUMP-01", name: "Article CUMP", type: "goods", unit: "pièce", tracking: "none" }).product;
+  const w = stock.warehouses[0];
+  assert.equal(postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: w.id, quantity: 10, unitCost: 100 }).ok, true);
+  assert.equal(postStockMovement(s, { kind: "issue", productId: p.id, warehouseId: w.id, quantity: 3 }).ok, true);
+  assert.equal(stockBalance(stock, p.id, w.id), 7);
+  assert.equal(productBalance(stock, p.id), 7);
+  assert.equal(stockValuation(stock, p.id), 700);
+});
+test("stock : transfert entre entrepôts conserve la quantité totale", () => {
+  const s = freshStockStore(), stock = getStock(s);
+  const p = addProduct(s, { sku: "TR-01", name: "Article transfert", type: "goods", unit: "pièce", tracking: "none" }).product;
+  const w1 = stock.warehouses[0], w2 = addWarehouse(s, "Dépôt secondaire").warehouse;
+  assert.equal(postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: w1.id, quantity: 10, unitCost: 12 }).ok, true);
+  assert.equal(postStockMovement(s, { kind: "transfer", productId: p.id, warehouseId: w1.id, destinationWarehouseId: w2.id, quantity: 4 }).ok, true);
+  assert.equal(stockBalance(stock, p.id, w1.id), 6);
+  assert.equal(stockBalance(stock, p.id, w2.id), 4);
+  assert.equal(productBalance(stock, p.id), 10);
+});
+test("stock : refus du négatif par défaut et FIFO sans couche", () => {
+  const s = freshStockStore(), stock = getStock(s);
+  const p = addProduct(s, { sku: "FIFO-01", name: "Article FIFO", type: "goods", unit: "pièce", tracking: "none" }).product;
+  const w = stock.warehouses[0];
+  stock.settings.valuationMethod = "fifo";
+  assert.equal(stock.settings.allowNegative, false);
+  assert.equal(postStockMovement(s, { kind: "issue", productId: p.id, warehouseId: w.id, quantity: 1 }).ok, false);
+  assert.equal(postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: w.id, quantity: 5, unitCost: 20 }).ok, true);
+  const out = postStockMovement(s, { kind: "issue", productId: p.id, warehouseId: w.id, quantity: 2 });
+  assert.equal(out.ok, true);
+  assert.equal(out.movement.totalCost, 40);
+  assert.equal(stockBalance(stock, p.id, w.id), 3);
+});
+test("stock : service et entrepôt invalide refusés", () => {
+  const s = freshStockStore(), stock = getStock(s);
+  const p = addProduct(s, { sku: "SRV-03", name: "Prestation", type: "service", unit: "heure", tracking: "none" }).product;
+  assert.equal(postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: "main", quantity: 1, unitCost: 10 }).ok, false);
+  const q = addProduct(s, { sku: "PH-01", name: "Physique", type: "goods", unit: "pièce", tracking: "none" }).product;
+  assert.equal(postStockMovement(s, { kind: "receipt", productId: q.id, warehouseId: "unknown", quantity: 1, unitCost: 10 }).ok, false);
+});
+test("stock : navigation et synchronisation cloud sont raccordées", () => {
+  const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+  const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
+  assert.match(app, /\["stock", "Gestion de stock"\]/);
+  assert.match(app, /"stock"\]\s*;/);
+  assert.match(cloud, /stock: localStore\.stock \|\| null/);
+  assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

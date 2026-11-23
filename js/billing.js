@@ -353,8 +353,27 @@ async function openEditor(type, source = null) {
     const remaining = Math.max(0, round(result.ttc - advance));
     content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br>${advance > 0 ? `<small>${advanceLabel} : ${fmt(advance,content.querySelector("#bill-currency").value,store.settings.locale)} · Solde : ${fmt(remaining,content.querySelector("#bill-currency").value,store.settings.locale)}</small><br>` : ""}<small>Contre-valeur comptable : ${fmt(number(content.querySelector("#bill-rate").value) > 0 ? convertBillingAmount(result.ttc, number(content.querySelector("#bill-rate").value)) : 0,store.settings.currency,store.settings.locale)}</small>`;
   };
+  const configureStockUnit = (tr, preferred = "") => {
+    if (!stockEnabled) return;
+    const productId=tr.querySelector('[data-line-field="stockProductId"]').value;
+    const product=stockProducts.find(item=>item.id===productId);
+    const select=tr.querySelector('[data-line-field="stockUnit"]');
+    if(!select) return;
+    const units=product ? [product.base_unit || "unité",...(stockState.unit_conversions||[]).filter(item=>item.product_id===product.id).map(item=>item.unit_code)] : [];
+    select.innerHTML=units.map(unit=>`<option value="${esc(unit)}">${esc(unit)}</option>`).join("");
+    select.disabled=!product;
+    if(units.includes(preferred)) select.value=preferred;
+    if(product?.tracking==="lot") tr.querySelector('[data-line-field="stockLotCode"]').placeholder="Lot obligatoire";
+    else tr.querySelector('[data-line-field="stockLotCode"]').placeholder="Lot (facultatif)";
+    if(product?.tracking==="serial") tr.querySelector('[data-line-field="stockSerialNumbers"]').placeholder="Un numéro par unité";
+    else tr.querySelector('[data-line-field="stockSerialNumbers"]').placeholder="Séries (facultatif)";
+  };
   const bindRows = () => {
     content.querySelectorAll("#bill-lines input").forEach((input) => input.addEventListener("input", refreshTotals));
+    if(stockEnabled) content.querySelectorAll('[data-line-field="stockProductId"]').forEach(select=>{
+      configureStockUnit(select.closest("tr"),doc.lines[Number(select.closest("tr").dataset.billLine)]?.stockUnit || "");
+      select.addEventListener("change",()=>configureStockUnit(select.closest("tr")));
+    });
     content.querySelectorAll("[data-line-remove]").forEach((button) => button.addEventListener("click", () => {
       if (content.querySelectorAll("#bill-lines tr").length <= 1) return;
       button.closest("tr").remove();

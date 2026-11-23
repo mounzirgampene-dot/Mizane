@@ -74,6 +74,11 @@ export async function notifySyncFailure(error) {
   if (!ctx || ctx.role !== "accountant") return false;
   const message = String(error?.message || error || "Une anomalie a bloqué l’enregistrement cloud.");
   if (/failed to fetch|network|réseau|timeout|timed out|429|502|503|504|session expirée|not authenticated/i.test(message)) return false;
+  const throttleKey = `mizane:last-accounting-alert:${ctx.companyId}:${ctx.user.id}`;
+  try {
+    const previous = JSON.parse(localStorage.getItem(throttleKey) || "null");
+    if (previous?.message === message && Date.now() - Number(previous.at || 0) < 120000) return false;
+  } catch { /* stockage local indisponible : la base conserve la sécurité */ }
   const { error: rpcError } = await getClient().rpc("create_accounting_alert", {
     p_company_id: ctx.companyId,
     p_title: "Opération comptable bloquée",
@@ -83,6 +88,7 @@ export async function notifySyncFailure(error) {
     p_details: { source: "cloud_sync_failure" },
   });
   if (rpcError) throw rpcError;
+  try { localStorage.setItem(throttleKey, JSON.stringify({ message, at: Date.now() })); } catch { /* notification déjà créée côté serveur */ }
   await refreshUnreadCount();
   return true;
 }

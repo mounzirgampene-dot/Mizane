@@ -3,6 +3,7 @@ import { cashBalance } from "../accounting.js";
 import { saveStore } from "../db.js";
 import { store, $app, toast, esc, money } from "../state.js";
 import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
+import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -12,10 +13,11 @@ const invoiceBalance = doc => {
   return Math.max(0, round(Number(doc.totals?.ttc || 0) - paid));
 };
 
-function receivables() {
-  return (store.billing?.documents || []).filter(doc =>
-    doc.type === "invoice" && doc.status !== "cancelled" && invoiceBalance(doc) > 0
-  ).map(doc => ({
+function receivables(start, end) {
+  return (store.billing?.documents || []).filter(doc => {
+    const date = doc.date || doc.dueDate || "";
+    return doc.type === "invoice" && doc.status !== "cancelled" && invoiceBalance(doc) > 0 && (!start || date >= start) && (!end || date <= end);
+  }).map(doc => ({
     number: doc.number || "Facture",
     customer: doc.customerName || "Client non renseigné",
     dueDate: doc.dueDate || doc.date || today(),
@@ -33,10 +35,10 @@ function customerBalances(items) {
     .sort((a, b) => b.amount - a.amount);
 }
 
-function suppliers() {
+function suppliers(start, end) {
   const totals = new Map();
   for (const entry of store.entries || []) {
-    if (entry.date > today()) continue;
+    if (entry.date > today() || (start && entry.date < start) || (end && entry.date > end)) continue;
     for (const line of entry.lines || []) {
       if (!/^40/.test(String(line.account || "")) || !String(line.third || "").trim()) continue;
       const name = String(line.third).trim();
@@ -66,15 +68,27 @@ function forecastRows(receivablesList, manual) {
   ].sort((a, b) => a.date.localeCompare(b.date));
 }
 
-export function viewFinancial() {
-  const docs = receivables();
-  const vendors = suppliers();
+export function viewFinancial(period = null) {
+  const exerciceStart = period?.start || store.settings.exerciceStart;
+  const exerciceEnd = period?.end || store.settings.exerciceEnd;
+  const docs = receivables(exerciceStart, exerciceEnd);
+  const vendors = suppliers(exerciceStart, exerciceEnd);
+  const priorRange = previousYearRange(exerciceStart, exerciceEnd);
+  const priorDocs = period?.compare === false ? [] : receivables(priorRange.start, priorRange.end);
+  const priorVendors = period?.compare === false ? [] : suppliers(priorRange.start, priorRange.end);
   const customers = customerBalances(docs);
   const manual = Array.isArray(store.settings.cashForecast) ? store.settings.cashForecast.filter(item => item && /^\d{4}-\d{2}-\d{2}$/.test(String(item.date || "")) && String(item.label || "").trim() && Number(item.amount) > 0 && ["in", "out"].includes(item.direction)) : [];
   store.settings.cashForecast = manual;
   const outstanding = round(docs.reduce((sum, item) => sum + item.amount, 0));
   const payable = round(vendors.reduce((sum, item) => sum + item.amount, 0));
   const currentCash = cashBalance(store, "", today());
+  const periodCashFlow = cashBalance(store, exerciceStart, exerciceEnd);
+  const priorCashFlow = period?.compare === false ? 0 : cashBalance(store, priorRange.start, priorRange.end);
+  const comparison = period?.compare === false ? "" : comparisonTable("Comparaison avec N-1", exerciceStart + " → " + exerciceEnd, priorRange.start + " → " + priorRange.end, [
+    {label:"Flux net de trésorerie",current:periodCashFlow,previous:priorCashFlow},
+    {label:"Créances ouvertes sur factures émises",current:outstanding,previous:round(priorDocs.reduce((sum,item)=>sum+item.amount,0))},
+    {label:"Dettes fournisseurs estimées",current:payable,previous:round(priorVendors.reduce((sum,item)=>sum+item.amount,0))},
+  ],money);
   const forecast = forecastRows(docs, manual);
   const buckets = ["À échéance / non échue", "1 à 30 jours", "31 à 60 jours", "61 à 90 jours", "Plus de 90 jours"];
   const bucketRows = buckets.map(name => {
@@ -94,7 +108,10 @@ export function viewFinancial() {
   const forecastChart = renderHorizontalBars("Trésorerie projetée",forecastTotals.map(item=>({label:"À "+item.days+" jours",amount:Math.max(0,item.amount)})),[{key:"amount",label:"Solde projeté"}],money);
   $app.innerHTML = `
     <h1>Pilotage financier</h1>
+    ${periodControls("pilotage",exerciceStart,exerciceEnd)}
     ${chartModeControls("pilotage")}
+    ${comparison}
+    <p class="muted">Les créances et soldes fournisseurs affichés ci-dessous portent sur les factures et écritures de la période sélectionnée. La trésorerie comptabilisée reste le solde actuel.</p>
     <div id="pilotage-table-view">
     <p class="muted">Suivi des créances, des soldes fournisseurs et prévisions de trésorerie à partir des données comptables et de facturation.</p>
     <div class="grid cols-3">
@@ -152,6 +169,7 @@ export function viewFinancial() {
     </div>
   `;
   bindChartMode("pilotage");
+  bindPeriodControls("pilotage", viewFinancial);
   document.getElementById("forecast-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const date = document.getElementById("forecast-date").value;

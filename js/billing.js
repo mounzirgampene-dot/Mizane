@@ -408,7 +408,7 @@ async function openEditor(type, source = null) {
   });
   content.querySelector("#bill-rate").addEventListener("input", refreshTotals);
   content.querySelector("#bill-advance").addEventListener("input", refreshTotals);
-  content.querySelector("#bill-save").addEventListener("click", () => {
+  content.querySelector("#bill-save").addEventListener("click", async () => {
     const lines = readLines();
     const errors = [];
     if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
@@ -420,6 +420,10 @@ async function openEditor(type, source = null) {
     if (!lines.length || lines.some((line) => !line.description || line.quantity <= 0 || line.unitPrice < 0 || line.taxRate < 0)) errors.push("Chaque ligne doit avoir une description, une quantité positive, un prix et un taux valides.");
     const rate = number(content.querySelector("#bill-rate").value);
     if (!(rate > 0)) errors.push("Le taux de conversion doit être supérieur à zéro.");
+    if (stockEnabled) for (const line of lines) {
+      if (line.stockProductId && !line.stockWarehouseId) errors.push("Choisissez un entrepôt pour chaque ligne liée au stock.");
+      if (!line.stockProductId && line.stockWarehouseId) errors.push("Choisissez un article ou retirez l’entrepôt de la ligne.");
+    }
     const draftForValidation = { type, date: content.querySelector("#bill-date").value, customerName: content.querySelector("#bill-customer").value, currency: content.querySelector("#bill-currency").value, exchangeRate: rate, lines };
     errors.push(...validateBillingDocument(draftForValidation).errors);
     if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
@@ -455,6 +459,7 @@ async function openEditor(type, source = null) {
       paidAmount: source ? number(source.paidAmount) : 0,
       payments: source && Array.isArray(source.payments) ? source.payments : [],
       status: source ? source.status : "issued",
+      ...(stockEnabled ? {stockTrigger:stockState?.settings?.sales_trigger || "delivery"} : {}),
       createdAt: source ? source.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -490,9 +495,19 @@ async function openEditor(type, source = null) {
     const accountingResult = type === "invoice" ? postInvoiceAccounting(saved) : null;
     saveBilling();
     modal.close();
-    renderList();
-    if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
+    if (type === "invoice" && stockEnabled && saved.stockTrigger === "invoice_validation" && invoiceHasStockLines(saved)) {
+      try {
+        const built=invoiceStockLines(saved,stockState);
+        const operation={operationUid:stockOperationUid(),documentDate:saved.date,note:"Sortie automatique à la validation de la facture "+saved.number,lines:built.lines,fulfilled:built.fulfilled,kind:"invoice_validation",sourceType:"sales_invoice",sourceId:String(saved.id)};
+        const result=await submitInvoiceStockOperation(saved,stockState,operation);
+        if(!result.ok) toast("Facture enregistrée ; sortie de stock en attente : "+(result.error?.message||"erreur inconnue")+". Utilisez « Réessayer le stock » après correction.",7000);
+        else toast("Facture enregistrée et sortie de stock confirmée.");
+      } catch(error) {
+        toast("Facture enregistrée ; sortie de stock non effectuée : "+error.message,7000);
+      }
+    } else if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
     else toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée et comptabilisée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée et comptabilisée."));
+    renderList();
   });
   refreshTotals();
   modal.showModal();

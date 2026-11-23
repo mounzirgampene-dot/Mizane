@@ -22,6 +22,7 @@ const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/202611
 const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
 const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
 const stockReservationFulfillmentMigration = readFileSync(new URL("../supabase/migrations/20261123094940_stock_auto_reservation_fulfillment.sql", import.meta.url), "utf8");
+const stockPhysicalInventoryMigration = readFileSync(new URL("../supabase/migrations/20261123110000_stock_physical_inventory.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -40,6 +41,20 @@ test("invitations : création atomique protégée par verrou et vérification ad
   assert.doesNotMatch(invitationFunction, /\.from\("company_invitations"\)\s*\.insert\(/);
 });
 
+test("inventaire physique : gel intégral, comptage, soumission et ajustement atomique", () => {
+  assert.match(stockPhysicalInventoryMigration, /stock_count_sessions/);
+  assert.match(stockPhysicalInventoryMigration, /stock_count_lines/);
+  assert.match(stockPhysicalInventoryMigration, /stock_count_block_movement/);
+  assert.match(stockPhysicalInventoryMigration, /status in \('counting','submitted'\)/);
+  assert.match(stockPhysicalInventoryMigration, /p_source_type='inventory_count'/);
+  assert.match(stockPhysicalInventoryMigration, /stock_count_finalize_impl/);
+  assert.match(stockPhysicalInventoryMigration, /stock\.count_approved_and_posted/);
+  assert.match(stockPhysicalInventoryMigration, /v_role<>'admin'/);
+  assert.match(stockUiSource, /readCloudStockCounts/);
+  assert.match(stockUiSource, /data-count-open/);
+  assert.match(stockCloudSource, /stock_count_finalize/);
+});
+ 
 function test(name, fn) {
   try { fn(); passed++; console.log("  ✓ " + name); }
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }

@@ -111,6 +111,17 @@ function paymentIdentity(payment) {
 function mergeInitialBilling(localValue, remoteValue) {
   const local = normalizeBilling(localValue);
   const remote = normalizeBilling(remoteValue);
+  const hasPurchases = billing => Boolean(
+    billing.purchases &&
+    ((Array.isArray(billing.purchases.documents) && billing.purchases.documents.length) ||
+     (Array.isArray(billing.purchases.suppliers) && billing.purchases.suppliers.length))
+  );
+  const localHasPurchases = hasPurchases(local);
+  const remoteHasPurchases = hasPurchases(remote);
+  if (localHasPurchases && remoteHasPurchases && signature(local.purchases) !== signature(remote.purchases)) {
+    throw new Error("Conflit lors de la première synchronisation des Achats : les données locales et cloud diffèrent. Aucune version n'a été écrasée.");
+  }
+  const purchases = localHasPurchases ? clone(local.purchases) : clone(remote.purchases);
   const settings = { ...clone(remote.settings), ...clone(local.settings) };
   const records = [];
   const byIdentity = new Map();
@@ -206,6 +217,7 @@ function mergeInitialBilling(localValue, remoteValue) {
     ...remote,
     ...local,
     settings,
+    purchases,
     documents: records.map(record => record.doc),
     nextId,
     nextPaymentId,

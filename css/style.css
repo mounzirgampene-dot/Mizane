@@ -437,3 +437,19 @@ main.workspace.has-work-sidebar {
   .chart-row-label { white-space: normal; }
   .chart-bar-value { min-width: 76px; font-size: .74rem; }
 }
+
+
+/* Filtres de période et comparaisons inter-exercices */
+.report-period-controls { margin: 12px 0; }
+.report-period-controls .row { align-items: end; gap: 12px; }
+.report-period-controls .row > div { min-width: 145px; }
+.report-period-controls .period-compare { flex: 1; min-width: 230px; padding-bottom: 9px; }
+.report-period-controls .period-compare label { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.report-period-controls .period-compare input { width: auto; margin: 0; }
+.report-comparison { margin: 12px 0 18px; }
+.report-comparison h2 { margin-top: 0; }
+@media (max-width: 640px) {
+  .report-period-controls .row { display: grid; grid-template-columns: 1fr 1fr; }
+  .report-period-controls .period-compare { grid-column: 1 / -1; }
+  .report-period-controls .nogrow { grid-column: 1 / -1; }
+}

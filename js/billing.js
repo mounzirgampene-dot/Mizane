@@ -315,7 +315,7 @@ async function reserveInvoiceStock(invoiceId) {
   content.innerHTML=`<h2>Réserver le stock — ${esc(invoice.number)}</h2>
     <p class="muted">Cette action protège les quantités restantes de la facture dans les entrepôts indiqués. Les réservations seront automatiquement consommées lors des sorties liées à cette facture et de ses livraisons partielles.</p>
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité à réserver</th><th>Unité de base</th></tr></thead><tbody>
-    ${eligible.map(item=>{const warehouse=(stockState.warehouses||[]).find(w=>w.id===item.line.stockWarehouseId);return `<tr><td>${esc(item.product.name)}</td><td>${esc(warehouse?.name||"Entrepôt")}</td><td class="num">${fmt(number(item.remaining)*item.factor)}</td><td>${esc(item.product.base_unit||"unité")}</td></tr>`;}).join("")}
+    ${eligible.map(item=>{const warehouse=(stockState.warehouses||[]).find(w=>w.id===item.line.stockWarehouseId);return `<tr><td>${esc(item.product.name)}</td><td>${esc(warehouse?.name||"Entrepôt")}</td><td class="num">${(number(item.remaining)*item.factor).toLocaleString("fr-FR",{maximumFractionDigits:4})}</td><td>${esc(item.product.base_unit||"unité")}</td></tr>`;}).join("")}
     </tbody></table></div>
     <div id="bill-reservation-error" class="errors" role="alert"></div>
     <div class="actions"><button type="button" id="bill-reservation-submit">Confirmer les réservations</button><button type="button" class="secondary" data-close>Annuler</button></div>`;
@@ -326,7 +326,7 @@ async function reserveInvoiceStock(invoiceId) {
     try{
       invoice.stockReservationOperations ||= [];
       for(const item of eligible){
-        const quantity=round(item.remaining*item.factor);
+        const quantity=Math.round((item.remaining*item.factor+Number.EPSILON)*10000)/10000;
         let operation=invoice.stockReservationOperations.find(entry=>entry.lineIndex===item.index);
         if(operation && (operation.quantity!==quantity || operation.productId!==item.line.stockProductId || operation.warehouseId!==item.line.stockWarehouseId)){
           throw new Error("La facture a changé depuis la préparation de la réservation. Actualisez-la avant de continuer.");

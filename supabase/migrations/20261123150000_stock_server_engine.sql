@@ -283,7 +283,7 @@ begin
      or (v_type='service' and v_tracking<>'none') then
     raise exception 'Données article invalides.' using errcode='22023';
   end if;
-  if v_id is not null and v_type='service' and exists(select 1 from public.stock_balances b where b.company_id=p_company_id and b.product_id=v_id and (b.quantity<>0 or b.inventory_value<>0)) then
+  if v_id is not null and v_type='service' and exists(select 1 from public.stock_movements m where m.company_id=p_company_id and m.product_id=v_id) then
     raise exception 'Un article ayant un historique de stock ne peut pas être converti en service.' using errcode='55000';
   end if;
   if v_id is not null and exists(select 1 from public.stock_movements m join public.stock_products p on p.company_id=m.company_id and p.id=m.product_id where m.company_id=p_company_id and m.product_id=v_id and p.base_unit<>coalesce(nullif(p_product->>'base_unit',''),'unité')) then

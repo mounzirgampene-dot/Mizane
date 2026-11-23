@@ -322,6 +322,28 @@ function warehouseDialog(cloudMode = false, companyRole = null) {
 }
 
 
+async function reverseStockDocument(documentId, companyRole) {
+  if (!["admin","accountant"].includes(companyRole)) {
+    toast("Droit de contrepassation réservé aux administrateurs et comptables.",5000);
+    return;
+  }
+  if (!globalThis.confirm("Créer une contrepassation exacte de ce document ? Le document initial restera dans le journal avec le statut contrepassé.")) return;
+  const reason=globalThis.prompt("Motif obligatoire de la contrepassation (5 à 500 caractères) :");
+  if (reason===null) return;
+  if (reason.trim().length<5 || reason.trim().length>500) {
+    toast("Le motif doit contenir entre 5 et 500 caractères.",5000);
+    return;
+  }
+  try {
+    const operationUid=globalThis.crypto?.randomUUID?.();
+    if (!operationUid) throw new Error("Génération sécurisée de l'identifiant d'opération indisponible.");
+    await reverseCloudStockDocument(documentId,operationUid,reason.trim());
+    toast("Contrepassation enregistrée. Les valeurs et couches de valorisation ont été restaurées.");
+    viewStock(false,companyRole);
+  } catch(error) {
+    toast(error?.message||"Contrepassation impossible.",6000);
+  }
+}
 async function releaseReservation(reservationId, companyRole) {
   try {
     await releaseCloudStockReservation(reservationId);

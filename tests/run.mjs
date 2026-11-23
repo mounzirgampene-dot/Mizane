@@ -16,6 +16,9 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
+const notificationsMigration = readFileSync(new URL("../supabase/migrations/20261123203000_accounting_notifications.sql", import.meta.url), "utf8");
+const notificationsSource = readFileSync(new URL("../js/notifications.js", import.meta.url), "utf8");
+const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");
 const stockIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123090112_stock_foreign_key_indexes.sql", import.meta.url), "utf8");
@@ -1623,3 +1626,21 @@ test("achats : données fournisseurs synchronisées dans la facturation cloud sa
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);
+
+
+test("notifications comptables : boîte personnelle, alertes de blocage et revue admin", () => {
+  assert.match(notificationsMigration, /create table if not exists public\.accounting_notifications/);
+  assert.match(notificationsMigration, /recipient_user_id = \(select auth\.uid\(\)\)/);
+  assert.match(notificationsMigration, /create_accounting_alert/);
+  assert.match(notificationsMigration, /m\.role = 'accountant'/);
+  assert.match(notificationsMigration, /review_accounting_notification/);
+  assert.match(notificationsMigration, /m\.role = 'admin'/);
+  assert.match(notificationsMigration, /flag_duplicate_accounting_reference/);
+  assert.match(notificationsMigration, /Référence comptable déjà utilisée/);
+  assert.match(notificationsSource, /notifySyncFailure/);
+  assert.match(notificationsSource, /review_accounting_notification/);
+  assert.match(notificationsSource, /Marquer comme lue/);
+  assert.match(appSource, /notifications: viewNotifications/);
+  assert.match(appSource, /getUnreadNotificationCount/);
+  assert.match(appSource, /notifySyncFailure/);
+});

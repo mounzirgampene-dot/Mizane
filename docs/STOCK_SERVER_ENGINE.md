@@ -10,11 +10,11 @@ Fichier : `supabase/migrations/20261123150000_stock_server_engine.sql`
 
 - Tables dédiées et isolées par `company_id` : paramètres, entrepôts, articles, documents, lignes, mouvements, soldes, couches de valorisation, allocations FIFO, réservations et journal d'audit.
 - RLS activée et forcée sur les tables publiques ; lecture limitée aux membres actifs ; aucune écriture directe accordée au navigateur.
-- RPC `stock_read_state`, `stock_save_product`, `stock_save_warehouse`, `stock_update_settings`, `stock_post_document`, `stock_reserve`, `stock_release_reservation` et `stock_reverse_document`.
+- RPC `stock_read_state`, `stock_save_product`, `stock_save_warehouse`, `stock_update_settings`, `stock_post_document`, `stock_reserve` et `stock_release_reservation`. Les wrappers publics sont `SECURITY INVOKER` ; la logique privilégiée est dans le schéma privé non exposé.
 - Autorisation d'écriture côté serveur limitée à `admin` et `accountant`. L'activation du stock négatif est réservée à `admin`.
 - Verrou transactionnel par entreprise, clé d'idempotence `operation_uid`, validations côté serveur et audit.
 - Journal des mouvements, allocations FIFO et audit protégés contre les mises à jour/suppressions ordinaires.
-- CUMP et FIFO ; FIFO consomme les couches chronologiquement et conserve les allocations de sortie.
+- CUMP et FIFO ; FIFO consomme les couches chronologiquement et conserve les allocations de sortie. Le mode inventaire permanent/intermittent et les déclencheurs achat/vente sont paramétrables, sans automatisation achat/vente encore raccordée.
 - Transferts débit/crédités dans la même transaction ; réservations retranchées du disponible.
 - Le point d’entrée de contrepassation est volontairement bloqué : l’algorithme de restauration exacte des allocations CUMP/FIFO doit être finalisé avant de permettre une correction automatique. Les mouvements restent append-only.
 - Changement CUMP/FIFO bloqué après le premier mouvement afin d'éviter une revalorisation silencieuse.
@@ -35,7 +35,7 @@ Les éléments suivants ne sont pas activés dans cette migration et ne doivent 
 3. Inventaire physique guidé : les ajustements de quantité sont possibles via les documents d'ajustement, mais le workflow de comptage, gel, rapprochement et validation n'est pas encore raccordé.
 4. Comptabilisation automatique : aucun compte CGNC n'est codé en dur. Le raccordement attend une règle validée par entreprise et le plan de comptes réel.
 5. Réservations : création et libération sont présentes ; consommation automatique d'une réservation lors d'une livraison reste à raccorder.
-6. Contrepassation : le RPC est bloqué tant que la restauration exacte des couches de valorisation et des allocations FIFO n’est pas terminée. Utiliser les ajustements contrôlés après validation comptable ; ne pas supposer qu’une contrepassation automatique est disponible.
+6. Contrepassation : le point d’entrée RPC est bloqué tant que la restauration exacte des couches de valorisation et des allocations FIFO n’est pas terminée. Aucun bouton de contrepassation n’est affiché. Les corrections par ajustement restent à intégrer à l’interface.
 
 ## Contrôles et validation
 
@@ -47,7 +47,7 @@ Avant toute activation sur DEV :
 3. Vérifier les signatures, privilèges, politiques RLS et triggers dans PostgreSQL.
 4. Exécuter des tests transactionnels avec entreprise/utilisateurs/articles/entrepôts fictifs, concurrence, idempotence, FIFO, CUMP, transfert, réservation, contrepassation et rollback/nettoyage.
 5. Exécuter Supabase Security et Performance Advisors.
-6. Raccorder le frontend cloud, puis tester deux sessions distinctes (admin/comptable/reader) avant de rendre la PR fusionnable.
+6. Tester deux sessions distinctes (admin/comptable/reader) et valider le comportement de l’import historique avant de rendre la PR fusionnable.
 
 ## Sécurité
 

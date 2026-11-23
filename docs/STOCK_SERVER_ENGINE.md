@@ -10,6 +10,7 @@ Les migrations de stock sont appliquées sur Supabase **DEV uniquement**. Les ve
 - `20261123090728_fix_stock_lot_balance_decrease.sql`
 - `20261123090856_stock_serial_guards_and_indexes.sql`
 - `20261123091005_normalize_stock_serial_inputs.sql`
+- `20261123094940_stock_auto_reservation_fulfillment.sql`
 
 Aucune de ces migrations n'a été exécutée sur Production.
 

@@ -111,7 +111,7 @@ function invoiceStockLines(invoice, stockState, rows = null) {
   }
   return {lines,fulfilled};
 }
-async function submitInvoiceStockOperation(invoice, stockState, operation) {
+async function submitInvoiceStockOperation(invoice, operation) {
   if (!operation) return {ok:true,skipped:true};
   invoice.stockPendingOperation=operation;
   saveBilling();
@@ -137,7 +137,7 @@ async function submitInvoiceStockOperation(invoice, stockState, operation) {
 }
 async function retryInvoiceStock(invoice) {
   if (!invoice?.stockPendingOperation) return {ok:false,error:new Error("Aucun mouvement de stock en attente.")};
-  return submitInvoiceStockOperation(invoice,null,invoice.stockPendingOperation);
+  return submitInvoiceStockOperation(invoice,invoice.stockPendingOperation);
 }
 
 const nextNumber = (kind, settings) => {
@@ -260,7 +260,7 @@ async function openInvoiceDelivery(invoiceId) {
     <div class="actions"><button type="button" id="bill-delivery-submit">Confirmer la livraison</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-delivery-error" class="errors" role="alert"></div>`;
   bindBillingModalClose(content);
   content.querySelector("#bill-delivery-submit").addEventListener("click",async()=>{
-    const rows={}; const fulfilled=[]; const stockLines=[];
+    const rows={}; const fulfilled=[];
     for(const tr of content.querySelectorAll("[data-delivery-index]")){
       const index=Number(tr.dataset.deliveryIndex),line=invoice.lines[index],quantity=number(tr.querySelector("[data-delivery-quantity]").value);
       if(quantity<=0) continue;
@@ -278,7 +278,7 @@ async function openInvoiceDelivery(invoiceId) {
       const built=invoiceStockLines(invoice,stockState,rows);
       const operation={operationUid:stockOperationUid(),documentDate:today(),note:"Livraison partielle ou totale de la facture "+invoice.number,lines:built.lines,fulfilled,kind:"delivery",sourceType:"sales_delivery",sourceId:String(invoice.id)+":"+((invoice.stockDocuments||[]).length+1)};
       const button=content.querySelector("#bill-delivery-submit");button.disabled=true;
-      const result=await submitInvoiceStockOperation(invoice,stockState,operation);
+      const result=await submitInvoiceStockOperation(invoice,operation);
       if(!result.ok){content.querySelector("#bill-delivery-error").textContent="Livraison non confirmée : "+(result.error?.message||"erreur inconnue")+". Vous pourrez réessayer sans créer de doublon.";button.disabled=false;return;}
       modal.close();renderList();toast("Livraison enregistrée dans le stock.");
     } catch(error) { content.querySelector("#bill-delivery-error").textContent=error.message; }
@@ -507,7 +507,7 @@ async function openEditor(type, source = null) {
     saveBilling();
     modal.close();
     if (invoiceStockOperation) {
-      const result=await submitInvoiceStockOperation(saved,stockState,invoiceStockOperation);
+      const result=await submitInvoiceStockOperation(saved,invoiceStockOperation);
       if(!result.ok) toast("Facture enregistrée ; sortie de stock en attente : "+(result.error?.message||"erreur inconnue")+". Utilisez « Réessayer le stock » après correction.",7000);
       else toast("Facture enregistrée et sortie de stock confirmée.");
     } else if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);

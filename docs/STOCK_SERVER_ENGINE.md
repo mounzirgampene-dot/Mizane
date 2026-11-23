@@ -16,8 +16,14 @@ Fichier : `supabase/migrations/20261123150000_stock_server_engine.sql`
 - Journal des mouvements, allocations FIFO et audit protégés contre les mises à jour/suppressions ordinaires.
 - CUMP et FIFO ; FIFO consomme les couches chronologiquement et conserve les allocations de sortie.
 - Transferts débit/crédités dans la même transaction ; réservations retranchées du disponible.
-- Contrepassation par document inverse, avec motif obligatoire. Les documents d'origine sont conservés.
+- Le point d’entrée de contrepassation est volontairement bloqué : l’algorithme de restauration exacte des allocations CUMP/FIFO doit être finalisé avant de permettre une correction automatique. Les mouvements restent append-only.
 - Changement CUMP/FIFO bloqué après le premier mouvement afin d'éviter une revalorisation silencieuse.
+
+## Interface et reprise de l’historique
+
+L’interface Gestion de stock détecte une entreprise active et lit désormais le stock via `stock_read_state`. Les créations d’articles/entrepôts, paramètres, mouvements et réservations passent par les RPC transactionnelles. Les totaux utilisent les soldes serveur complets ; les 500 derniers mouvements ne servent qu’à l’historique affiché. La synchronisation de facturation n’écrit plus le stock dans `company_billing`.
+
+Une reprise explicite de l’ancien stock local est proposée uniquement lorsque le stock cloud est vide (ou lorsqu’une reprise est déjà commencée). Elle conserve les données locales, recrée les articles et entrepôts par référence/nom, puis rejoue les mouvements chronologiquement avec un `operation_uid` déterministe par entreprise et mouvement. Les doublons de requête sont donc neutralisés côté serveur. L’utilisateur doit déclencher cette reprise ; aucun transfert de données historiques n’est lancé automatiquement.
 
 ## Limites fonctionnelles explicites
 
@@ -29,11 +35,11 @@ Les éléments suivants ne sont pas activés dans cette migration et ne doivent 
 3. Inventaire physique guidé : les ajustements de quantité sont possibles via les documents d'ajustement, mais le workflow de comptage, gel, rapprochement et validation n'est pas encore raccordé.
 4. Comptabilisation automatique : aucun compte CGNC n'est codé en dur. Le raccordement attend une règle validée par entreprise et le plan de comptes réel.
 5. Réservations : création et libération sont présentes ; consommation automatique d'une réservation lors d'une livraison reste à raccorder.
-6. Intégration de l'interface existante : la vue actuelle utilise encore son modèle local historique et la synchronisation de facturation contient toujours le champ stock historique. Les RPC serveur doivent être raccordées à une interface adaptée avant usage réel multi-utilisateur. Ne pas interpréter la présence de la migration comme une bascule complète du frontend.
+6. Contrepassation : le RPC est bloqué tant que la restauration exacte des couches de valorisation et des allocations FIFO n’est pas terminée. Utiliser les ajustements contrôlés après validation comptable ; ne pas supposer qu’une contrepassation automatique est disponible.
 
 ## Contrôles et validation
 
-Les tests Node ajoutés vérifient statiquement les invariants de sécurité, le cloisonnement, les RPC, les verrous, l'idempotence, les protections append-only et les garde-fous FIFO/réservations. Ils ne remplacent pas une exécution PostgreSQL.
+Les tests Node ajoutés vérifient statiquement les invariants de sécurité, le cloisonnement, la frontière RPC, le raccordement de l’interface, l’import historique, les verrous, l'idempotence, les protections append-only et les garde-fous FIFO/réservations. Ils ne remplacent pas une exécution PostgreSQL.
 
 Avant toute activation sur DEV :
 1. Générer/valider la migration avec la version Supabase CLI du dépôt et vérifier son ordre dans `supabase migration list`.

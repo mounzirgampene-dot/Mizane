@@ -327,6 +327,15 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
       if(preferredId && available.some(t=>t.id===preferredId)) typeSelect.value=preferredId;
     };
     familySelect.onchange=()=>refreshTypes();
+    const trackingSelect=box.querySelector("#sp-tracking");
+    const syncTrackingNature=()=>{
+      const selected=types.find(t=>t.id===typeSelect.value);
+      const isService=selected?.nature==="service";
+      if(isService) trackingSelect.value="none";
+      for(const option of trackingSelect.options) option.disabled=isService&&option.value!=="none";
+    };
+    typeSelect.onchange=syncTrackingNature;
+    syncTrackingNature();
     box.querySelector("#sp-add-family").onclick=async()=>{
       const name=prompt("Nom de la nouvelle famille :"); if(name===null)return;
       try { const family=await saveCloudStockFamily({name:name.trim()}); families.push(family);
@@ -341,7 +350,7 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
       if(natureAnswer===null)return;
       const nature=natureAnswer.trim().toLowerCase()==="service"?"service":"physical";
       if(!["service","physique","physical"].includes(natureAnswer.trim().toLowerCase())){box.querySelector("#sp-error").textContent="Nature invalide. Saisissez physique ou service.";return;}
-      try { const type=await saveCloudStockType({name:name.trim(),family_id:familySelect.value,nature});types.push(type);refreshTypes(type.id);toast("Type d’article créé.");}
+      try { const type=await saveCloudStockType({name:name.trim(),family_id:familySelect.value,nature});types.push(type);refreshTypes(type.id);syncTrackingNature();toast("Type d’article créé.");}
       catch(e){box.querySelector("#sp-error").textContent=e.message||"Création du type impossible.";}
     };
   }

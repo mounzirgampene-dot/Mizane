@@ -21,6 +21,7 @@ const stockTraceabilityMigration = readFileSync(new URL("../supabase/migrations/
 const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/20261123090728_fix_stock_lot_balance_decrease.sql", import.meta.url), "utf8");
 const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
 const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
+const stockReservationFulfillmentMigration = readFileSync(new URL("../supabase/migrations/20261123120000_stock_auto_reservation_fulfillment.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -1366,6 +1367,17 @@ test("stock cloud : import historique non destructif et réservation/libération
   assert.match(stockServerMigration, /accounting_mode text not null default 'perpetual'/);
   assert.match(stockServerMigration, /status='released'/);
   assert.match(stockServerMigration, /duplicate',true,'reservation_id'/);
+});
+
+test("stock cloud : les sorties de vente consomment les réservations automatiquement et de façon atomique", () => {
+  assert.match(stockReservationFulfillmentMigration,/p_source_type in \(\x27sales_invoice\x27,\x27sales_delivery\x27\)/);
+  assert.match(stockReservationFulfillmentMigration,/order by r\.created_at,r\.id[\s\S]*?for update/);
+  assert.match(stockReservationFulfillmentMigration,/status=\x27fulfilled\x27/);
+  assert.match(stockReservationFulfillmentMigration,/quantity=quantity-v_reservation_take/);
+  assert.match(stockReservationFulfillmentMigration,/stock\.reservation_partially_fulfilled/);
+  assert.match(stockReservationFulfillmentMigration,/stock\.reservation_fulfilled/);
+  assert.match(stockReservationFulfillmentMigration,/consumed_quantity/);
+  assert.match(stockReservationFulfillmentMigration,/remaining_quantity/);
 });
 
 test("achats : fournisseurs, commandes, factures et rapprochement commande/facture", () => {

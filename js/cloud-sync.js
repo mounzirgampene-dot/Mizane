@@ -213,13 +213,15 @@ export function reverseCloudStockDocument(documentId, operationUid, reason) {
     p_reason: reason,
   });
 }
-export function reserveCloudStock({ operationUid, productId, warehouseId, quantity, reference = "" }) {
-  return stockRpc("stock_reserve", {
+export function reserveCloudStock({ operationUid, productId, warehouseId, quantity, reference = "", sourceType = null, sourceId = null }) {
+  const linked = sourceType !== null || sourceId !== null;
+  return stockRpc(linked ? "stock_reserve_linked" : "stock_reserve", {
     p_operation_uid: operationUid,
     p_product_id: productId,
     p_warehouse_id: warehouseId,
     p_quantity: quantity,
     p_reference: reference,
+    ...(linked ? { p_source_type: sourceType, p_source_id: sourceId } : {}),
   });
 }
 export function releaseCloudStockReservation(reservationId) {

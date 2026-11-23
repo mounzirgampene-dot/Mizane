@@ -123,7 +123,7 @@ Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'ent
 5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
 6. Réservation de 8 unités, livraison partielle de 3 puis sortie commerciale de 5 : réservation réduite à 5 puis marquée `fulfilled`, avec deux événements d'audit. Une sortie manuelle de 13 unités est refusée car elle empiéterait sur les 8 unités réservées.\n7. Inventaire physique : gel des mouvements, refus d’une sortie pendant le comptage, comptage de 10 à 8 unités, ajustement transactionnel et statut final `posted`.\n8. Contrôle après rollback : aucun article, entrepôt, lot, numéro de série ou session d’inventaire de test résiduel.
 
-Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **104 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
+Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **103 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
 
 ## Limites restantes
 

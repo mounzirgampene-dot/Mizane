@@ -621,6 +621,9 @@ $$;
 
 -- Fonctions internes privilégiées dans le schéma non exposé.
 -- Les seules fonctions publiques sont des wrappers SECURITY INVOKER.
+-- Le schéma reste non exposé par PostgREST ; USAGE permet aux wrappers INVOKER
+-- d'appeler uniquement les fonctions privées dont EXECUTE est accordé explicitement.
+grant usage on schema private to authenticated;
 revoke all on function private.stock_read_state_impl(uuid) from public,anon;
 revoke all on function private.stock_save_product_impl(uuid,jsonb) from public,anon;
 revoke all on function private.stock_save_warehouse_impl(uuid,jsonb) from public,anon;

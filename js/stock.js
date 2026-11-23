@@ -193,6 +193,9 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
   const remoteIsEmpty=cloudMode && !stock.products.length && !stock.movements.length && !(stock.balances||[]).length;
   const showLegacyImport=cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) && legacyStock && Array.isArray(legacyStock.products) && legacyStock.products.length>0 && (remoteIsEmpty || (migrationProgress?.started && !migrationProgress?.done));
+  const lotRows = lots.filter(l=>Number(l.quantity)>0).map(l=>{const p=stock.products.find(x=>x.id===(l.product_id||l.productId));const w=stock.warehouses.find(x=>x.id===(l.warehouse_id||l.warehouseId));return `<tr><td>${esc(p?.sku||"")} — ${esc(p?.name||"Article")}</td><td>${esc(l.lot_code||l.lotCode||"")}</td><td>${esc(w?.name||"—")}</td><td class="num">${fmtQty(l.quantity)}</td></tr>`;}).join("");
+  const serialRows = serials.map(s=>{const p=stock.products.find(x=>x.id===(s.product_id||s.productId));const w=stock.warehouses.find(x=>x.id===(s.warehouse_id||s.warehouseId));const status=s.status==="in_stock"?"En stock":s.status==="in_transit"?"En transit":"Sorti";return `<tr><td>${esc(s.serial_number||s.serialNumber||"")}</td><td>${esc(p?.sku||"")} — ${esc(p?.name||"Article")}</td><td>${esc(w?.name||"—")}</td><td>${status}</td></tr>`;}).join("");
+  const traceabilityHtml = (lotRows || serialRows) ? `<section class="card"><h2>Traçabilité</h2>${lotRows ? `<h3>Lots disponibles</h3><div class="table-wrap"><table><thead><tr><th>Article</th><th>Lot</th><th>Entrepôt</th><th class="num">Quantité</th></tr></thead><tbody>${lotRows}</tbody></table></div>` : ""}${serialRows ? `<h3>Numéros de série</h3><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Article</th><th>Entrepôt</th><th>État</th></tr></thead><tbody>${serialRows}</tbody></table></div>` : ""}</section>` : "";
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
@@ -215,6 +218,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       ${physical.map(p => `<tr><td>${esc(p.sku)} — ${esc(p.name)}</td>${stock.warehouses.map(w => `<td class="num">${fmtQty(stockBalance(stock,p.id,w.id))}</td>`).join("")}</tr>`).join("") || '<tr><td class="muted">Aucun article physique.</td></tr>'}
       </tbody></table></div>
     </section>
+    ${traceabilityHtml}
     <section class="card">
       <h2>Derniers mouvements</h2>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${""}</tr></thead><tbody>

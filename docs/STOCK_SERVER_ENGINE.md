@@ -80,7 +80,7 @@ Aucune de ces migrations n'a été exécutée sur Production.
 - CUMP et FIFO restent pris en charge ; les transferts préservent la valeur totale de l'entreprise.
 - Les couches et allocations FIFO sont enregistrées côté serveur.
 - Les réservations réduisent la quantité disponible pour les sorties.
-- Les déclencheurs achat/vente et le mode permanent/périodique restent paramétrables, mais les flux Achats, Facturation et Livraisons ne sont pas encore raccordés.
+- Les déclencheurs achat/vente et le mode permanent/périodique restent paramétrables ; Achats, Facturation et Livraisons sont raccordés au moteur de stock.
 - La contrepassation reste volontairement bloquée tant que la restauration exacte des couches et allocations CUMP/FIFO n'est pas livrée.
 - Aucun compte CGNC n'est codé en dur et aucune écriture comptable automatique n'est générée.
 
@@ -88,14 +88,12 @@ Aucune de ces migrations n'a été exécutée sur Production.
 
 Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'entreprise fictive de test, dans des transactions annulées par `ROLLBACK` :
 
-7. Réservation de 8 unités, livraison partielle de 3 puis sortie commerciale de 5 : réservation réduite à 5 puis marquée `fulfilled`, avec deux événements d'audit. Une sortie manuelle de 13 unités est refusée car elle empiéterait sur les 8 unités réservées.
-
 1. Création d'articles avec suivi lot et série, entrepôts et conversion carton/pièce.
 2. Réception de 2 cartons de 12 pièces à 1 200 MAD le carton, puis sortie d'un carton : quantité convertie de 24 à 12 pièces et valeur de 2 400 à 1 200 MAD.
 3. Contrôle du solde d'un lot ; une sortie supérieure au lot disponible est refusée.
 4. Réception de deux numéros de série, sortie du premier et transfert du second vers un autre entrepôt.
 5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
-6. Contrôle après rollback : aucun article, entrepôt, lot ou numéro de série de test résiduel.
+6. Réservation de 8 unités, livraison partielle de 3 puis sortie commerciale de 5 : réservation réduite à 5 puis marquée `fulfilled`, avec deux événements d'audit. Une sortie manuelle de 13 unités est refusée car elle empiéterait sur les 8 unités réservées.\n7. Contrôle après rollback : aucun article, entrepôt, lot ou numéro de série de test résiduel.
 
 Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **101 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
 

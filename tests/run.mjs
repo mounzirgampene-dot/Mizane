@@ -36,6 +36,7 @@ const stockReservationIdempotencyMigration = readFileSync(new URL("../supabase/m
 const stockProductCatalogMigration = readFileSync(new URL("../supabase/migrations/20261123164851_stock_product_catalog_and_prices.sql", import.meta.url), "utf8");
 const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123164907_stock_catalog_indexes_and_read_policy.sql", import.meta.url), "utf8");
 const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165146_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
+const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20261123180000_stock_product_price_units.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -1435,8 +1436,19 @@ test("stock : catalogue extensible par entreprise et prix d’achat/vente HT", (
   assert.match(stockUiSource,/Prix de vente HT/);
   assert.match(stockUiSource,/id="sp-purchase-unit"/);
   assert.match(stockUiSource,/id="sp-sale-unit"/);
-  assert.match(stockUiSource,/syncPriceUnits/);
-  assert.match(stockUiSource,/readonly aria-readonly="true"/);
+  assert.match(stockUiSource,/refreshPriceUnits/);
+  assert.match(stockUiSource,/sp-custom-units/);
+  assert.match(stockUiSource,/purchase_price_unit:input\.purchasePriceUnit/);
+  assert.match(stockUiSource,/sale_price_unit:input\.salePriceUnit/);
+  assert.doesNotMatch(stockUiSource,/readonly aria-readonly="true"/);
+  assert.match(stockPriceUnitsMigration,/add column if not exists purchase_price_unit text/i);
+  assert.match(stockPriceUnitsMigration,/add column if not exists sale_price_unit text/i);
+  assert.match(stockPriceUnitsMigration,/purchase_price_unit=v_purchase_unit/);
+  assert.match(stockPriceUnitsMigration,/sale_price_unit=v_sale_unit/);
+  assert.match(stockPriceUnitsMigration,/L’unité du prix d’achat doit être l’unité de base/);
+  assert.match(stockPriceUnitsMigration,/L’unité du prix de vente doit être l’unité de base/);
+  assert.match(stockPriceUnitsMigration,/pg_advisory_xact_lock/);
+  assert.match(stockPriceUnitsMigration,/Les conversions ne peuvent plus être modifiées après le premier mouvement/);
   assert.match(stockUiSource,/saveCloudStockProduct/);
 });
 test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {

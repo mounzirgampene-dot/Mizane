@@ -195,6 +195,8 @@ function renderList() {
       (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
+      (doc.type === "invoice" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
       "</td></tr>";
   };
   $app.innerHTML = `
@@ -223,6 +225,17 @@ function renderList() {
     saveBilling();
     toast(result.created ? result.created + " écriture(s) comptable(s) générée(s)." : "Toutes les écritures de cette facture existent déjà.");
   }));
+
+  $app.querySelectorAll("[data-bill-stock-retry]").forEach(button => button.addEventListener("click", async () => {
+    const invoice=billing.documents.find(item=>item.id===Number(button.dataset.billStockRetry));
+    if(!invoice) return;
+    button.disabled=true;
+    const result=await retryInvoiceStock(invoice);
+    if(!result.ok) toast("Mouvement de stock toujours en attente : "+(result.error?.message||"erreur inconnue"),6000);
+    else { renderList(); toast("Mouvement de stock confirmé."); }
+    button.disabled=false;
+  }));
+  $app.querySelectorAll("[data-bill-deliver]").forEach(button => button.addEventListener("click", () => openInvoiceDelivery(Number(button.dataset.billDeliver))));
 }
 
 function openEditor(type, source = null) {

@@ -4,10 +4,20 @@ import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { printHTML } from "../print.js";
 import { store, $app, router, toast, esc, money } from "../state.js";
 import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
+import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
 
-export function viewBalance() {
-  const { exerciceStart, exerciceEnd } = store.settings;
+export function viewBalance(period = null) {
+  const exerciceStart = period?.start || store.settings.exerciceStart;
+  const exerciceEnd = period?.end || store.settings.exerciceEnd;
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
+  const priorRange = previousYearRange(exerciceStart, exerciceEnd);
+  const prior = period?.compare === false ? null : trialBalance(store, priorRange.start, priorRange.end);
+  const comparison = prior ? comparisonTable("Comparaison avec N-1", exerciceStart + " → " + exerciceEnd, priorRange.start + " → " + priorRange.end, [
+    {label:"Total débit",current:tb.totals.debit,previous:prior.totals.debit},
+    {label:"Total crédit",current:tb.totals.credit,previous:prior.totals.credit},
+    {label:"Soldes débiteurs",current:tb.totals.soldeDebit,previous:prior.totals.soldeDebit},
+    {label:"Soldes créditeurs",current:tb.totals.soldeCredit,previous:prior.totals.soldeCredit},
+  ],money) : "";
   const table = `
     <p class="muted">Période : ${esc(exerciceStart)} → ${esc(exerciceEnd)}</p>
     ${tb.rows.length === 0 ? `<p class="muted">Aucune écriture.</p>` : `
@@ -23,7 +33,9 @@ export function viewBalance() {
   const charts = renderHorizontalBars("Comptes les plus mouvementés",chartRows,[{key:"debit",label:"Débit"},{key:"credit",label:"Crédit"}],money);
   $app.innerHTML = `
     <h1>Balance générale</h1>
+    ${periodControls("balance",exerciceStart,exerciceEnd)}
     ${chartModeControls("balance")}
+    ${comparison}
     <div id="balance-table-view"><div class="card table-wrap">${table}
       <div class="actions">
         <button class="secondary" id="bal-print">🖨 Imprimer</button>
@@ -41,6 +53,7 @@ export function viewBalance() {
     </div>
   `;
   bindChartMode("balance");
+  bindPeriodControls("balance", viewBalance);
   document.getElementById("bal-print").addEventListener("click", () =>
     printHTML(`Balance générale — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, table));
   document.getElementById("bal-csv").addEventListener("click", () => {
@@ -53,9 +66,17 @@ export function viewBalance() {
   });
 }
 
-export function viewIncome() {
-  const { exerciceStart, exerciceEnd } = store.settings;
+export function viewIncome(period = null) {
+  const exerciceStart = period?.start || store.settings.exerciceStart;
+  const exerciceEnd = period?.end || store.settings.exerciceEnd;
   const is = incomeStatement(store, exerciceStart, exerciceEnd);
+  const priorRange = previousYearRange(exerciceStart, exerciceEnd);
+  const prior = period?.compare === false ? null : incomeStatement(store, priorRange.start, priorRange.end);
+  const comparison = prior ? comparisonTable("Comparaison avec N-1", exerciceStart + " → " + exerciceEnd, priorRange.start + " → " + priorRange.end, [
+    {label:"Total charges",current:is.totCharges,previous:prior.totCharges},
+    {label:"Total produits",current:is.totProduits,previous:prior.totProduits},
+    {label:"Résultat",current:is.resultat,previous:prior.resultat},
+  ],money) : "";
   const body = `
     <div class="grid cols-2">
       <div class="card table-wrap">
@@ -80,7 +101,9 @@ export function viewIncome() {
   const incomeCharts = renderHorizontalBars("Répartition des charges et des produits",incomeRows,[{key:"charges",label:"Charges"},{key:"produits",label:"Produits"}],money);
   $app.innerHTML = `
     <h1>Compte de résultat</h1>
+    ${periodControls("income",exerciceStart,exerciceEnd)}
     ${chartModeControls("income")}
+    ${comparison}
     <div id="income-table-view">
       <div class="actions" style="margin-bottom:10px"><button class="secondary" id="inc-print">🖨 Imprimer</button></div>
       ${body}
@@ -94,6 +117,7 @@ export function viewIncome() {
       ${incomeCharts}
     </div>`;
   bindChartMode("income");
+  bindPeriodControls("income", viewIncome);
   document.getElementById("inc-print").addEventListener("click", () =>
     printHTML(`Compte de résultat — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, body));
 }
@@ -106,9 +130,18 @@ function groupTable(title, rows) {
     </tbody></table>`;
 }
 
-export function viewSheet() {
-  const { exerciceStart, exerciceEnd } = store.settings;
+export function viewSheet(period = null) {
+  const exerciceStart = period?.start || store.settings.exerciceStart;
+  const exerciceEnd = period?.end || store.settings.exerciceEnd;
   const b = balanceSheet(store, exerciceStart, exerciceEnd);
+  const priorRange = previousYearRange(exerciceStart, exerciceEnd);
+  const prior = period?.compare === false ? null : balanceSheet(store, priorRange.start, priorRange.end);
+  const comparison = prior ? comparisonTable("Comparaison avec N-1", exerciceStart + " → " + exerciceEnd, priorRange.start + " → " + priorRange.end, [
+    {label:"Total actif",current:b.totActif,previous:prior.totActif},
+    {label:"Total passif",current:b.totPassif,previous:prior.totPassif},
+    {label:"Résultat de l’exercice",current:b.resultat,previous:prior.resultat},
+    {label:"Écart actif / passif",current:b.ecart,previous:prior.ecart},
+  ],money) : "";
   const body = `
     <div class="grid cols-2">
       <div class="card table-wrap">
@@ -146,7 +179,9 @@ export function viewSheet() {
     + renderHorizontalBars("Composition du passif",liabilityRows,[{key:"amount",label:"Passif"}],money);
   $app.innerHTML = `
     <h1>Bilan</h1>
+    ${periodControls("sheet",exerciceStart,exerciceEnd)}
     ${chartModeControls("sheet")}
+    ${comparison}
     <div id="sheet-table-view">
       <div class="actions" style="margin-bottom:10px"><button class="secondary" id="sheet-print">🖨 Imprimer</button></div>
       ${body}
@@ -160,6 +195,7 @@ export function viewSheet() {
       ${sheetCharts}
     </div>`;
   bindChartMode("sheet");
+  bindPeriodControls("sheet", viewSheet);
   document.getElementById("sheet-print").addEventListener("click", () =>
     printHTML(`Bilan — ${store.settings.companyName} au ${exerciceEnd}`, body));
 }

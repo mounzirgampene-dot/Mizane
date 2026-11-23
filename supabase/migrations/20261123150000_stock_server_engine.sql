@@ -48,6 +48,7 @@ create table public.stock_documents (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
   operation_uid uuid not null,
+  request_hash text not null,
   document_type text not null check (document_type in ('receipt','issue','transfer','adjustment')),
   document_date date not null,
   reference text not null default '',
@@ -383,7 +384,7 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_actor uuid; v_doc uuid; v_existing jsonb; v_settings public.stock_settings%rowtype;
+  v_actor uuid; v_doc uuid; v_existing jsonb; v_existing_hash text; v_request_hash text; v_settings public.stock_settings%rowtype;
   v_line jsonb; v_no integer:=0; v_product uuid; v_wh uuid; v_dest uuid;
   v_qty numeric(20,6); v_cost numeric(20,6); v_total numeric(20,6);
   v_balance public.stock_balances%rowtype; v_layer record; v_left numeric(20,6);
@@ -396,15 +397,19 @@ begin
     raise exception 'Document de stock invalide.' using errcode='22023';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
-  select to_jsonb(d) into v_existing from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid;
-  if v_existing is not null then return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing); end if;
+  v_request_hash:=md5(concat_ws('|',p_document_type,p_document_date::text,coalesce(p_reference,''),coalesce(p_note,''),p_lines::text,coalesce(p_source_type,''),coalesce(p_source_id,'')));
+  select to_jsonb(d),d.request_hash into v_existing,v_existing_hash from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid;
+  if v_existing is not null then
+    if v_existing_hash<>v_request_hash then raise exception 'operation_uid déjà utilisé avec un contenu différent.' using errcode='23505'; end if;
+    return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing);
+  end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_settings from public.stock_settings where company_id=p_company_id for update;
   if exists(select 1 from public.accounting_periods p where p.company_id=p_company_id and p.status='closed' and p_document_date between p.start_date and p.end_date) then
     raise exception 'Période comptable clôturée : mouvement de stock interdit à cette date.' using errcode='55000';
   end if;
-  insert into public.stock_documents(company_id,operation_uid,document_type,document_date,reference,note,source_type,source_id,created_by)
-  values(p_company_id,p_operation_uid,p_document_type,p_document_date,coalesce(p_reference,''),coalesce(p_note,''),p_source_type,p_source_id,v_actor)
+  insert into public.stock_documents(company_id,operation_uid,request_hash,document_type,document_date,reference,note,source_type,source_id,created_by)
+  values(p_company_id,p_operation_uid,v_request_hash,p_document_type,p_document_date,coalesce(p_reference,''),coalesce(p_note,''),p_source_type,p_source_id,v_actor)
   returning id into v_doc;
 
   for v_line in select value from jsonb_array_elements(p_lines) loop
@@ -418,7 +423,7 @@ begin
     if p_document_type='adjustment' and coalesce(v_line->>'direction','') not in ('increase','decrease') then
       raise exception 'Un ajustement doit préciser increase ou decrease.' using errcode='22023';
     end if;
-    if v_qty<=0 or v_qty>999999999999 or v_cost<0 or v_cost>999999999999
+    if v_qty<=0 or v_qty>999999999999 or v_qty::text in ('NaN','Infinity','-Infinity') or v_cost<0 or v_cost>999999999999 or v_cost::text in ('NaN','Infinity','-Infinity')
        or (p_document_type='transfer' and (v_dest is null or v_dest=v_wh))
        or (p_document_type<>'transfer' and v_dest is not null) then
       raise exception 'Ligne de stock invalide.' using errcode='22023';
@@ -521,14 +526,19 @@ as $$
 declare v_actor uuid; v_existing public.stock_reservations%rowtype; v_balance numeric; v_reserved numeric;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
-  if p_operation_uid is null or p_quantity is null or p_quantity<=0 then raise exception 'Réservation invalide.' using errcode='22023'; end if;
+  if p_operation_uid is null or p_quantity is null or p_quantity<=0 or p_quantity::text in ('NaN','Infinity','-Infinity') then raise exception 'Réservation invalide.' using errcode='22023'; end if;
   if not exists(select 1 from public.stock_products p where p.company_id=p_company_id and p.id=p_product_id and p.active and p.product_type<>'service')
      or not exists(select 1 from public.stock_warehouses w where w.company_id=p_company_id and w.id=p_warehouse_id and w.active) then
     raise exception 'Article ou entrepôt invalide pour la réservation.' using errcode='22023';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select * into v_existing from public.stock_reservations where company_id=p_company_id and operation_uid=p_operation_uid;
-  if found then return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',v_existing.id); end if;
+  if found then
+    if v_existing.product_id<>p_product_id or v_existing.warehouse_id<>p_warehouse_id or v_existing.quantity<>p_quantity or v_existing.reference<>coalesce(p_reference,'') then
+      raise exception 'operation_uid déjà utilisé avec une réservation différente.' using errcode='23505';
+    end if;
+    return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',v_existing.id);
+  end if;
   select quantity into v_balance from public.stock_balances where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id for update;
   v_balance:=coalesce(v_balance,0);
   select coalesce(sum(quantity),0) into v_reserved from public.stock_reservations where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id and status='active';

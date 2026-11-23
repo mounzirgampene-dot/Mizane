@@ -185,6 +185,8 @@ export function viewStock(readOnly = false, companyRole = null) {
 
 function renderStock(stock, readOnly, companyRole, cloudMode) {
   const physical = stock.products.filter(p => p.type !== "service");
+  const lots = cloudMode ? (stock.lots || []) : (stock.lotBalances || []);
+  const serials = stock.serials || [];
   const totalProducts = stock.products.length;
   const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);

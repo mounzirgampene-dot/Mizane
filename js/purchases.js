@@ -197,7 +197,7 @@ function openDocument(type) {
   const suppliers = p.suppliers.filter(item => item.active !== false);
   if (!suppliers.length) { toast("Créez d'abord un fournisseur."); openSupplier(); return; }
   if (!(stockState?.products || []).some(item => item.active !== false && item.product_type !== "service") || !(stockState?.warehouses || []).length) { toast("Créez d'abord au moins un article physique et un entrepôt dans Gestion de stock."); return; }
-  const orders = p.documents.filter(doc => doc.type === "order" && !["cancelled","received"].includes(doc.status));
+  const orders = p.documents.filter(doc => doc.type === "order" && doc.status !== "cancelled");
   const { box } = modal(`<h2>${type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
     <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
     <div><label>Date</label><input id="pd-date" type="date" value="${today()}"></div></div>

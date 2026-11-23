@@ -9,6 +9,7 @@ import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools, viewCalculator } from "./views/ops.js";
 import { viewFinancial } from "./views/financial.js";
 import { viewBilling } from "./billing.js";
+import { viewStock } from "./stock.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
 
@@ -27,7 +28,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools", "financial", "billing"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -40,6 +41,7 @@ const NAV = [
   ["thirds", "Tiers"],
   ["financial", "Pilotage"],
   ["billing", "Facturation"],
+  ["stock", "Gestion de stock"],
   ["tools", "Outils"],
   ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
@@ -49,7 +51,7 @@ const NAV = [
 const VIEWS = {
   dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
-  tools: viewTools, financial: viewFinancial, billing: viewBilling, calculator: viewCalculator,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader()), calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork,
 };

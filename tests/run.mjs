@@ -63,6 +63,9 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
   assert.match(stockCumpReversalCleanupMigration, /v_settings\.valuation_method='fifo'/);
   assert.match(stockCumpReversalCleanupMigration, /ne doit pas recevoir de fausses allocations FIFO/);
   assert.match(stockUiSource, /data-stock-reverse/);
+  const reversalUiGuard = stockUiSource.match(/const canReverse=([^;]+);/)?.[1] || "";
+  assert.match(reversalUiGuard,/m\.documentStatus==="posted"/);
+  assert.doesNotMatch(reversalUiGuard,/tracking/);
   assert.match(stockUiSource, /reverseCloudStockDocument/);
   assert.match(stockUiSource, /Motif obligatoire/);
   assert.match(stockCloudSource, /stock_reverse_document/);

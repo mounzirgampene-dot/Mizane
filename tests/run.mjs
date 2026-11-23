@@ -1161,7 +1161,8 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
   assert.match(app, /\["stock", "Gestion de stock"\]/);
   assert.match(app, /"stock"\]\s*;/);
-  assert.match(cloud, /stock: localStore\.stock \|\| null/);
+  assert.match(cloud, /delete billingPayload\.stock/);
+  assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
 });
 
@@ -1229,6 +1230,8 @@ test("stock cloud : import historique non destructif et réservation/libération
   assert.match(stockUiSource, /Importer l’ancien stock local/);
   assert.match(stockUiSource, /reserveCloudStock\(/);
   assert.match(stockUiSource, /releaseCloudStockReservation\(/);
+  assert.match(stockUiSource, /stock-accounting-mode/);
+  assert.match(stockServerMigration, /accounting_mode text not null default 'perpetual'/);
   assert.match(stockServerMigration, /status='released'/);
   assert.match(stockServerMigration, /duplicate',true,'reservation_id'/);
 });

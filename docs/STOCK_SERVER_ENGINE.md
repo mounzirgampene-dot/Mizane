@@ -1,74 +1,88 @@
-# Gestion de stock MIZANE — Lot serveur transactionnel
+# Gestion de stock MIZANE — moteur transactionnel
 
-## État du lot
+## État des migrations
 
-Ces migrations ont été appliquées et vérifiées sur Supabase **DEV uniquement**. Aucune migration de stock n'a été exécutée sur Production.
+Les migrations de stock sont appliquées sur Supabase **DEV uniquement**. Les versions du dépôt correspondent à l'historique distant :
 
-Fichiers :
-- `supabase/migrations/20261123085959_stock_server_engine.sql`
-- `supabase/migrations/20261123090112_stock_foreign_key_indexes.sql`
+- `20261123085959_stock_server_engine.sql`
+- `20261123090112_stock_foreign_key_indexes.sql`
+- `20261123090659_stock_traceability_and_units.sql`
+- `20261123090728_fix_stock_lot_balance_decrease.sql`
+- `20261123090856_stock_serial_guards_and_indexes.sql`
+- `20261123091005_normalize_stock_serial_inputs.sql`
 
-La première tentative a été rejetée par PostgreSQL à cause d'un délimiteur dollar incorrect dans les wrappers RPC. Le SQL a été corrigé dans GitHub puis appliqué avec succès. La migration appliquée accorde également `USAGE` sur le schéma privé aux utilisateurs authentifiés afin que les wrappers `SECURITY INVOKER` puissent résoudre les implémentations privées ; les privilèges `EXECUTE` restent accordés fonction par fonction.
+Aucune de ces migrations n'a été exécutée sur Production.
 
-## Architecture livrée
+## Architecture et sécurité
 
-- Tables dédiées et isolées par `company_id` : paramètres, entrepôts, articles, documents, lignes, mouvements, soldes, couches de valorisation, allocations FIFO, réservations et journal d'audit.
-- RLS activée et forcée sur les tables publiques ; lecture limitée aux membres actifs ; aucune écriture directe accordée au navigateur.
-- RPC `stock_read_state`, `stock_save_product`, `stock_save_warehouse`, `stock_update_settings`, `stock_post_document`, `stock_reserve` et `stock_release_reservation`. Les wrappers publics sont `SECURITY INVOKER` ; la logique privilégiée est dans le schéma privé non exposé.
-- Autorisation d'écriture côté serveur limitée à `admin` et `accountant`. L'activation du stock négatif est réservée à `admin`.
-- Verrou transactionnel par entreprise, clé d'idempotence `operation_uid`, validations côté serveur et audit.
-- Journal des mouvements, allocations FIFO et audit protégés contre les mises à jour/suppressions ordinaires.
-- CUMP et FIFO ; FIFO consomme les couches chronologiquement et conserve les allocations de sortie. Le mode inventaire permanent/intermittent et les déclencheurs achat/vente sont paramétrables, sans automatisation achat/vente encore raccordée.
-- Transferts débit/crédités dans la même transaction ; réservations retranchées du disponible.
-- Le point d’entrée de contrepassation est volontairement bloqué : l’algorithme de restauration exacte des allocations CUMP/FIFO doit être finalisé avant de permettre une correction automatique. Les mouvements restent append-only.
-- Changement CUMP/FIFO bloqué après le premier mouvement afin d'éviter une revalorisation silencieuse.
+- Tables dédiées par entreprise : articles, entrepôts, documents, lignes, mouvements, soldes, couches de valorisation, allocations FIFO, réservations, lots, soldes par lot, numéros de série, conversions d'unités et audit.
+- RLS activée et forcée sur les tables publiques du stock ; lecture limitée aux membres actifs de l'entreprise ; aucune écriture directe du navigateur dans les tables.
+- RPC publiques en `SECURITY INVOKER`, implémentations privilégiées dans le schéma privé non exposé. Les écritures vérifient l'identité et le rôle actif `admin` ou `accountant`.
+- Verrou transactionnel par entreprise, empreinte de requête liée à `operation_uid`, contrôles côté serveur et audit.
+- Journal des mouvements, allocations FIFO et journal d'audit protégés contre les modifications et suppressions ordinaires.
+- Les services restent facturables mais ne peuvent pas recevoir de mouvements physiques.
+- Le stock négatif reste désactivé par défaut ; FIFO, lots et numéros de série exigent des quantités réellement disponibles.
 
-## Interface et reprise de l’historique
+## Fonctionnalités désormais livrées
 
-L’interface Gestion de stock détecte une entreprise active et lit désormais le stock via `stock_read_state`. Les créations d’articles/entrepôts, paramètres, mouvements et réservations passent par les RPC transactionnelles. Les totaux utilisent les soldes serveur complets ; les 500 derniers mouvements ne servent qu’à l’historique affiché. La synchronisation de facturation n’écrit plus le stock dans `company_billing`.
+### Traçabilité par lot
 
-Une reprise explicite de l’ancien stock local est proposée uniquement lorsque le stock cloud est vide (ou lorsqu’une reprise est déjà commencée). Elle conserve les données locales, recrée les articles et entrepôts par référence/nom, puis rejoue les mouvements chronologiquement avec un `operation_uid` déterministe par entreprise et mouvement. Les doublons de requête sont donc neutralisés côté serveur. L’utilisateur doit déclencher cette reprise ; aucun transfert de données historiques n’est lancé automatiquement.
+- Un article configuré en suivi par lot exige un code de lot pour chaque entrée, sortie, transfert ou ajustement.
+- Le serveur conserve le référentiel des lots et les quantités par entrepôt.
+- Une sortie ne peut pas dépasser le solde du lot sélectionné, même si le stock global de l'article est suffisant.
+- Un transfert débite et crédite le même lot dans la même transaction.
 
-## Limites fonctionnelles explicites
+### Traçabilité par numéro de série
 
-Le dépôt de départ ne contient pas encore de module Achats complet ni de flux de livraison suffisamment définis pour raccorder les événements de vente/achat sans ambiguïté. Ce lot n'invente donc aucun déclencheur automatique à partir de factures.
+- Un article sérialisé exige une quantité entière et exactement un numéro par unité.
+- Les numéros sont normalisés, uniques à l'échelle de l'entreprise et rattachés à un article.
+- Le serveur suit les états en stock, en transit et sortis, ainsi que l'entrepôt courant.
+- Une sortie ou un transfert ne peut utiliser qu'un numéro effectivement présent dans l'entrepôt source.
+- Les articles sérialisés utilisent uniquement leur unité de base ; les conversions sont refusées pour ce mode de suivi.
 
-Les éléments suivants ne sont pas activés dans cette migration et ne doivent pas être présentés comme opérationnels :
-1. Traçabilité par lots et numéros de série : les valeurs autres que `none` sont refusées par le RPC de sauvegarde article tant que les tables et contrôles d'unicité/affectation ne sont pas livrés.
-2. Conversions d'unités (carton/pièce/kg/litre, etc.) : seule l'unité de base est enregistrée.
-3. Inventaire physique guidé : les ajustements de quantité sont possibles via les documents d'ajustement, mais le workflow de comptage, gel, rapprochement et validation n'est pas encore raccordé.
-4. Comptabilisation automatique : aucun compte CGNC n'est codé en dur. Le raccordement attend une règle validée par entreprise et le plan de comptes réel.
-5. Réservations : création et libération sont présentes ; consommation automatique d'une réservation lors d'une livraison reste à raccorder.
-6. Contrepassation : le point d’entrée RPC est bloqué tant que la restauration exacte des couches de valorisation et des allocations FIFO n’est pas terminée. Aucun bouton de contrepassation n’est affiché. Les corrections par ajustement restent à intégrer à l’interface.
+### Conversions d'unités
 
-## Contrôles et validation
+- Chaque article possède une unité de base et peut définir jusqu'à 50 unités alternatives.
+- Le facteur exprime le nombre d'unités de base dans une unité alternative : par exemple 1 carton = 12 pièces.
+- Le serveur convertit la quantité saisie vers l'unité de base et ramène le coût unitaire à cette même base avant valorisation.
+- Les documents conservent la quantité saisie, l'unité et le facteur appliqué pour l'audit.
+- Les conversions et l'unité de base ne peuvent plus être modifiées après le premier mouvement, afin de préserver l'interprétation historique.
 
-Les tests Node du dépôt vérifient statiquement les invariants de sécurité, le cloisonnement, la frontière RPC, le raccordement de l’interface, l’import historique, les verrous, l'idempotence, les protections append-only et les garde-fous FIFO/réservations.
+## Valorisation et mouvements
 
-### Vérifications PostgreSQL DEV effectuées
+- CUMP et FIFO restent pris en charge ; les transferts préservent la valeur totale de l'entreprise.
+- Les couches et allocations FIFO sont enregistrées côté serveur.
+- Les réservations réduisent la quantité disponible pour les sorties.
+- Les déclencheurs achat/vente et le mode permanent/périodique restent paramétrables, mais les flux Achats, Facturation et Livraisons ne sont pas encore raccordés.
+- La contrepassation reste volontairement bloquée tant que la restauration exacte des couches et allocations CUMP/FIFO n'est pas livrée.
+- Aucun compte CGNC n'est codé en dur et aucune écriture comptable automatique n'est générée.
 
-Les deux migrations sont présentes dans l'historique DEV : `20261123085959 stock_server_engine` et `20261123090112 stock_foreign_key_indexes`.
+## Validation sur DEV
 
-Les tests ont été exécutés dans des transactions explicitement annulées (`ROLLBACK)), avec entreprises, membres, articles et entrepôts fictifs :
-1. Création article physique, service et entrepôts ; un service est refusé dans une réception physique.
-2. Réception et idempotence ; une réutilisation du même `operation_uid` avec un contenu différent est refusée.
-3. Réservation ; une sortie qui consomme une quantité réservée est refusée.
-4. Transfert entre entrepôts ; la quantité globale est conservée.
-5. CUMP : deux réceptions de 10 unités à 5 et 7, puis sortie de 5 ; solde attendu 15 unités et valeur 90.
-6. FIFO : deux réceptions de 10 unités à 5 et 7, puis sortie de 12 ; solde attendu 8 unités et valeur 56, avec deux allocations FIFO.
-7. Stock négatif refusé par défaut.
-8. Un membre reader peut lire, mais ne peut pas écrire ; un non-membre ne peut pas lire l'entreprise de test.
-9. Les privilèges directs d'insertion sur le journal des mouvements sont absents pour `authenticated`, et l'accès RPC anonyme est refusé.
+Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'entreprise fictive de test, dans des transactions annulées par `ROLLBACK` :
 
-Après rollback, les requêtes de contrôle ont confirmé zéro entreprise fictive et zéro mouvement de test résiduel. Les 11 tables de stock ont RLS activée et 11 politiques de lecture sont présentes.
+1. Création d'articles avec suivi lot et série, entrepôts et conversion carton/pièce.
+2. Réception de 2 cartons de 12 pièces à 1 200 MAD le carton, puis sortie d'un carton : quantité convertie de 24 à 12 pièces et valeur de 2 400 à 1 200 MAD.
+3. Contrôle du solde d'un lot ; une sortie supérieure au lot disponible est refusée.
+4. Réception de deux numéros de série, sortie du premier et transfert du second vers un autre entrepôt.
+5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
+6. Contrôle après rollback : aucun article, entrepôt, lot ou numéro de série de test résiduel.
 
-### Supabase Advisors
+Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. ESLint, les tests fonctionnels/résilience et le build Preview doivent être revérifiés sur le dernier commit de la PR.
 
-- Sécurité : aucun nouvel avertissement propre au stock. Les alertes restantes concernent des fonctions SECURITY DEFINER déjà présentes (`create_company`, `manage_accounting_period`), trois tables historiques sans politique RLS, et la protection des mots de passe compromis désactivée.
-- Performance : les 17 index couvrant les clés étrangères du stock ont été ajoutés dans la seconde migration. L'Advisor ne signale plus de clé étrangère stock non indexée ; il signale encore des index non utilisés, ce qui est attendu tant que le module a très peu de données.
+## Limites restantes
 
-Les tests transactionnels valident les chemins principaux du moteur, mais ne remplacent pas encore un test de concurrence multi-session avec plusieurs clients authentifiés ni un test navigateur complet.
+1. Intégration des réceptions fournisseurs, factures d'achat et commandes d'achat.
+2. Intégration des ventes, livraisons partielles et consommation automatique des réservations.
+3. Workflow d'inventaire physique guidé, avec comptage, gel, rapprochement et validation.
+4. Contrepassation exacte et auditée pour CUMP/FIFO.
+5. Génération des écritures comptables après validation du plan comptable de chaque entreprise et des règles CGNC.
+6. Tests de concurrence multi-session et parcours navigateur authentifié complet.
 
-## Sécurité
+## Environnement et statut
 
-Les deux migrations ont été appliquées sur Supabase DEV. Les tests ont utilisé des données fictives et toutes leurs transactions ont été annulées ; aucune donnée métier DEV n'a été conservée ou modifiée. Aucun changement n'a été apporté à Supabase Production. La PR reste ouverte en brouillon et n'a pas été fusionnée.
+- PR #68 : ouverte, maintenue en brouillon.
+- Branche : `feat/stock-integrated-dev`.
+- Supabase DEV : migrations appliquées et scénarios de test rollbackés.
+- Cloudflare : Preview uniquement.
+- Production : non touchée ; aucune fusion dans `main` ni aucun déploiement Production.

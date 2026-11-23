@@ -224,6 +224,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
         <div><label><input type="checkbox" id="stock-negative" ${stock.settings.allowNegative?"checked":""} ${(readOnly || (companyRole && companyRole !== "admin"))?"disabled":""}> Autoriser les stocks négatifs</label></div>
         <div><label>Déclenchement des sorties de ventes</label><select id="stock-sales-trigger" ${readOnly?"disabled":""}><option value="delivery" ${stock.settings.salesTrigger==="delivery"?"selected":""}>À la livraison</option><option value="invoice_validation" ${stock.settings.salesTrigger==="invoice_validation"?"selected":""}>À la validation de facture</option></select></div>
         <div><label>Déclenchement des entrées d'achats</label><select id="stock-purchase-trigger" ${readOnly?"disabled":""}><option value="receipt" ${stock.settings.purchaseTrigger==="receipt"?"selected":""}>À la réception physique</option><option value="supplier_invoice" ${stock.settings.purchaseTrigger==="supplier_invoice"?"selected":""}>À la validation facture fournisseur</option></select></div>
+        <div><label>Mode de comptabilisation</label><select id="stock-accounting-mode" ${readOnly?"disabled":""}><option value="perpetual" ${stock.settings.accountingMode==="perpetual"?"selected":""}>Inventaire permanent</option><option value="periodic" ${stock.settings.accountingMode==="periodic"?"selected":""}>Inventaire intermittent</option></select></div>
       </div>
       <p class="muted">L'autorisation des stocks négatifs est désactivée par défaut. Toute activation est réservée à l'administrateur et auditée côté serveur.</p>
       ${cloudMode ? `<p class="muted">Réservations actives : ${stock.reservations.length}</p>` : ""}
@@ -239,6 +240,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode, companyRole));
   document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode, companyRole));
   document.getElementById("stock-purchase-trigger").addEventListener("change", e => changeSettings({purchase_trigger:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-accounting-mode").addEventListener("change", e => changeSettings({accounting_mode:e.target.value}, cloudMode, companyRole));
 }
 
 async function changeSettings(changes, cloudMode, companyRole) {
@@ -250,6 +252,7 @@ async function changeSettings(changes, cloudMode, companyRole) {
       if ("allow_negative" in changes) stock.settings.allowNegative=changes.allow_negative;
       if ("sales_trigger" in changes) stock.settings.salesTrigger=changes.sales_trigger;
       if ("purchase_trigger" in changes) stock.settings.purchaseTrigger=changes.purchase_trigger;
+      if ("accounting_mode" in changes) stock.settings.accountingMode=changes.accounting_mode;
       persist();
     }
     toast("Paramètres de stock enregistrés.");

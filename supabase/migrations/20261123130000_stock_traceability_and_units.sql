@@ -32,7 +32,7 @@ create table public.stock_lot_balances (
   company_id uuid not null,
   lot_id uuid not null,
   warehouse_id uuid not null,
-  quantity numeric(20,6) not null default 0,
+  quantity numeric(20,6) not null default 0 check (quantity>=0),
   updated_at timestamptz not null default now(),
   primary key(company_id,lot_id,warehouse_id),
   foreign key(company_id,lot_id) references public.stock_lots(company_id,id),
@@ -77,6 +77,8 @@ end $$;
 create index stock_unit_conversions_product_idx on public.stock_unit_conversions(company_id,product_id);
 create index stock_lot_balances_warehouse_idx on public.stock_lot_balances(company_id,warehouse_id);
 create index stock_serials_product_location_idx on public.stock_serials(company_id,product_id,warehouse_id,status);
+create unique index stock_unit_conversions_ci_uidx on public.stock_unit_conversions(company_id,product_id,lower(unit_code));
+create unique index stock_serials_ci_uidx on public.stock_serials(company_id,lower(serial_number));
 
 create or replace function private.stock_prepare_document_line()
 returns trigger

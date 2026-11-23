@@ -1190,7 +1190,7 @@ test("stock cloud : valorisation FIFO avec allocations explicites et réservatio
   assert.match(stockServerMigration, /remaining_quantity=remaining_quantity-v_take/);
   assert.match(stockServerMigration, /stock_reserve\(/);
   assert.match(stockServerMigration, /Cette sortie empiéterait sur des quantités réservées/);
-  assert.match(stockServerMigration, /La méthode FIFO interdit le stock négatif/);
+  assert.match(stockServerMigration, /la méthode FIFO interdit le stock négatif/);
 });
 test("stock cloud : contrepassation documentée et paramètres de valorisation verrouillés", () => {
   assert.match(stockServerMigration, /stock_reverse_document\(/);

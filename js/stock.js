@@ -16,9 +16,11 @@ let renderSequence = 0;
 function mapCloudStock(data) {
   const settings = data?.settings || {};
   const warehouses = (data?.warehouses || []).map(w => ({ id:w.id, code:w.code, name:w.name, active:w.active !== false }));
+  const conversionsByProduct = new Map();
+  for (const c of data?.unit_conversions || []) { if (!conversionsByProduct.has(c.product_id)) conversionsByProduct.set(c.product_id,[]); conversionsByProduct.get(c.product_id).push({unit:c.unit_code,factorToBase:Number(c.factor_to_base)}); }
   const products = (data?.products || []).map(p => ({
     id:p.id, sku:p.sku, name:p.name, type:p.product_type, unit:p.base_unit || "unité",
-    tracking:p.tracking || "none", active:p.active !== false,
+    tracking:p.tracking || "none", unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
   }));
   const documents = new Map((data?.documents || []).map(d => [d.id,d]));
   const grouped = new Map();
@@ -269,14 +271,17 @@ function productDialog(cloudMode = false, companyRole = null) {
   box.innerHTML=`<h2>Créer un article</h2><div class="grid cols-2">
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
     <div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>
-    <div><label>Unité</label><input id="sp-unit" value="unité" maxlength="24"></div>
-    <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot" disabled>Par lot — prochain lot</option><option value="serial" disabled>Par numéro de série — prochain lot</option></select></div>
-  </div><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+    <div><label>Unité de base</label><input id="sp-unit" value="unité" maxlength="24"></div>
+    <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
+    <div><label>Conversions (format : carton=12 ; palette=120)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"></div>
+  </div><p class="muted">Le facteur indique le nombre d’unités de base contenues dans une unité alternative. Les conversions sont verrouillées après le premier mouvement. Les articles suivis par série utilisent leur unité de base.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
   box.querySelector("#sp-save").onclick=async()=>{
-    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value};
+    const rawConversions=box.querySelector("#sp-conversions").value;
+    const unitConversions=rawConversions.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{const [unit,factor]=part.split("=");return {unit:String(unit||"").trim(),factorToBase:Number(factor)};});
+    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions};
     try {
-      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,base_unit:input.unit,tracking:input.tracking,category:""});
+      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),category:""});
       else { const result=addProduct(store,input); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist(); }
       modal.close();viewStock(false,companyRole);toast("Article créé.");
     } catch(error) { box.querySelector("#sp-error").textContent=error?.message || "Création impossible."; }
@@ -347,21 +352,30 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>
     <div id="sm-dest-wrap" hidden><label>Entrepôt destination</label><select id="sm-dest">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
     <div><label>Quantité</label><input id="sm-qty" type="number" min="0.0001" step="0.0001"></div>
+    <div><label>Unité de saisie</label><select id="sm-unit"></select></div>
+    <div id="sm-lot-wrap" hidden><label>Code du lot</label><input id="sm-lot" maxlength="80"></div>
+    <div id="sm-serial-wrap" hidden><label>Numéros de série (un par ligne ou séparés par virgule)</label><textarea id="sm-serials" rows="2"></textarea></div>
     <div id="sm-cost-wrap"><label>Coût unitaire (${esc(store.settings.currency)})</label><input id="sm-cost" type="number" min="0" step="0.0001" value="0"></div>
     <div><label>Date</label><input id="sm-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     <div><label>Référence</label><input id="sm-ref" maxlength="120"></div>
   </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
   <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Le journal des mouvements est conservé.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
-  const kind=box.querySelector("#sm-kind"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
-  const update=()=>{dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));};kind.onchange=update;direction.onchange=update;update();
+  const kind=box.querySelector("#sm-kind"), productSelect=box.querySelector("#sm-product"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
+  const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
+    const units=[product?.unit||"unité",...(product?.unitConversions||[]).map(c=>c.unit)];box.querySelector("#sm-unit").innerHTML=units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("");
+    box.querySelector("#sm-lot-wrap").hidden=product?.tracking!=="lot";box.querySelector("#sm-serial-wrap").hidden=product?.tracking!=="serial";
+  };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
-    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unitCost:box.querySelector("#sm-cost").value,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value};
+    const serialNumbers=box.querySelector("#sm-serials").value.split(/[\\n,;]/).map(v=>v.trim()).filter(Boolean);
+    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value,direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {
         const operationUid=globalThis.crypto?.randomUUID?.();
         if (!operationUid) throw new Error("Navigateur incompatible : génération sécurisée de clé d’opération indisponible.");
-        const line={product_id:input.productId,warehouse_id:input.warehouseId,quantity:Number(input.quantity),unit_cost:Number(input.unitCost||0)};
+        const line={product_id:input.productId,warehouse_id:input.warehouseId,quantity:Number(input.quantity),unit:input.unit,unit_cost:Number(input.unitCost||0)};
+        if(input.lotCode) line.lot_code=input.lotCode;
+        if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
         await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line]});

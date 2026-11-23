@@ -200,7 +200,7 @@ function openDocument(type) {
         if (!match || line.baseQuantity > match.baseQuantity || Math.abs(line.unitCost - match.unitCost) > 0.0001) { box.querySelector("#pd-error").textContent = "Rapprochement impossible : article, quantité ou prix différent de la commande."; return; }
       }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines, total:totals(lines), status:type === "order" ? "ordered" : "draft", receivedBase:0, stockPostedBase:0, createdAt:new Date().toISOString() };
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
     p.documents.push(doc);
     box.closest("dialog").close(); persist(type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée."); renderList();
   });
@@ -212,10 +212,10 @@ function openDetail(id) {
   const linkedOrder = doc.orderId ? p.documents.find(item => item.id === doc.orderId) : null;
   const lines = doc.lines.map((line,index) => {
     const item = product(line.productId);
-    const received = doc.type === "order" ? num(doc.receivedBase) : num(doc.stockPostedBase);
+    const received = doc.type === "order" ? num(line.receivedBase) : num(line.stockPostedBase);
     return `<tr><td>${esc(item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "Entrepôt")}</td><td class="num">${line.quantity} ${esc(line.unit)}</td><td class="num">${money(line.unitCost)}</td><td class="num">${round(line.baseQuantity)} ${esc(item?.base_unit || "")}</td></tr>`;
   }).join("");
-  const remaining = doc.lines.reduce((sum,line) => sum + Math.max(0,line.baseQuantity - (doc.type === "order" ? num(doc.receivedBase) : num(doc.stockPostedBase))),0);
+  const remaining = doc.lines.reduce((sum,line) => sum + Math.max(0,line.baseQuantity - (doc.type === "order" ? num(line.receivedBase) : num(line.stockPostedBase))),0);
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
@@ -229,11 +229,11 @@ function openDetail(id) {
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Entrer le stock restant", () => postInvoiceReceipt(doc, box));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(() => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); } }));
-  if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && num(doc.receivedBase)>0) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
+  if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
 async function postReceipt(doc, requestedLines, box, sourceType) {
   const pendingKey = sourceType === "supplier_invoice" ? "pendingInvoiceReceipt" : "pendingReceipt";
-  if (!doc[pendingKey]) doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id) };
+  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id) }; persist(); }
   const pending = doc[pendingKey];
   try {
     const result = await postCloudStockDocument({
@@ -245,10 +245,17 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
     if (!result?.ok) throw new Error("Le serveur n'a pas confirmé la réception du stock.");
     for (const line of pending.lines) {
       const baseQty = num(line.quantity);
-      const match = doc.lines.find(item => String(item.productId) === String(line.product_id));
+      const match = doc.lines[Number(line.line_index)];
       if (match) {
-        if (sourceType === "supplier_invoice") doc.stockPostedBase = round(num(doc.stockPostedBase) + baseQty);
-        else doc.receivedBase = round(num(doc.receivedBase) + baseQty);
+        if (sourceType === "supplier_invoice") {
+          match.stockPostedBase = round(num(match.stockPostedBase) + baseQty);
+          if (doc.orderId) {
+            const linked = data().documents.find(item => item.id === doc.orderId);
+            const orderLine = linked?.lines.find(item => String(item.productId) === String(match.productId) && String(item.warehouseId) === String(match.warehouseId));
+            if (orderLine) orderLine.receivedBase = round(num(orderLine.receivedBase) + baseQty);
+            if (linked) linked.status = linked.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
+          }
+        } else match.receivedBase = round(num(match.receivedBase) + baseQty);
       }
     }
     delete doc[pendingKey];
@@ -276,11 +283,11 @@ function openReceipt(doc) {
       const index=Number(row.dataset.receiveLine), source=doc.lines[index], qty=num(row.querySelector(".pr-qty").value);
       if (qty<=0) continue;
       const item=product(source.productId), trace=row.querySelector(".pr-trace").value.trim();
-      if (qty > Math.max(0,source.baseQuantity-num(doc.receivedBase))) { box.querySelector("#pd-detail-error").textContent="La quantité reçue dépasse le reliquat."; return; }
+      if (qty > Math.max(0,source.baseQuantity-num(source.receivedBase))) { box.querySelector("#pd-detail-error").textContent="La quantité reçue dépasse le reliquat."; return; }
       const serials=item?.tracking === "serial" ? trace.split(/[,;\n]+/).map(x=>x.trim()).filter(Boolean) : [];
       if (item?.tracking === "serial" && serials.length !== qty) { box.querySelector("#pd-detail-error").textContent="Un numéro de série est requis pour chaque unité entière."; return; }
       if (item?.tracking === "lot" && !trace) { box.querySelector("#pd-detail-error").textContent="Le code du lot est obligatoire."; return; }
-      lines.push({ product_id:source.productId, warehouse_id:source.warehouseId, quantity:qty, unit_cost:source.baseUnitCost, lot_code:item?.tracking === "lot" ? trace : null, serial_numbers:serials });
+      lines.push({ line_index:index, product_id:source.productId, warehouse_id:source.warehouseId, quantity:qty, unit_cost:source.baseUnitCost, lot_code:item?.tracking === "lot" ? trace : null, serial_numbers:serials });
     }
     if (!lines.length) { box.querySelector("#pd-detail-error").textContent="Saisissez au moins une quantité reçue."; return; }
     postReceipt(doc, lines, box, "supplier_receipt");
@@ -298,9 +305,15 @@ async function validateInvoice(doc, box) {
   if (stockState?.settings?.purchase_trigger === "supplier_invoice") {
     const lines=[];
     for (const line of doc.lines) {
-      const already=doc.orderId ? num(data().documents.find(item=>item.id===doc.orderId)?.receivedBase) : num(doc.stockPostedBase);
+      const already=doc.orderId ? num(data().documents.find(item=>item.id===doc.orderId)?.lines.find(item=>String(item.productId)===String(line.productId) && String(item.warehouseId)===String(line.warehouseId))?.receivedBase) : num(line.stockPostedBase);
       const qty=Math.max(0,line.baseQuantity-already);
-      if (qty>0) lines.push({product_id:line.productId,warehouse_id:line.warehouseId,quantity:qty,unit_cost:line.baseUnitCost,lot_code:null,serial_numbers:[]});
+      if (qty>0) {
+        const item=product(line.productId), trace=String(line.trace||"").trim();
+        const serials=item?.tracking === "serial" ? trace.split(/[,;\\n]+/).map(value=>value.trim()).filter(Boolean) : [];
+        if (item?.tracking === "lot" && !trace) { box.querySelector("#pd-detail-error").textContent="Le code de lot est obligatoire avant la validation de la facture."; return; }
+        if (item?.tracking === "serial" && serials.length !== qty) { box.querySelector("#pd-detail-error").textContent="La facture doit contenir un numéro de série par unité entière reçue."; return; }
+        lines.push({line_index:doc.lines.indexOf(line),product_id:line.productId,warehouse_id:line.warehouseId,quantity:qty,unit_cost:line.baseUnitCost,lot_code:item?.tracking === "lot" ? trace : null,serial_numbers:serials});
+      }
     }
     if (lines.length) {
       doc.status="validating"; persist();
@@ -311,7 +324,7 @@ async function validateInvoice(doc, box) {
   doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); box.closest("dialog").close(); renderList();
 }
 function postInvoiceReceipt(doc, box) {
-  const lines=doc.lines.filter(line=>line.baseQuantity>num(doc.stockPostedBase)).map(line=>({product_id:line.productId,warehouse_id:line.warehouseId,quantity:round(line.baseQuantity-num(doc.stockPostedBase)),unit_cost:line.baseUnitCost,lot_code:null,serial_numbers:[]}));
+  const lines=doc.lines.map((line,index)=>({line,index})).filter(({line})=>line.baseQuantity>num(line.stockPostedBase)).map(({line,index})=>({line_index:index,product_id:line.productId,warehouse_id:line.warehouseId,quantity:round(line.baseQuantity-num(line.stockPostedBase)),unit_cost:line.baseUnitCost,lot_code:null,serial_numbers:[]}));
   if (!lines.length) return;
   postReceipt(doc,lines,box,"supplier_invoice");
 }

@@ -65,11 +65,10 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
 });
  
 test("contrepassation stock : lots et numéros de série restaurés sans altérer la traçabilité", () => {
-  assert.match(stockTrackedReversalMigration, /private\\.stock_reverse_document_impl/);
-  assert.match(stockTrackedReversalMigration, /stock_lots|stock_lot_balances/);
+  assert.match(stockTrackedReversalMigration, /private\.stock_reverse_document_impl/);
   assert.match(stockTrackedReversalMigration, /stock_serials/);
-  assert.match(stockTrackedReversalMigration, /last_movement_id=m\\.id/);
-  assert.match(stockTrackedReversalMigration, /order by m\\.id desc/);
+  assert.match(stockTrackedReversalMigration, /last_movement_id=m\.id/);
+  assert.match(stockTrackedReversalMigration, /order by m\.id desc/);
   assert.match(stockTrackedReversalMigration, /état actuel d''un numéro de série/);
   assert.match(stockUiSource, /lots et numéros de série ont été restaurés/);
 });

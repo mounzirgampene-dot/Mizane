@@ -7,6 +7,7 @@ import { postEntry, reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
+import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -72,6 +73,70 @@ function postInvoiceAccounting(invoice) {
     created++;
   }
   return { ok: true, errors: [], created };
+}
+
+function invoiceHasStockLines(invoice) {
+  return (invoice?.lines || []).some(line => line.stockProductId && line.stockWarehouseId);
+}
+function stockSerials(value) {
+  return String(value || "").split(/[\\n,;]+/).map(value => value.trim()).filter(Boolean);
+}
+function stockOperationUid() {
+  if (!globalThis.crypto?.randomUUID) throw new Error("Ce navigateur ne permet pas de sécuriser l'identifiant de mouvement de stock.");
+  return globalThis.crypto.randomUUID();
+}
+function invoiceStockLines(invoice, stockState, rows = null) {
+  const products = new Map((stockState?.products || []).map(product => [product.id, product]));
+  const lines = [];
+  const fulfilled = [];
+  for (let index=0; index<(invoice.lines || []).length; index++) {
+    const line=invoice.lines[index];
+    if (!line.stockProductId) continue;
+    const product=products.get(line.stockProductId);
+    if (!product || product.product_type==="service" || !line.stockWarehouseId) throw new Error("Chaque ligne liée au stock doit désigner un article physique et un entrepôt.");
+    const row=rows?.[index] || {};
+    const quantity=Number(row.quantity ?? line.quantity);
+    if (!(quantity>0) || !Number.isFinite(quantity)) continue;
+    const lotCode=String(row.lotCode ?? line.stockLotCode ?? "").trim();
+    const serialNumbers=stockSerials(row.serialNumbers ?? line.stockSerialNumbers);
+    if (product.tracking==="lot" && !lotCode) throw new Error("Le code de lot est obligatoire pour l’article "+product.name+".");
+    if (product.tracking==="serial" && (quantity!==Math.trunc(quantity) || serialNumbers.length!==quantity)) throw new Error("Saisissez un numéro de série pour chaque unité de "+product.name+".");
+    lines.push({
+      product_id:product.id, warehouse_id:line.stockWarehouseId, quantity,
+      unit:String(row.unit || line.stockUnit || product.base_unit || "unité"),
+      unit_cost:0, lot_code:lotCode || null, serial_numbers:serialNumbers,
+    });
+    fulfilled.push({lineIndex:index,quantity});
+  }
+  return {lines,fulfilled};
+}
+async function submitInvoiceStockOperation(invoice, stockState, operation) {
+  if (!operation) return {ok:true,skipped:true};
+  invoice.stockPendingOperation=operation;
+  saveBilling();
+  try {
+    const result=await postCloudStockDocument({
+      operationUid:operation.operationUid, documentType:"issue", documentDate:operation.documentDate,
+      reference:invoice.number, note:operation.note, lines:operation.lines,
+      sourceType:operation.sourceType, sourceId:operation.sourceId,
+    });
+    for (const item of operation.fulfilled) {
+      const line=invoice.lines[item.lineIndex];
+      if (line) line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity);
+    }
+    invoice.stockDocuments ||= [];
+    invoice.stockDocuments.push({documentId:result?.document_id || null,operationUid:operation.operationUid,kind:operation.kind,date:operation.documentDate,createdAt:new Date().toISOString()});
+    delete invoice.stockPendingOperation;
+    saveBilling();
+    return {ok:true,result};
+  } catch(error) {
+    saveBilling();
+    return {ok:false,error};
+  }
+}
+async function retryInvoiceStock(invoice) {
+  if (!invoice?.stockPendingOperation) return {ok:false,error:new Error("Aucun mouvement de stock en attente.")};
+  return submitInvoiceStockOperation(invoice,null,invoice.stockPendingOperation);
 }
 
 const nextNumber = (kind, settings) => {

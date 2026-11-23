@@ -2,6 +2,7 @@
 import { cashBalance } from "../accounting.js";
 import { saveStore } from "../db.js";
 import { store, $app, toast, esc, money } from "../state.js";
+import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -85,8 +86,16 @@ export function viewFinancial() {
     const amount = forecast.filter(item => item.date <= limit).reduce((sum, item) => sum + (item.direction === "in" ? item.amount : -item.amount), 0);
     return { days, amount: round(currentCash + amount) };
   });
+  const agingChart = renderHorizontalBars("Ancienneté des créances",buckets.map(name=>({
+    label:name,
+    amount:round(docs.filter(item=>bucket(item.days)===name).reduce((sum,item)=>sum+item.amount,0)),
+  })),[{key:"amount",label:"Créances"}],money);
+  const customerChart = renderHorizontalBars("Principales créances clients",customers.slice(0,10).map(item=>({label:item.name,amount:item.amount})),[{key:"amount",label:"Montant"}],money);
+  const forecastChart = renderHorizontalBars("Trésorerie projetée",forecastTotals.map(item=>({label:"À "+item.days+" jours",amount:Math.max(0,item.amount)})),[{key:"amount",label:"Solde projeté"}],money);
   $app.innerHTML = `
     <h1>Pilotage financier</h1>
+    ${chartModeControls("pilotage")}
+    <div id="pilotage-table-view">
     <p class="muted">Suivi des créances, des soldes fournisseurs et prévisions de trésorerie à partir des données comptables et de facturation.</p>
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Trésorerie comptabilisée</div><div class="value">${money(currentCash)}</div></section>
@@ -129,7 +138,20 @@ export function viewFinancial() {
       <tbody>${forecast.length ? forecast.map(item => "<tr><td>" + esc(item.date) + "</td><td>" + esc(item.label) + (item.automatic ? " <span class=\"tag\">Facture</span>" : "") + "</td><td>" + (item.direction === "in" ? "Encaissement" : "Décaissement") + "</td><td class=\"num\">" + money(item.amount) + "</td><td>" + (item.automatic ? "Automatique" : "<button class=\"danger small\" data-forecast-delete=\"" + esc(item.id) + "\">Supprimer</button>") + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucun flux prévisionnel.</td></tr>"}</tbody></table></div>
       <p class="muted">Les prévisions manuelles sont enregistrées dans les paramètres synchronisés de l'entreprise. Les projections ne constituent pas une écriture comptable.</p>
     </section>
+    </div>
+    <div id="pilotage-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="value">${money(currentCash)}</div><div class="label">Trésorerie comptabilisée</div></section>
+        <section class="card kpi"><div class="value">${money(outstanding)}</div><div class="label">Créances ouvertes</div></section>
+        <section class="card kpi"><div class="value">${money(payable)}</div><div class="label">Dettes fournisseurs</div></section>
+      </div>
+      ${agingChart}
+      ${customerChart}
+      ${forecastChart}
+      <p class="muted">Les soldes et projections sont calculés à partir des écritures, factures et prévisions enregistrées. Les projections négatives restent visibles dans les indicateurs et les tableaux détaillés.</p>
+    </div>
   `;
+  bindChartMode("pilotage");
   document.getElementById("forecast-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const date = document.getElementById("forecast-date").value;

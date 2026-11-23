@@ -49,6 +49,9 @@ export function validateProduct(input, products = []) {
   if (input.purchasePriceHT != null && (!Number.isFinite(Number(input.purchasePriceHT)) || Number(input.purchasePriceHT)<0)) errors.push("Prix d’achat HT invalide.");
   if (input.salePriceHT != null && (!Number.isFinite(Number(input.salePriceHT)) || Number(input.salePriceHT)<0)) errors.push("Prix de vente HT invalide.");
   const conversions = Array.isArray(input.unitConversions) ? input.unitConversions : [];
+  const availableUnits = [String(input.unit || "unité").trim(), ...conversions.map(c=>String(c?.unit||"").trim())].map(u=>u.toLowerCase());
+  if (input.purchasePriceUnit && !availableUnits.includes(String(input.purchasePriceUnit).trim().toLowerCase())) errors.push("L’unité du prix d’achat doit être une unité définie pour l’article.");
+  if (input.salePriceUnit && !availableUnits.includes(String(input.salePriceUnit).trim().toLowerCase())) errors.push("L’unité du prix de vente doit être une unité définie pour l’article.");
   const seenUnits = new Set([String(input.unit || "unité").trim().toLowerCase()]);
   for (const conversion of conversions) {
     const unit = String(conversion?.unit || "").trim().toLowerCase();
@@ -68,6 +71,7 @@ export function addProduct(store, input) {
     type: input.type, unit: String(input.unit || "unité").trim(), tracking: input.tracking,
     unitConversions: (input.unitConversions || []).map(c => ({ unit:String(c.unit).trim(), factorToBase:Number(c.factorToBase) })),
     purchasePriceHT:Number(input.purchasePriceHT||0), salePriceHT:Number(input.salePriceHT||0),
+    purchasePriceUnit:String(input.purchasePriceUnit||input.unit||"unité").trim(), salePriceUnit:String(input.salePriceUnit||input.unit||"unité").trim(),
     active: true, createdAt: new Date().toISOString(),
   };
   stock.products.push(product);

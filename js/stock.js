@@ -324,7 +324,7 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
   const conversionsInput=box.querySelector("#sp-conversions");
   const purchaseUnitSelect=box.querySelector("#sp-purchase-unit");
   const saleUnitSelect=box.querySelector("#sp-sale-unit");
-  const parseUnitConversions=()=>conversionsInput.value.split(/[;\\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{
+  const parseUnitConversions=()=>conversionsInput.value.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{
     const [unit,factor]=part.split("=");
     return {unit:String(unit||"").trim(),factorToBase:Number(factor)};
   });

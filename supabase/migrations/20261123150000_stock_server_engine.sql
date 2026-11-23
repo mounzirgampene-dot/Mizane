@@ -256,7 +256,7 @@ begin
     'warehouses',coalesce((select jsonb_agg(to_jsonb(w)-'company_id' order by w.created_at) from public.stock_warehouses w where w.company_id=p_company_id),'[]'::jsonb),
     'products',coalesce((select jsonb_agg(to_jsonb(p)-'company_id' order by p.created_at) from public.stock_products p where p.company_id=p_company_id),'[]'::jsonb),
     'balances',coalesce((select jsonb_agg(jsonb_build_object('product_id',b.product_id,'warehouse_id',b.warehouse_id,'quantity',b.quantity,'inventory_value',b.inventory_value) order by b.product_id,b.warehouse_id) from public.stock_balances b where b.company_id=p_company_id),'[]'::jsonb),
-    'documents',coalesce((select jsonb_agg(to_jsonb(d)-'company_id' order by d.document_date desc,d.created_at desc) from public.stock_documents d where d.company_id=p_company_id),'[]'::jsonb),
+    'documents',coalesce((select jsonb_agg(to_jsonb(d)-'company_id'-'request_hash' order by d.document_date desc,d.created_at desc) from public.stock_documents d where d.company_id=p_company_id),'[]'::jsonb),
     'movements',coalesce((select jsonb_agg(to_jsonb(m)-'company_id' order by m.id desc) from (select * from public.stock_movements where company_id=p_company_id order by id desc limit 500) m),'[]'::jsonb),
     'reservations',coalesce((select jsonb_agg(to_jsonb(r)-'company_id' order by r.created_at desc) from public.stock_reservations r where r.company_id=p_company_id and r.status='active'),'[]'::jsonb)
   );
@@ -279,6 +279,8 @@ begin
   v_type:=coalesce(p_product->>'product_type','goods');
   v_tracking:=coalesce(p_product->>'tracking','none');
   if length(v_sku) not between 1 and 64 or length(btrim(coalesce(p_product->>'name',''))) not between 1 and 180
+     or length(coalesce(p_product->>'category',''))>100
+     or length(coalesce(p_product->>'base_unit','unité'))>24
      or v_type not in ('goods','raw','semi','finished','consumable','service')
      or v_tracking not in ('none','lot','serial') or v_tracking<>'none'
      or (v_type='service' and v_tracking<>'none') then
@@ -344,7 +346,7 @@ as $$
 declare v_actor uuid; v_old public.stock_settings%rowtype;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
-  if p_settings is null or jsonb_typeof(p_settings) is distinct from 'object' then raise exception 'Paramètres de stock invalides.' using errcode='22023'; end if;
+  if p_settings is null or jsonb_typeof(p_settings) is distinct from 'object' or octet_length(p_settings::text)>10000 then raise exception 'Paramètres de stock invalides ou trop volumineux.' using errcode='22023'; end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_old from public.stock_settings where company_id=p_company_id for update;
   if coalesce(p_settings->>'valuation_method',v_old.valuation_method) not in ('cump','fifo')
@@ -393,6 +395,8 @@ declare
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
   if p_operation_uid is null or p_document_date is null or p_document_type not in ('receipt','issue','transfer','adjustment')
+     or length(coalesce(p_reference,''))>120 or length(coalesce(p_note,''))>1000
+     or length(coalesce(p_source_type,''))>60 or length(coalesce(p_source_id,''))>180
      or p_lines is null or jsonb_typeof(p_lines) is distinct from 'array' or jsonb_array_length(p_lines)<1 or jsonb_array_length(p_lines)>500 then
     raise exception 'Document de stock invalide.' using errcode='22023';
   end if;
@@ -401,7 +405,7 @@ begin
   select to_jsonb(d),d.request_hash into v_existing,v_existing_hash from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid;
   if v_existing is not null then
     if v_existing_hash<>v_request_hash then raise exception 'operation_uid déjà utilisé avec un contenu différent.' using errcode='23505'; end if;
-    return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing);
+    return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing-'request_hash');
   end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_settings from public.stock_settings where company_id=p_company_id for update;
@@ -526,7 +530,7 @@ as $$
 declare v_actor uuid; v_existing public.stock_reservations%rowtype; v_balance numeric; v_reserved numeric;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
-  if p_operation_uid is null or p_quantity is null or p_quantity<=0 or p_quantity::text in ('NaN','Infinity','-Infinity') then raise exception 'Réservation invalide.' using errcode='22023'; end if;
+  if p_operation_uid is null or p_quantity is null or p_quantity<=0 or p_quantity::text in ('NaN','Infinity','-Infinity') or length(coalesce(p_reference,''))>120 then raise exception 'Réservation invalide.' using errcode='22023'; end if;
   if not exists(select 1 from public.stock_products p where p.company_id=p_company_id and p.id=p_product_id and p.active and p.product_type<>'service')
      or not exists(select 1 from public.stock_warehouses w where w.company_id=p_company_id and w.id=p_warehouse_id and w.active) then
     raise exception 'Article ou entrepôt invalide pour la réservation.' using errcode='22023';

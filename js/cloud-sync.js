@@ -225,3 +225,23 @@ export function reserveCloudStock({ operationUid, productId, warehouseId, quanti
 export function releaseCloudStockReservation(reservationId) {
   return stockRpc("stock_release_reservation", { p_reservation_id: reservationId });
 }
+
+
+export function readCloudStockCounts() {
+  return stockRpc("stock_count_read");
+}
+export function createCloudStockCount({ warehouseId, reference }) {
+  return stockRpc("stock_count_create", { p_warehouse_id:warehouseId, p_reference:reference });
+}
+export function setCloudStockCountLine({ sessionId, lineId, countedQuantity }) {
+  return stockRpc("stock_count_set_line", { p_session_id:sessionId, p_line_id:lineId, p_counted_quantity:countedQuantity });
+}
+export function submitCloudStockCount(sessionId) {
+  return stockRpc("stock_count_submit", { p_session_id:sessionId });
+}
+export function finalizeCloudStockCount({ sessionId, operationUid, documentDate }) {
+  return stockRpc("stock_count_finalize", { p_session_id:sessionId, p_operation_uid:operationUid, p_document_date:documentDate });
+}
+export function cancelCloudStockCount(sessionId) {
+  return stockRpc("stock_count_cancel", { p_session_id:sessionId });
+}

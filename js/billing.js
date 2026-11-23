@@ -238,6 +238,53 @@ function renderList() {
   $app.querySelectorAll("[data-bill-deliver]").forEach(button => button.addEventListener("click", () => openInvoiceDelivery(Number(button.dataset.billDeliver))));
 }
 
+
+async function openInvoiceDelivery(invoiceId) {
+  const invoice=getBilling().documents.find(doc=>doc.id===invoiceId && doc.type==="invoice");
+  if(!invoice) return;
+  if(invoice.stockPendingOperation) return toast("Terminez d’abord le mouvement de stock en attente.");
+  let stockState;
+  try { stockState=await readCloudStock(); }
+  catch(error) { return toast("Lecture du stock impossible : "+error.message,6000); }
+  const modal=document.getElementById("modal"),content=document.getElementById("modal-content");
+  const eligible=(invoice.lines||[]).map((line,index)=>({line,index,remaining:Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity))}))
+    .filter(item=>item.line.stockProductId && item.remaining>0.000001);
+  if(!eligible.length) return toast("Aucune quantité liée au stock ne reste à livrer.");
+  const productMap=new Map((stockState.products||[]).map(p=>[p.id,p]));
+  content.innerHTML=`<h2>Livraison — ${esc(invoice.number)}</h2>
+    <p class="muted">Saisissez les quantités livrées. Les quantités restantes seront conservées pour une livraison ultérieure.</p>
+    <div class="table-wrap"><table><thead><tr><th>Article</th><th>Reste</th><th>À livrer</th><th>Lot</th><th>Numéros de série</th></tr></thead><tbody>
+    ${eligible.map(({line,index,remaining})=>{const product=productMap.get(line.stockProductId);return `<tr data-delivery-index="${index}"><td>${esc(product?.name||line.description)}<small class="muted"> — ${esc(line.stockUnit||product?.base_unit||"unité")}</small></td><td>${remaining}</td><td><input data-delivery-quantity type="number" min="0" max="${remaining}" step="0.0001" value="${remaining}"></td><td><input data-delivery-lot value="${esc(line.stockLotCode||"")}" placeholder="Code lot" ${product?.tracking==="lot"?"required":""}></td><td><input data-delivery-serials value="${esc(line.stockSerialNumbers||"")}" placeholder="SN1, SN2…" ${product?.tracking==="serial"?"required":""}></td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div class="actions"><button type="button" id="bill-delivery-submit">Confirmer la livraison</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-delivery-error" class="errors" role="alert"></div>`;
+  bindBillingModalClose(content);
+  content.querySelector("#bill-delivery-submit").addEventListener("click",async()=>{
+    const rows={}; const fulfilled=[]; const stockLines=[];
+    for(const tr of content.querySelectorAll("[data-delivery-index]")){
+      const index=Number(tr.dataset.deliveryIndex),line=invoice.lines[index],quantity=number(tr.querySelector("[data-delivery-quantity]").value);
+      if(quantity<=0) continue;
+      const product=productMap.get(line.stockProductId);
+      if(quantity>Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity))+0.000001){content.querySelector("#bill-delivery-error").textContent="La quantité livrée dépasse le reste à livrer.";return;}
+      const lotCode=tr.querySelector("[data-delivery-lot]").value.trim();
+      const serialNumbers=stockSerials(tr.querySelector("[data-delivery-serials]").value);
+      if(product?.tracking==="lot"&&!lotCode){content.querySelector("#bill-delivery-error").textContent="Le code de lot est obligatoire pour "+product.name+".";return;}
+      if(product?.tracking==="serial"&&(quantity!==Math.trunc(quantity)||serialNumbers.length!==quantity)){content.querySelector("#bill-delivery-error").textContent="Un numéro de série par unité entière est requis pour "+product.name+".";return;}
+      rows[index]={quantity,lotCode,serialNumbers:serialNumbers.join(","),unit:line.stockUnit||product?.base_unit||"unité"};
+      fulfilled.push({lineIndex:index,quantity});
+    }
+    if(!fulfilled.length){content.querySelector("#bill-delivery-error").textContent="Saisissez au moins une quantité à livrer.";return;}
+    try {
+      const built=invoiceStockLines(invoice,stockState,rows);
+      const operation={operationUid:stockOperationUid(),documentDate:today(),note:"Livraison partielle ou totale de la facture "+invoice.number,lines:built.lines,fulfilled,kind:"delivery",sourceType:"sales_delivery",sourceId:String(invoice.id)+":"+((invoice.stockDocuments||[]).length+1)};
+      const button=content.querySelector("#bill-delivery-submit");button.disabled=true;
+      const result=await submitInvoiceStockOperation(invoice,stockState,operation);
+      if(!result.ok){content.querySelector("#bill-delivery-error").textContent="Livraison non confirmée : "+(result.error?.message||"erreur inconnue")+". Vous pourrez réessayer sans créer de doublon.";button.disabled=false;return;}
+      modal.close();renderList();toast("Livraison enregistrée dans le stock.");
+    } catch(error) { content.querySelector("#bill-delivery-error").textContent=error.message; }
+  });
+  modal.showModal();
+}
+
 function openEditor(type, source = null) {
   const billing = getBilling();
   const settings = billing.settings;

@@ -22,6 +22,8 @@ const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/202611
 const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
 const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
 const billingUiSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
 const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
@@ -1363,6 +1365,33 @@ test("stock cloud : import historique non destructif et réservation/libération
   assert.match(stockServerMigration, /accounting_mode text not null default 'perpetual'/);
   assert.match(stockServerMigration, /status='released'/);
   assert.match(stockServerMigration, /duplicate',true,'reservation_id'/);
+});
+
+test("achats : fournisseurs, commandes, factures et rapprochement commande/facture", () => {
+  assert.match(purchasesUiSource,/Nouveau fournisseur/);
+  assert.match(purchasesUiSource,/Nouvelle commande fournisseur/);
+  assert.match(purchasesUiSource,/Nouvelle facture fournisseur/);
+  assert.match(purchasesUiSource,/Rapprochement impossible/);
+  assert.match(purchasesUiSource,/purchase_trigger/);
+  assert.match(purchasesUiSource,/supplier_receipt/);
+  assert.match(purchasesUiSource,/supplier_invoice/);
+});
+test("achats : réception partielle idempotente et traçabilité des lots/séries", () => {
+  assert.match(purchasesUiSource,/operationUid:uuid\(\)/);
+  assert.match(purchasesUiSource,/pendingInvoiceReceipt/);
+  assert.match(purchasesUiSource,/Réessayer la même réception/);
+  assert.match(purchasesUiSource,/line_index/);
+  assert.match(purchasesUiSource,/Le code de lot est obligatoire/);
+  assert.match(purchasesUiSource,/numéro de série est requis/);
+  assert.match(purchasesUiSource,/postCloudStockDocument\(/);
+});
+test("achats : données fournisseurs synchronisées dans la facturation cloud sans écrasement initial", () => {
+  assert.match(purchasesUiSource,/store\.billing\.purchases/);
+  assert.match(purchasesUiSource,/mizane:billing-changed/);
+  assert.match(billingSyncSource,/!local\.documents\.length && !local\.purchases\?\.documents\?\.length && !local\.purchases\?\.suppliers\?\.length/);
+  const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+  assert.match(appSource,/viewPurchases/);
+  assert.match(appSource,/readerRestrictedRoutes[\s\S]*purchases/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

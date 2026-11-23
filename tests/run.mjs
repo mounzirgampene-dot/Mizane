@@ -1379,6 +1379,7 @@ test("achats : fournisseurs, commandes, factures et rapprochement commande/factu
 });
 test("achats : réception partielle idempotente et traçabilité des lots/séries", () => {
   assert.match(purchasesUiSource,/operationUid:uuid\(\)/);
+  assert.match(purchasesUiSource,/activeReceiptOperations/);
   assert.match(purchasesUiSource,/pendingInvoiceReceipt/);
   assert.match(purchasesUiSource,/Réessayer la même réception/);
   assert.match(purchasesUiSource,/line_index/);

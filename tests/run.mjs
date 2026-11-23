@@ -20,6 +20,7 @@ const stockIndexesMigration = readFileSync(new URL("../supabase/migrations/20261
 const stockTraceabilityMigration = readFileSync(new URL("../supabase/migrations/20261123090659_stock_traceability_and_units.sql", import.meta.url), "utf8");
 const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/20261123090728_fix_stock_lot_balance_decrease.sql", import.meta.url), "utf8");
 const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
+const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
 const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
@@ -1286,6 +1287,7 @@ test("stock cloud : lots, séries et conversions sont protégés côté serveur"
   assert.match(stockSerialGuardsMigration,/Les articles suivis par numéro de série ne peuvent pas utiliser des conversions/);
   assert.match(stockSerialGuardsMigration,/stock_serials_company_last_movement_idx/);
   assert.match(stockSerialGuardsMigration,/stock_serials_company_warehouse_idx/);
+  assert.match(stockSerialNormalizeMigration,/jsonb_agg\(trim\(value\)/);
 });
 
 test("stock cloud : interface expose la saisie des lots, séries et unités alternatives", () => {

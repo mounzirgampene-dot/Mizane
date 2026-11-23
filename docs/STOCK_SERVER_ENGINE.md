@@ -88,6 +88,8 @@ Aucune de ces migrations n'a été exécutée sur Production.
 
 Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'entreprise fictive de test, dans des transactions annulées par `ROLLBACK` :
 
+7. Réservation de 8 unités, livraison partielle de 3 puis sortie commerciale de 5 : réservation réduite à 5 puis marquée `fulfilled`, avec deux événements d'audit. Une sortie manuelle de 13 unités est refusée car elle empiéterait sur les 8 unités réservées.
+
 1. Création d'articles avec suivi lot et série, entrepôts et conversion carton/pièce.
 2. Réception de 2 cartons de 12 pièces à 1 200 MAD le carton, puis sortie d'un carton : quantité convertie de 24 à 12 pièces et valeur de 2 400 à 1 200 MAD.
 3. Contrôle du solde d'un lot ; une sortie supérieure au lot disponible est refusée.
@@ -95,16 +97,15 @@ Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'ent
 5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
 6. Contrôle après rollback : aucun article, entrepôt, lot ou numéro de série de test résiduel.
 
-Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **100 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
+Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **101 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
 
 ## Limites restantes
 
-1. Module Achats complet : fournisseurs, commandes, factures fournisseurs, rapprochement commande/réception/facture et déclenchement automatique selon le paramètre d'achat.
-2. Consommation automatique des réservations lors des livraisons ; le flux de livraison actuel contrôle le stock disponible mais ne consomme pas encore les réservations actives.
-3. Workflow d'inventaire physique guidé, avec comptage, gel, rapprochement et validation.
-4. Contrepassation exacte et auditée pour CUMP/FIFO.
-5. Génération des écritures comptables après validation du plan comptable de chaque entreprise et des règles CGNC.
-6. Tests de concurrence multi-session et parcours navigateur authentifié complet.
+1. Workflow d'inventaire physique guidé, avec comptage, gel, rapprochement et validation.
+2. Contrepassation exacte et auditée pour CUMP/FIFO.
+3. Génération des écritures comptables après validation du plan comptable de chaque entreprise et des règles CGNC.
+4. Tests de concurrence multi-session et parcours navigateur authentifié complet.
+5. Rapprochement avancé des achats avec tolérances configurables, factures multiples par commande, paiements et avoirs fournisseurs.
 
 ## Environnement et statut
 

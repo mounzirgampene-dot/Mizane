@@ -22,6 +22,7 @@ const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/202611
 const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
 const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const billingUiSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
 const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
 
@@ -1322,6 +1323,28 @@ test("stock cloud : interface reliée aux RPC et ne pousse plus le stock dans la
   const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
   assert.match(appSource, /mizane:legacy-stock-loaded/);
 });
+test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {
+  assert.match(billingUiSource,/stockProductId/);
+  assert.match(billingUiSource,/stockWarehouseId/);
+  assert.match(billingUiSource,/unit_conversions/);
+  assert.match(billingUiSource,/stockLotCode/);
+  assert.match(billingUiSource,/stockSerialNumbers/);
+});
+test("facturation : la validation déclenche une sortie de stock idempotente", () => {
+  assert.match(billingUiSource,/sales_trigger/);
+  assert.match(billingUiSource,/invoice_validation/);
+  assert.match(billingUiSource,/sourceType:"sales_invoice"/);
+  assert.match(billingUiSource,/stockPendingOperation/);
+  assert.match(billingUiSource,/Réessayer le stock/);
+});
+test("facturation : les livraisons partielles ne postent que les lignes sélectionnées", () => {
+  assert.match(billingUiSource,/function openInvoiceDelivery/);
+  assert.match(billingUiSource,/sourceType:"sales_delivery"/);
+  assert.match(billingUiSource,/if \(rows && !rows\[index\]\) continue/);
+  assert.match(billingUiSource,/stockFulfilledQuantity/);
+  assert.match(billingUiSource,/data-bill-deliver/);
+});
+
 test("stock cloud : les soldes complets du serveur priment sur les 500 mouvements récents", () => {
   assert.match(stockCoreSource, /Array\.isArray\(stock\.cloudBalances\)/);
   assert.match(stockUiSource, /cloudBalances:data\?\.balances/);

@@ -46,7 +46,7 @@ test("inventaire physique : gel intégral, comptage, soumission et ajustement at
   assert.match(stockPhysicalInventoryMigration, /stock_count_lines/);
   assert.match(stockPhysicalInventoryMigration, /stock_count_block_movement/);
   assert.match(stockPhysicalInventoryMigration, /status in \('counting','submitted'\)/);
-  assert.match(stockPhysicalInventoryMigration, /p_source_type='inventory_count'/);
+  assert.match(stockPhysicalInventoryMigration, /v_source_type='inventory_count'/);
   assert.match(stockPhysicalInventoryMigration, /stock_count_finalize_impl/);
   assert.match(stockPhysicalInventoryMigration, /stock\.count_approved_and_posted/);
   assert.match(stockPhysicalInventoryMigration, /v_role<>'admin'/);

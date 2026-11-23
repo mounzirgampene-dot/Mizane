@@ -211,8 +211,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     </section>
     <section class="card">
       <h2>Derniers mouvements</h2>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th></tr></thead><tbody>
-      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td></tr>`; }).join("") || '<tr><td colspan="6" class="muted">Aucun mouvement enregistré.</td></tr>'}
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${cloudMode && !readOnly ? "<th>Action</th>" : ""}</tr></thead><tbody>
+      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td>${cloudMode && !readOnly ? `<td>${m.documentId && m.documentStatus==="posted" ? `<button class="secondary" data-stock-reverse="${esc(m.documentId)}">Contrepasser</button>` : "—"}</td>` : ""}</tr>`; }).join("") || '<tr><td colspan="7" class="muted">Aucun mouvement enregistré.</td></tr>'}
       </tbody></table></div>
     </section>
     <section class="card">
@@ -232,6 +232,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
   document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
+  document.querySelectorAll("[data-stock-reverse]").forEach(button => button.addEventListener("click", () => reverseDocument(button.dataset.stockReverse, companyRole)));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));
   document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode, companyRole));
   document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode, companyRole));

@@ -57,7 +57,7 @@ $old$;
   ) then
     raise exception 'Contrepassation refusée : l''état actuel d''un numéro de série ne correspond plus au document d''origine.' using errcode='55000';
   end if;
-$ new$;
+$new$;
 begin
   select pg_get_functiondef('private.stock_reverse_document_impl(uuid,uuid,uuid,text)'::regprocedure)
     into v_definition;

@@ -367,7 +367,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     box.querySelector("#sm-lot-wrap").hidden=product?.tracking!=="lot";box.querySelector("#sm-serial-wrap").hidden=product?.tracking!=="serial";
   };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
-    const serialNumbers=box.querySelector("#sm-serials").value.split(/[\\n,;]/).map(v=>v.trim()).filter(Boolean);
+    const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
     const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value,direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {

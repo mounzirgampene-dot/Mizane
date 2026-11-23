@@ -12,6 +12,7 @@ Les migrations de stock sont appliquées sur Supabase **DEV uniquement**. Les ve
 - `20261123091005_normalize_stock_serial_inputs.sql`
 - `20261123094940_stock_auto_reservation_fulfillment.sql`
 - `20261123110000_stock_physical_inventory.sql`
+- `20261123113000_stock_physical_inventory_indexes.sql`
 
 Aucune de ces migrations n'a été exécutée sur Production.
 

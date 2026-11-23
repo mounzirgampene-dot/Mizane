@@ -56,6 +56,8 @@ begin
   end if;
 end $$;
 
+alter table public.stock_product_families enable row level security;
+alter table public.stock_product_types enable row level security;
 revoke all on public.stock_product_families, public.stock_product_types from public, anon, authenticated;
 
 create or replace function private.stock_catalog_ensure_impl(p_company_id uuid)

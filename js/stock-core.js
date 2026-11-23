@@ -1,5 +1,4 @@
 // MIZANE — Moteur de gestion de stock (journal des mouvements, CUMP/FIFO).
-const clone = value => JSON.parse(JSON.stringify(value));
 const round = value => Math.round((Number(value) + Number.EPSILON) * 10000) / 10000;
 const uuid = () => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -75,6 +74,8 @@ export function postStockMovement(store, input) {
   if (!product) return { ok: false, error: "Article introuvable ou inactif." };
   if (product.type === "service") return { ok: false, error: "Un service ne peut pas faire l'objet d'un mouvement physique." };
   const quantity = round(Number(input.quantity));
+  const movementDate = String(input.date || new Date().toISOString().slice(0,10));
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(movementDate) || Number.isNaN(Date.parse(movementDate + "T00:00:00Z")) || new Date(movementDate + "T00:00:00Z").toISOString().slice(0,10) !== movementDate) return { ok: false, error: "Date de mouvement invalide." };
   if (!(quantity > 0) || !Number.isFinite(quantity)) return { ok: false, error: "Quantité invalide." };
   const warehouse = stock.warehouses.find(w => w.id === input.warehouseId && w.active);
   if (!warehouse) return { ok: false, error: "Entrepôt source invalide." };
@@ -117,7 +118,7 @@ export function postStockMovement(store, input) {
     destinationWarehouseId: kind === "transfer" ? input.destinationWarehouseId : null,
     quantity, quantityDelta: kind === "receipt" ? quantity : -quantity,
     unitCost, totalCost: valuationCost, reference: String(input.reference || "").trim(),
-    date: input.date || new Date().toISOString().slice(0,10),
+    date: movementDate,
     note: String(input.note || "").trim(), createdAt: new Date().toISOString(),
   };
   stock.movements.push(movement);

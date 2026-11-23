@@ -1144,7 +1144,7 @@ test("stock : refus du négatif par défaut et FIFO sans couche", () => {
   assert.equal(stockBalance(stock, p.id, w.id), 3);
 });
 test("stock : service et entrepôt invalide refusés", () => {
-  const s = freshStockStore(), stock = getStock(s);
+  const s = freshStockStore();
   const p = addProduct(s, { sku: "SRV-03", name: "Prestation", type: "service", unit: "heure", tracking: "none" }).product;
   assert.equal(postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: "main", quantity: 1, unitCost: 10 }).ok, false);
   const q = addProduct(s, { sku: "PH-01", name: "Physique", type: "goods", unit: "pièce", tracking: "none" }).product;

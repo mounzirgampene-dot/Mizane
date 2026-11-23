@@ -376,7 +376,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
   };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
     const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
-    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value,supplier:box.querySelector("#sm-supplier").value.trim(),direction:box.querySelector("#sm-direction")?.value};
+    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),supplier:box.querySelector("#sm-supplier").value.trim(),direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {
         const operationUid=globalThis.crypto?.randomUUID?.();
@@ -386,7 +386,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
-        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:[input.supplier?"Fournisseur : "+input.supplier:"",input.note].filter(Boolean).join(" — "),lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
+        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }

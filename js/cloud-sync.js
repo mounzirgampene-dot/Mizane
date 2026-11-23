@@ -149,3 +149,75 @@ export function assertCloudAccountingPeriodReady() {
   }
   return true;
 }
+
+
+// API dédiée au moteur de stock transactionnel. Les opérations de stock ne
+// transitent plus par le JSONB de facturation lorsqu'une entreprise SaaS est active.
+function stockCompanyId() {
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+  if (!companyId) throw new Error("Aucune entreprise professionnelle sélectionnée.");
+  return companyId;
+}
+async function stockRpc(functionName, args = {}) {
+  const companyId = stockCompanyId();
+  const supabase = await getClient();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
+  if (!sessionData?.session?.user) throw new Error("Connectez-vous à votre espace professionnel pour accéder au stock.");
+  const { data, error } = await supabase.rpc(functionName, { p_company_id: companyId, ...args });
+  if (error) {
+    let message = error.message || "Opération de stock impossible.";
+    try {
+      const body = error.context && typeof error.context.clone === "function" ? await error.context.clone().json() : null;
+      if (body?.message) message = body.message;
+    } catch {}
+    throw new Error(message);
+  }
+  return data;
+}
+export function hasActiveStockCompany() {
+  return Boolean(localStorage.getItem(ACTIVE_COMPANY_KEY));
+}
+export function readCloudStock() {
+  return stockRpc("stock_read_state");
+}
+export function saveCloudStockProduct(product) {
+  return stockRpc("stock_save_product", { p_product: product });
+}
+export function saveCloudStockWarehouse(warehouse) {
+  return stockRpc("stock_save_warehouse", { p_warehouse: warehouse });
+}
+export function updateCloudStockSettings(settings) {
+  return stockRpc("stock_update_settings", { p_settings: settings });
+}
+export function postCloudStockDocument({ operationUid, documentType, documentDate, reference = "", note = "", lines, sourceType = null, sourceId = null }) {
+  return stockRpc("stock_post_document", {
+    p_operation_uid: operationUid,
+    p_document_type: documentType,
+    p_document_date: documentDate,
+    p_reference: reference,
+    p_note: note,
+    p_lines: lines,
+    p_source_type: sourceType,
+    p_source_id: sourceId,
+  });
+}
+export function reverseCloudStockDocument(documentId, operationUid, reason) {
+  return stockRpc("stock_reverse_document", {
+    p_document_id: documentId,
+    p_operation_uid: operationUid,
+    p_reason: reason,
+  });
+}
+export function reserveCloudStock({ operationUid, productId, warehouseId, quantity, reference = "" }) {
+  return stockRpc("stock_reserve", {
+    p_operation_uid: operationUid,
+    p_product_id: productId,
+    p_warehouse_id: warehouseId,
+    p_quantity: quantity,
+    p_reference: reference,
+  });
+}
+export function releaseCloudStockReservation(reservationId) {
+  return stockRpc("stock_release_reservation", { p_reservation_id: reservationId });
+}

@@ -31,6 +31,7 @@ const stockCumpReversalCleanupMigration = readFileSync(new URL("../supabase/migr
 const stockTrackedReversalMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_tracked_valuation_reversals.sql", import.meta.url), "utf8");
 const stockCatalogWriteSerializationMigration = readFileSync(new URL("../supabase/migrations/20261123160000_stock_catalog_write_serialization.sql", import.meta.url), "utf8");
 const stockReservationInvoiceLinkMigration = readFileSync(new URL("../supabase/migrations/20261123170000_stock_reservation_invoice_link.sql", import.meta.url), "utf8");
+const stockReservationLockOrderMigration = readFileSync(new URL("../supabase/migrations/20261123171500_stock_reservation_lock_order.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -66,6 +67,13 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
   assert.match(stockCloudSource, /stock_reverse_document/);
 });
  
+test("stock : réservations liées verrouillent le catalogue avant validation", () => {
+  assert.match(stockReservationLockOrderMigration,/stock_reserve_linked_impl/);
+  assert.match(stockReservationLockOrderMigration,/stock_reserve_impl/);
+  assert.match(stockReservationLockOrderMigration,/pg_advisory_xact_lock/);
+  assert.match(stockReservationLockOrderMigration,/Point de verrouillage introuvable/);
+});
+
 test("stock : les réservations sont consommées uniquement par leur facture liée", () => {
   assert.match(stockReservationInvoiceLinkMigration,/stock_reservations_source_link_check/);
   assert.match(stockReservationInvoiceLinkMigration,/stock_reserve_linked_impl/);

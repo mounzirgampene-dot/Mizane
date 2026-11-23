@@ -123,7 +123,7 @@ async function submitInvoiceStockOperation(invoice, operation) {
     });
     for (const item of operation.fulfilled) {
       const line=invoice.lines[item.lineIndex];
-      if (line) line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity);
+      if (line) { line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity); if(operation.kind==="delivery") line.stockSerialNumbers=""; }
     }
     invoice.stockDocuments ||= [];
     invoice.stockDocuments.push({documentId:result?.document_id || null,operationUid:operation.operationUid,kind:operation.kind,date:operation.documentDate,createdAt:new Date().toISOString()});
@@ -197,7 +197,7 @@ function renderList() {
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
-      (doc.type === "invoice" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
       "</td></tr>";
   };
   $app.innerHTML = `

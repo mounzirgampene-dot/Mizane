@@ -197,6 +197,24 @@ begin
   end loop;
 end $$;
 
+
+create or replace function private.stock_reject_immutable_change()
+returns trigger
+language plpgsql
+set search_path = ''
+as $
+begin
+  raise exception 'Journal de stock immuable : utilisez une contrepassation.' using errcode='55000';
+end;
+$;
+revoke all on function private.stock_reject_immutable_change() from public,anon,authenticated;
+create trigger stock_movements_immutable before update or delete on public.stock_movements
+for each row execute function private.stock_reject_immutable_change();
+create trigger stock_allocations_immutable before update or delete on public.stock_valuation_allocations
+for each row execute function private.stock_reject_immutable_change();
+create trigger stock_audit_immutable before update or delete on public.stock_audit_logs
+for each row execute function private.stock_reject_immutable_change();
+
 create or replace function private.stock_assert_writer(p_company_id uuid)
 returns uuid
 language plpgsql
@@ -359,7 +377,7 @@ declare
   v_qty numeric(20,6); v_cost numeric(20,6); v_total numeric(20,6);
   v_balance public.stock_balances%rowtype; v_layer record; v_left numeric(20,6);
   v_take numeric(20,6); v_issue_cost numeric(20,6); v_unit_cost numeric(20,6); v_reserved numeric(20,6);
-  v_source_movement bigint; v_dest_movement bigint; v_signed numeric(20,6);
+  v_source_movement bigint; v_dest_movement bigint; v_signed numeric(20,6); v_allocations jsonb;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
   if p_operation_uid is null or p_document_date is null or p_document_type not in ('receipt','issue','transfer','adjustment')
@@ -377,6 +395,7 @@ begin
 
   for v_line in select value from jsonb_array_elements(p_lines) loop
     v_no:=v_no+1;
+    v_allocations:='[]'::jsonb;
     v_product:=(v_line->>'product_id')::uuid;
     v_wh:=(v_line->>'warehouse_id')::uuid;
     v_dest:=nullif(v_line->>'destination_warehouse_id','')::uuid;
@@ -421,6 +440,7 @@ begin
           v_take:=least(v_left,v_layer.remaining_quantity);
           v_issue_cost:=v_issue_cost+v_take*v_layer.unit_cost;
           update public.stock_valuation_layers set remaining_quantity=remaining_quantity-v_take where id=v_layer.id;
+          v_allocations:=v_allocations||jsonb_build_array(jsonb_build_object('layer_id',v_layer.id,'quantity',v_take,'unit_cost',v_layer.unit_cost));
           v_left:=v_left-v_take;
         end loop;
         if v_left>0 then
@@ -436,6 +456,11 @@ begin
       insert into public.stock_movements(company_id,document_id,line_id,product_id,warehouse_id,quantity_delta,value_delta,unit_cost,movement_date)
       values(p_company_id,v_doc,currval(pg_get_serial_sequence('public.stock_document_lines','id'))::bigint,v_product,v_wh,-v_qty,-v_issue_cost,case when v_qty=0 then 0 else v_issue_cost/v_qty end,p_document_date)
       returning id into v_source_movement;
+      if v_settings.valuation_method='fifo' then
+        insert into public.stock_valuation_allocations(company_id,movement_id,layer_id,quantity,unit_cost)
+        select p_company_id,v_source_movement,(a->>'layer_id')::bigint,(a->>'quantity')::numeric,(a->>'unit_cost')::numeric
+        from jsonb_array_elements(v_allocations) a;
+      end if;
       update public.stock_balances set quantity=quantity-v_qty,inventory_value=greatest(0,inventory_value-v_issue_cost),updated_at=now()
       where company_id=p_company_id and product_id=v_product and warehouse_id=v_wh;
       if p_document_type='transfer' then

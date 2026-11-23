@@ -79,12 +79,7 @@ begin
 
   select id into v_family from public.stock_product_families where company_id=p_company_id and code='commerce';
   insert into public.stock_product_types(company_id,family_id,code,name,legacy_kind) values
-    (p_company_id,v_family,'goods','Marchandise','goods'),
-    (p_company_id,v_family,'imported_product','Produit importé','goods'),
-    (p_company_id,v_family,'local_product','Produit fabriqué localement','finished'),
-    (p_company_id,v_family,'wholesale_product','Produit destiné à la vente en gros','goods'),
-    (p_company_id,v_family,'retail_product','Produit destiné à la vente au détail','goods'),
-    (p_company_id,v_family,'promotional_product','Produit promotionnel','goods')
+    (p_company_id,v_family,'goods','Marchandise','goods')
   on conflict(company_id,code) do nothing;
 
   select id into v_family from public.stock_product_families where company_id=p_company_id and code='industry';

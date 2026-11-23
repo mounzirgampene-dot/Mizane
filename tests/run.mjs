@@ -1108,6 +1108,18 @@ test("stock : entrée, sortie et valorisation CUMP cohérentes", () => {
   assert.equal(productBalance(stock, p.id), 7);
   assert.equal(stockValuation(stock, p.id), 700);
 });
+test("stock : CUMP pondère plusieurs réceptions et conserve la valeur après sortie", () => {
+  const s = freshStockStore(), stock = getStock(s);
+  const p = addProduct(s, { sku: "CUMP-02", name: "CUMP multi-coûts", type: "goods", unit: "pièce", tracking: "none" }).product;
+  const w = stock.warehouses[0];
+  postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: w.id, quantity: 10, unitCost: 100 });
+  postStockMovement(s, { kind: "receipt", productId: p.id, warehouseId: w.id, quantity: 10, unitCost: 200 });
+  const out = postStockMovement(s, { kind: "issue", productId: p.id, warehouseId: w.id, quantity: 10 });
+  assert.equal(out.movement.unitCost, 150);
+  assert.equal(out.movement.totalCost, 1500);
+  assert.equal(stockBalance(stock, p.id, w.id), 10);
+  assert.equal(stockValuation(stock, p.id), 1500);
+});
 test("stock : transfert entre entrepôts conserve la quantité totale", () => {
   const s = freshStockStore(), stock = getStock(s);
   const p = addProduct(s, { sku: "TR-01", name: "Article transfert", type: "goods", unit: "pièce", tracking: "none" }).product;

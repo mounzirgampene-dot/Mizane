@@ -3,6 +3,7 @@ import { trialBalance, incomeStatement, balanceSheet, toCSV } from "../accountin
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { printHTML } from "../print.js";
 import { store, $app, router, toast, esc, money } from "../state.js";
+import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
 
 export function viewBalance() {
   const { exerciceStart, exerciceEnd } = store.settings;
@@ -18,16 +19,28 @@ export function viewBalance() {
       </tbody>
     </table>
     <p class="${tb.totals.debit === tb.totals.credit ? "ok-msg" : "errors"}">${tb.totals.debit === tb.totals.credit ? "✓ Balance équilibrée." : "⚠ Balance déséquilibrée !"}</p>`}`;
+  const chartRows = [...tb.rows].sort((a,b)=>(b.debit+b.credit)-(a.debit+a.credit)).slice(0,12).map(r=>({label:r.code+" — "+r.label,debit:r.debit,credit:r.credit}));
+  const charts = renderHorizontalBars("Comptes les plus mouvementés",chartRows,[{key:"debit",label:"Débit"},{key:"credit",label:"Crédit"}],money);
   $app.innerHTML = `
     <h1>Balance générale</h1>
-    <div class="card table-wrap">${table}
+    ${chartModeControls("balance")}
+    <div id="balance-table-view"><div class="card table-wrap">${table}
       <div class="actions">
         <button class="secondary" id="bal-print">🖨 Imprimer</button>
         <button class="secondary" id="bal-csv">⬇ Exporter CSV</button>
         <button class="secondary" id="bal-xls">⬇ Excel</button>
       </div>
+    </div></div>
+    <div id="balance-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="value">${money(tb.totals.debit)}</div><div class="label">Total débit</div></section>
+        <section class="card kpi"><div class="value">${money(tb.totals.credit)}</div><div class="label">Total crédit</div></section>
+        <section class="card kpi"><div class="value">${money(tb.totals.soldeDebit)}</div><div class="label">Soldes débiteurs</div></section>
+      </div>
+      ${charts}
     </div>
   `;
+  bindChartMode("balance");
   document.getElementById("bal-print").addEventListener("click", () =>
     printHTML(`Balance générale — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, table));
   document.getElementById("bal-csv").addEventListener("click", () => {
@@ -60,10 +73,27 @@ export function viewIncome() {
       <div class="value" style="color:${is.resultat >= 0 ? "var(--ok)" : "var(--danger)"}">${money(is.resultat)}</div>
       <div class="label">${is.resultat >= 0 ? "Bénéfice" : "Perte"} de l'exercice</div>
     </div>`;
+  const incomeRows = [
+    ...is.charges.map(r=>({label:r.code+" — "+r.label,charges:r.solde,produits:0})),
+    ...is.produits.map(r=>({label:r.code+" — "+r.label,charges:0,produits:r.solde})),
+  ].sort((a,b)=>(b.charges+b.produits)-(a.charges+a.produits)).slice(0,14);
+  const incomeCharts = renderHorizontalBars("Répartition des charges et des produits",incomeRows,[{key:"charges",label:"Charges"},{key:"produits",label:"Produits"}],money);
   $app.innerHTML = `
     <h1>Compte de résultat</h1>
-    <div class="actions" style="margin-bottom:10px"><button class="secondary" id="inc-print">🖨 Imprimer</button></div>
-    ${body}`;
+    ${chartModeControls("income")}
+    <div id="income-table-view">
+      <div class="actions" style="margin-bottom:10px"><button class="secondary" id="inc-print">🖨 Imprimer</button></div>
+      ${body}
+    </div>
+    <div id="income-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="value">${money(is.totProduits)}</div><div class="label">Total produits</div></section>
+        <section class="card kpi"><div class="value">${money(is.totCharges)}</div><div class="label">Total charges</div></section>
+        <section class="card kpi"><div class="value" style="color:${is.resultat>=0?"var(--ok)":"var(--danger)"}">${money(is.resultat)}</div><div class="label">${is.resultat>=0?"Bénéfice":"Perte"}</div></section>
+      </div>
+      ${incomeCharts}
+    </div>`;
+  bindChartMode("income");
   document.getElementById("inc-print").addEventListener("click", () =>
     printHTML(`Compte de résultat — ${store.settings.companyName} (${exerciceStart} → ${exerciceEnd})`, body));
 }
@@ -101,10 +131,35 @@ export function viewSheet() {
       <div class="value" style="color:${Math.abs(b.ecart) < 0.001 ? "var(--ok)" : "var(--danger)"}">${Math.abs(b.ecart) < 0.001 ? "✓ Équilibre Actif = Passif" : "⚠ Écart : " + money(b.ecart)}</div>
       <div class="label">Contrôle d'équilibre du bilan</div>
     </div>`;
+  const assetRows = [
+    {label:"Immobilisations",amount:b.actif.immobilisations.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+    {label:"Stocks",amount:b.actif.stocks.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+    {label:"Créances",amount:b.actif.creances.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+    {label:"Trésorerie actif",amount:b.actif.tresorerie.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+  ];
+  const liabilityRows = [
+    {label:"Capitaux propres",amount:b.passif.capitaux.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+    {label:"Dettes",amount:b.passif.dettes.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+    {label:"Trésorerie passif",amount:b.passif.tresorerie.reduce((sum,r)=>sum+Math.max(0,r.solde),0)},
+  ];
+  const sheetCharts = renderHorizontalBars("Composition de l’actif",assetRows,[{key:"amount",label:"Actif"}],money)
+    + renderHorizontalBars("Composition du passif",liabilityRows,[{key:"amount",label:"Passif"}],money);
   $app.innerHTML = `
     <h1>Bilan</h1>
-    <div class="actions" style="margin-bottom:10px"><button class="secondary" id="sheet-print">🖨 Imprimer</button></div>
-    ${body}`;
+    ${chartModeControls("sheet")}
+    <div id="sheet-table-view">
+      <div class="actions" style="margin-bottom:10px"><button class="secondary" id="sheet-print">🖨 Imprimer</button></div>
+      ${body}
+    </div>
+    <div id="sheet-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="value">${money(b.totActif)}</div><div class="label">Total actif</div></section>
+        <section class="card kpi"><div class="value">${money(b.totPassif)}</div><div class="label">Total passif</div></section>
+        <section class="card kpi"><div class="value" style="color:${Math.abs(b.ecart)<0.001?"var(--ok)":"var(--danger)"}">${money(b.ecart)}</div><div class="label">Écart actif / passif</div></section>
+      </div>
+      ${sheetCharts}
+    </div>`;
+  bindChartMode("sheet");
   document.getElementById("sheet-print").addEventListener("click", () =>
     printHTML(`Bilan — ${store.settings.companyName} au ${exerciceEnd}`, body));
 }

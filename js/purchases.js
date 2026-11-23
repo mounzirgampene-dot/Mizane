@@ -216,7 +216,7 @@ function openDetail(id) {
   }).join("");
   const remaining = doc.lines.reduce((sum,line) => {
     const linkedReceived = linkedOrder?.lines.find(item => String(item.productId) === String(line.productId) && String(item.warehouseId) === String(line.warehouseId))?.receivedBase;
-    const received = doc.type === "order" || stockState?.settings?.purchase_trigger !== "supplier_invoice" ? num(line.receivedBase) : doc.orderId ? num(linkedReceived) : num(line.stockPostedBase);
+    const received = doc.type === "order" ? num(line.receivedBase) : doc.orderId ? num(linkedReceived) : stockState?.settings?.purchase_trigger === "supplier_invoice" ? num(line.stockPostedBase) : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>

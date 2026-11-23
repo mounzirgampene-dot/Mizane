@@ -61,6 +61,12 @@ const getBilling = () => {
   return store.billing;
 };
 const fmt = (value, currency, locale) => formatMoney(value, currency, locale);
+function formatRecordedAt(value, locale = "fr") {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium", hourCycle: "h23" }).format(date);
+}
 const totals = calculateBillingTotals;
 function postInvoiceAccounting(invoice) {
   const mapping = getBilling().settings.accountingAccounts || {};
@@ -184,7 +190,7 @@ function documentHTML(doc) {
     return `<tr><td>${esc(line.description)}</td><td class="num">${number(line.quantity)}</td><td class="num">${fmt(line.unitPrice,currency,locale)}</td><td class="num">${number(line.taxRate)} %</td><td class="num">${fmt(lineHT+lineTax,currency,locale)}</td></tr>`;
   }).join("");
   const title = doc.type === "quote" ? "DEVIS" : "FACTURE";
-  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
+  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
   ${paymentSummary}
@@ -203,7 +209,7 @@ function renderList() {
     const status = doc.type === "invoice" && doc.status !== "cancelled"
       ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
       : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
-    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
       (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
@@ -216,7 +222,7 @@ function renderList() {
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
-    <section class="card"><h2>Documents</h2><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Type</th><th>Date</th><th>Client</th><th>Devise</th><th class="num">Total TTC</th><th>État</th><th>Actions</th></tr></thead><tbody>${docs.length ? docs.map(row).join("") : '<tr><td colspan="8" class="muted">Aucun devis ou facture pour le moment.</td></tr>'}</tbody></table></div></section>
+    <section class="card"><h2>Documents</h2><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Type</th><th>Date</th><th>Enregistrée le</th><th>Client</th><th>Devise</th><th class="num">Total TTC</th><th>État</th><th>Actions</th></tr></thead><tbody>${docs.length ? docs.map(row).join("") : '<tr><td colspan="8" class="muted">Aucun devis ou facture pour le moment.</td></tr>'}</tbody></table></div></section>
     <p class="muted">Les devis et factures sont enregistrés localement. Les écritures comptables générées sont ajoutées au journal et suivent la synchronisation comptable existante.</p>`;
   document.getElementById("bill-new-quote").addEventListener("click", () => openEditor("quote"));
   document.getElementById("bill-new-invoice").addEventListener("click", () => openEditor("invoice"));

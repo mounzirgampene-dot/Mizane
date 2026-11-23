@@ -249,9 +249,9 @@ begin
   if auth.uid() is null or not private.is_active_company_member(p_company_id) then
     raise exception 'Accès au stock refusé.' using errcode='42501';
   end if;
-  insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   v_result := jsonb_build_object(
-    'settings',(select to_jsonb(s) - 'company_id' from public.stock_settings s where s.company_id=p_company_id),
+    'settings',coalesce((select to_jsonb(s) - 'company_id' from public.stock_settings s where s.company_id=p_company_id),
+      jsonb_build_object('valuation_method','cump','allow_negative',false,'sales_trigger','delivery','purchase_trigger','receipt','accounting_mode','perpetual')),
     'warehouses',coalesce((select jsonb_agg(to_jsonb(w)-'company_id' order by w.created_at) from public.stock_warehouses w where w.company_id=p_company_id),'[]'::jsonb),
     'products',coalesce((select jsonb_agg(to_jsonb(p)-'company_id' order by p.created_at) from public.stock_products p where p.company_id=p_company_id),'[]'::jsonb),
     'balances',coalesce((select jsonb_agg(jsonb_build_object('product_id',b.product_id,'warehouse_id',b.warehouse_id,'quantity',b.quantity,'inventory_value',b.inventory_value) order by b.product_id,b.warehouse_id) from public.stock_balances b where b.company_id=p_company_id),'[]'::jsonb),
@@ -272,7 +272,7 @@ as $$
 declare v_actor uuid; v_id uuid; v_sku text; v_type text; v_tracking text;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
-  if jsonb_typeof(p_product)<>'object' then raise exception 'Article invalide.' using errcode='22023'; end if;
+  if p_product is null or jsonb_typeof(p_product) is distinct from 'object' then raise exception 'Article invalide.' using errcode='22023'; end if;
   v_id:=nullif(p_product->>'id','')::uuid;
   v_sku:=btrim(coalesce(p_product->>'sku',''));
   v_type:=coalesce(p_product->>'product_type','goods');
@@ -343,6 +343,7 @@ as $$
 declare v_actor uuid; v_old public.stock_settings%rowtype;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
+  if p_settings is null or jsonb_typeof(p_settings) is distinct from 'object' then raise exception 'Paramètres de stock invalides.' using errcode='22023'; end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_old from public.stock_settings where company_id=p_company_id for update;
   if coalesce(p_settings->>'valuation_method',v_old.valuation_method) not in ('cump','fifo')
@@ -391,7 +392,7 @@ declare
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
   if p_operation_uid is null or p_document_date is null or p_document_type not in ('receipt','issue','transfer','adjustment')
-     or jsonb_typeof(p_lines)<>'array' or jsonb_array_length(p_lines)<1 or jsonb_array_length(p_lines)>500 then
+     or p_lines is null or jsonb_typeof(p_lines) is distinct from 'array' or jsonb_array_length(p_lines)<1 or jsonb_array_length(p_lines)>500 then
     raise exception 'Document de stock invalide.' using errcode='22023';
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
@@ -553,7 +554,12 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   update public.stock_reservations set status='released',released_at=now()
   where company_id=p_company_id and id=p_reservation_id and status='active';
-  if not found then raise exception 'Réservation active introuvable.' using errcode='P0002'; end if;
+  if not found then
+    if exists(select 1 from public.stock_reservations where company_id=p_company_id and id=p_reservation_id and status='released') then
+      return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',p_reservation_id);
+    end if;
+    raise exception 'Réservation active introuvable.' using errcode='P0002';
+  end if;
   insert into public.stock_audit_logs(company_id,actor_user_id,action,entity_type,entity_id)
   values(p_company_id,v_actor,'stock.reservation_released','stock_reservation',p_reservation_id::text);
   return jsonb_build_object('ok',true,'reservation_id',p_reservation_id);
@@ -586,7 +592,7 @@ begin
   ) order by l.line_number) into v_lines
   from public.stock_document_lines l
   left join public.stock_movements m on m.company_id=l.company_id and m.line_id=l.id
-  where l.company_id=p_company_id and l.document_id=p_document_id and l.line_number<500;
+  where l.company_id=p_company_id and l.document_id=p_document_id and l.line_number<=500;
   v_result:=public.stock_post_document(p_company_id,p_operation_uid,v_type,current_date,
     'REV-'||coalesce(v_doc.reference,v_doc.id::text),btrim(p_reason),v_lines,'reversal',v_doc.id::text);
   v_new_id:=(v_result->>'document_id')::uuid;

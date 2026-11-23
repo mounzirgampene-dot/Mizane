@@ -104,13 +104,11 @@ export function postStockMovement(store, input) {
       const totalQty = currentLayers.reduce((s,l) => s + l.remaining, 0);
       const totalValue = currentLayers.reduce((s,l) => s + l.remaining*l.unitCost, 0);
       unitCost = totalQty > 0 ? round(totalValue/totalQty) : 0;
-      valuationCost = round(quantity*unitCost);
-      let remaining = quantity;
+      const availableToValue = Math.min(quantity, totalQty);
+      valuationCost = round(availableToValue*unitCost);
+      const consumptionRatio = totalQty > 0 ? Math.min(1, availableToValue/totalQty) : 0;
       for (const layer of currentLayers) {
-        const take = Math.min(remaining, layer.remaining);
-        layer.remaining = round(layer.remaining-take);
-        remaining = round(remaining-take);
-        if (remaining <= 0) break;
+        layer.remaining = round(layer.remaining * (1-consumptionRatio));
       }
     }
   }

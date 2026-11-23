@@ -228,7 +228,7 @@ export async function syncBilling(supabase, companyId, role, localValue) {
       saveShadow(companyId, confirmed.data, confirmed.version);
       return { billing: local, pushed: 1, pulled: 0 };
     }
-    if (!local.documents.length) {
+    if (!local.documents.length && !local.purchases?.documents?.length && !local.purchases?.suppliers?.length) {
       saveShadow(companyId, remote.data, remote.version);
       return { billing: remote.data, pushed: 0, pulled: 1 };
     }

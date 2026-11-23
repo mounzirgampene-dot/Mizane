@@ -483,6 +483,16 @@ async function openEditor(type, source = null) {
       content.querySelector("#bill-error").textContent = "Le total de la facture ne peut pas être inférieur aux paiements déjà enregistrés.";
       return;
     }
+    let invoiceStockOperation = null;
+    if (type === "invoice" && stockEnabled && saved.stockTrigger === "invoice_validation" && invoiceHasStockLines(saved)) {
+      try {
+        const built=invoiceStockLines(saved,stockState);
+        invoiceStockOperation={operationUid:stockOperationUid(),documentDate:saved.date,note:"Sortie automatique à la validation de la facture "+saved.number,lines:built.lines,fulfilled:built.fulfilled,kind:"invoice_validation",sourceType:"sales_invoice",sourceId:String(saved.id)};
+      } catch(error) {
+        content.querySelector("#bill-error").textContent=error.message;
+        return;
+      }
+    }
     if (source) {
       const index = billing.documents.findIndex((item) => item.id === source.id);
       if (index < 0) {
@@ -496,16 +506,10 @@ async function openEditor(type, source = null) {
     const accountingResult = type === "invoice" ? postInvoiceAccounting(saved) : null;
     saveBilling();
     modal.close();
-    if (type === "invoice" && stockEnabled && saved.stockTrigger === "invoice_validation" && invoiceHasStockLines(saved)) {
-      try {
-        const built=invoiceStockLines(saved,stockState);
-        const operation={operationUid:stockOperationUid(),documentDate:saved.date,note:"Sortie automatique à la validation de la facture "+saved.number,lines:built.lines,fulfilled:built.fulfilled,kind:"invoice_validation",sourceType:"sales_invoice",sourceId:String(saved.id)};
-        const result=await submitInvoiceStockOperation(saved,stockState,operation);
-        if(!result.ok) toast("Facture enregistrée ; sortie de stock en attente : "+(result.error?.message||"erreur inconnue")+". Utilisez « Réessayer le stock » après correction.",7000);
-        else toast("Facture enregistrée et sortie de stock confirmée.");
-      } catch(error) {
-        toast("Facture enregistrée ; sortie de stock non effectuée : "+error.message,7000);
-      }
+    if (invoiceStockOperation) {
+      const result=await submitInvoiceStockOperation(saved,stockState,invoiceStockOperation);
+      if(!result.ok) toast("Facture enregistrée ; sortie de stock en attente : "+(result.error?.message||"erreur inconnue")+". Utilisez « Réessayer le stock » après correction.",7000);
+      else toast("Facture enregistrée et sortie de stock confirmée.");
     } else if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
     else toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée et comptabilisée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée et comptabilisée."));
     renderList();

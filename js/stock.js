@@ -191,7 +191,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
-      <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>${cloudMode ? '<button class="secondary" id="stock-new-reservation">Réserver du stock</button>' : ""}'}</div>
+      <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>'}${cloudMode && !readOnly ? '<button class="secondary" id="stock-new-reservation">Réserver du stock</button>' : ""}</div>
     </div>
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>

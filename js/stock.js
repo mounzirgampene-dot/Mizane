@@ -11,7 +11,7 @@ export function viewStock(readOnly = false, companyRole = null) {
   const stock = getStock(store);
   const physical = stock.products.filter(p => p.type !== "service");
   const totalProducts = stock.products.length;
-  const totalUnits = physical.reduce((sum,p) => sum + productBalance(stock,p.id),0);
+  const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
   const recent = stock.movements.slice().reverse().slice(0,12);
   $app.innerHTML = `
@@ -21,7 +21,7 @@ export function viewStock(readOnly = false, companyRole = null) {
     </div>
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
-      <section class="card kpi"><div class="label">Unités en stock</div><div class="value">${fmtQty(totalUnits)}</div></section>
+      <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
       <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
     </div>
     <section class="card">
@@ -66,7 +66,7 @@ function productDialog() {
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
     <div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>
     <div><label>Unité</label><input id="sp-unit" value="unité" maxlength="24"></div>
-    <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
+    <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot" disabled>Par lot — prochain lot</option><option value="serial" disabled>Par numéro de série — prochain lot</option></select></div>
   </div><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
   box.querySelector("#sp-save").onclick=()=>{ const result=addProduct(store,{sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value}); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist();modal.close();viewStock();toast("Article créé."); };
@@ -91,7 +91,7 @@ function movementDialog() {
     <div><label>Date</label><input id="sm-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     <div><label>Référence</label><input id="sm-ref" maxlength="120"></div>
   </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
-  <p class="muted">Une validation de mouvement ajoute une ligne au journal. Les mouvements existants ne sont pas supprimés.</p>`;
+  <p class="muted">Une validation de mouvement ajoute une ligne au journal. Les mouvements existants ne sont pas supprimés. La traçabilité par lot ou numéro de série sera activée dans un prochain lot.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   const kind=box.querySelector("#sm-kind"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap");
   const update=()=>{dest.hidden=kind.value!=="transfer";cost.hidden=kind.value!=="receipt";};kind.onchange=update;update();

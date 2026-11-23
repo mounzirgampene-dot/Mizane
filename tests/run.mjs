@@ -1174,6 +1174,7 @@ test("stock cloud : tables dédiées et cloisonnement company_id", () => {
   }
   assert.match(stockServerMigration, /private\.is_active_company_member\(company_id\)/);
   assert.match(stockServerMigration, /unique\(company_id,operation_uid\)/);
+  assert.match(stockServerMigration, /request_hash text not null/);
 });
 test("stock cloud : écritures serveur réservées aux rôles admin et accountant", () => {
   assert.match(stockServerMigration, /m\.role in \('admin','accountant'\)/);
@@ -1184,6 +1185,7 @@ test("stock cloud : écritures serveur réservées aux rôles admin et accountan
 test("stock cloud : journal append-only, idempotence et verrou transactionnel", () => {
   assert.match(stockServerMigration, /pg_advisory_xact_lock/);
   assert.match(stockServerMigration, /operation_uid/);
+  assert.match(stockServerMigration, /operation_uid déjà utilisé avec un contenu différent/);
   assert.match(stockServerMigration, /stock_movements_immutable/);
   assert.match(stockServerMigration, /stock_allocations_immutable/);
   assert.match(stockServerMigration, /stock_audit_immutable/);
@@ -1197,6 +1199,7 @@ test("stock cloud : valorisation FIFO avec allocations explicites et réservatio
 });
 test("stock cloud : contrepassation documentée et paramètres de valorisation verrouillés", () => {
   assert.match(stockServerMigration, /stock_reverse_document\(/);
+  assert.match(stockServerMigration, /Contrepassation suspendue : le recalcul exact des couches de valorisation/);
   assert.match(stockServerMigration, /La méthode de valorisation ne peut plus être changée après le premier mouvement/);
   assert.doesNotMatch(stockServerMigration, /insert into public\.accounting_entry_lines/);
 });

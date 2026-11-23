@@ -7,7 +7,7 @@ import { postEntry, reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
-import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
+import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -197,6 +197,7 @@ function renderList() {
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockReservationsCreated && !doc.stockPendingOperation && (doc.lines || []).some(line => line.stockProductId && number(line.quantity) - number(line.stockFulfilledQuantity) > 0.000001) ? '<button class="secondary small" data-bill-reserve-stock="' + doc.id + '">Réserver le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
       "</td></tr>";
   };
@@ -237,6 +238,7 @@ function renderList() {
     button.disabled=false;
   }));
   $app.querySelectorAll("[data-bill-deliver]").forEach(button => button.addEventListener("click", () => openInvoiceDelivery(Number(button.dataset.billDeliver))));
+  $app.querySelectorAll("[data-bill-reserve-stock]").forEach(button => button.addEventListener("click", () => reserveInvoiceStock(Number(button.dataset.billReserveStock))));
 }
 
 
@@ -286,6 +288,79 @@ async function openInvoiceDelivery(invoiceId) {
   modal.showModal();
 }
 
+async function reserveInvoiceStock(invoiceId) {
+  const invoice=getBilling().documents.find(doc=>doc.id===invoiceId && doc.type==="invoice");
+  if(!invoice || invoice.status==="cancelled") return;
+  if(invoice.stockPendingOperation) return toast("Terminez d’abord le mouvement de stock en attente.");
+  if(invoice.stockReservationsCreated) return toast("Les quantités de cette facture ont déjà été réservées.");
+  let stockState;
+  try { stockState=await readCloudStock(); }
+  catch(error) { return toast("Lecture du stock impossible : "+error.message,6000); }
+  const products=new Map((stockState.products||[]).map(product=>[product.id,product]));
+  const eligible=(invoice.lines||[]).map((line,index)=>{
+    const product=products.get(line.stockProductId);
+    const remaining=Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity));
+    const unit=String(line.stockUnit||product?.base_unit||"unité");
+    const conversion=(stockState.unit_conversions||[]).find(item=>item.product_id===line.stockProductId && item.unit_code===unit);
+    const factor=conversion ? number(conversion.factor_to_base) : 1;
+    return {line,index,product,remaining,unit,factor};
+  }).filter(item=>item.line.stockProductId && item.remaining>0.000001);
+  if(!eligible.length) return toast("Aucune quantité physique non livrée ne peut être réservée.");
+  for(const item of eligible){
+    if(!item.product || item.product.product_type==="service" || !item.line.stockWarehouseId) return toast("Une ligne de facture ne possède pas d’article physique ou d’entrepôt valide.");
+    if(!(item.factor>0)) return toast("Conversion d’unité invalide pour "+item.product.name+".");
+    if(item.product.tracking==="serial" && (item.remaining!==Math.trunc(item.remaining) || item.factor!==1)) return toast("Les articles sérialisés doivent être réservés en unités entières de base.");
+  }
+  const modal=document.getElementById("modal"),content=document.getElementById("modal-content");
+  content.innerHTML=`<h2>Réserver le stock — ${esc(invoice.number)}</h2>
+    <p class="muted">Cette action protège les quantités restantes de la facture dans les entrepôts indiqués. Les réservations seront automatiquement consommées lors des sorties liées à cette facture et de ses livraisons partielles.</p>
+    <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité à réserver</th><th>Unité de base</th></tr></thead><tbody>
+    ${eligible.map(item=>{const warehouse=(stockState.warehouses||[]).find(w=>w.id===item.line.stockWarehouseId);return `<tr><td>${esc(item.product.name)}</td><td>${esc(warehouse?.name||"Entrepôt")}</td><td class="num">${fmt(number(item.remaining)*item.factor)}</td><td>${esc(item.product.base_unit||"unité")}</td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div id="bill-reservation-error" class="errors" role="alert"></div>
+    <div class="actions"><button type="button" id="bill-reservation-submit">Confirmer les réservations</button><button type="button" class="secondary" data-close>Annuler</button></div>`;
+  bindBillingModalClose(content);
+  content.querySelector("#bill-reservation-submit").addEventListener("click",async()=>{
+    const button=content.querySelector("#bill-reservation-submit");
+    button.disabled=true;
+    try{
+      invoice.stockReservationOperations ||= [];
+      for(const item of eligible){
+        const quantity=round(item.remaining*item.factor);
+        let operation=invoice.stockReservationOperations.find(entry=>entry.lineIndex===item.index);
+        if(operation && (operation.quantity!==quantity || operation.productId!==item.line.stockProductId || operation.warehouseId!==item.line.stockWarehouseId)){
+          throw new Error("La facture a changé depuis la préparation de la réservation. Actualisez-la avant de continuer.");
+        }
+        if(operation?.status==="done") continue;
+        if(!operation){
+          operation={lineIndex:item.index,operationUid:stockOperationUid(),productId:item.line.stockProductId,warehouseId:item.line.stockWarehouseId,quantity,status:"pending"};
+          invoice.stockReservationOperations.push(operation);
+        }
+        saveBilling();
+        await reserveCloudStock({
+          operationUid:operation.operationUid,productId:operation.productId,warehouseId:operation.warehouseId,
+          quantity:operation.quantity,reference:"Facture "+invoice.number,sourceType:"sales_invoice",sourceId:String(invoice.id),
+        });
+        operation.status="done";
+        saveBilling();
+      }
+      invoice.stockReservationsCreated=true;
+      delete invoice.stockReservationPending;
+      saveBilling();
+      modal.close();
+      renderList();
+      toast("Réservations liées à la facture enregistrées.");
+    }catch(error){
+      invoice.stockReservationPending=true;
+      saveBilling();
+      content.querySelector("#bill-reservation-error").textContent=(error?.message||"Réservation impossible.")+" Vous pouvez reprendre l’opération sans créer de doublon.";
+      button.disabled=false;
+    }
+  });
+  modal.showModal();
+}
+
+
 async function openEditor(type, source = null) {
   const billing = getBilling();
   let stockState = null;
@@ -294,7 +369,7 @@ async function openEditor(type, source = null) {
     try { stockState = await readCloudStock(); }
     catch (error) { toast("Impossible de charger les articles du stock : " + error.message, 6000); return; }
   }
-  if (source?.stockPendingOperation || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
+  if (source?.stockPendingOperation || source?.stockReservationsCreated || source?.stockReservationPending || (source?.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status)) || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
     toast("Cette facture possède déjà des mouvements de stock. Sa modification est bloquée pour préserver l’historique.");
     return;
   }

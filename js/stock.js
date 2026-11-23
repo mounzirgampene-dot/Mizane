@@ -91,7 +91,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   const totalProducts = stock.products.length;
   const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
-  const recent = stock.movements.slice().reverse().slice(0,12);
+  const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date))).reverse().slice(0,12);
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
@@ -131,16 +131,16 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       ${cloudMode ? `<p class="muted">Réservations actives : ${stock.reservations.length}</p>` : ""}
     </section>`;
   if (readOnly) return;
-  document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode));
-  document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode));
-  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode));
+  document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
+  document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
+  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode));
   document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode));
   document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode));
   document.getElementById("stock-purchase-trigger").addEventListener("change", e => changeSettings({purchase_trigger:e.target.value}, cloudMode));
 }
 
-async function changeSettings(changes, cloudMode) {
+async function changeSettings(changes, cloudMode, companyRole) {
   try {
     if (cloudMode) await updateCloudStockSettings(changes);
     else {
@@ -152,7 +152,7 @@ async function changeSettings(changes, cloudMode) {
       persist();
     }
     toast("Paramètres de stock enregistrés.");
-    viewStock(false, cloudMode ? "admin" : null);
+    viewStock(false, companyRole);
   } catch(error) {
     toast(error?.message || "Enregistrement du paramètre impossible.", 5000);
     viewStock(false, null);
@@ -173,7 +173,7 @@ function productDialog(cloudMode = false) {
     try {
       if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,base_unit:input.unit,tracking:input.tracking,category:""});
       else { const result=addProduct(store,input); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist(); }
-      modal.close();viewStock(false,null);toast("Article créé.");
+      modal.close();viewStock(false,companyRole);toast("Article créé.");
     } catch(error) { box.querySelector("#sp-error").textContent=error?.message || "Création impossible."; }
   };
 }
@@ -182,7 +182,7 @@ function warehouseCode(name) {
   const base=String(name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,32) || "MAGASIN";
   return base + "-" + (globalThis.crypto?.randomUUID?.().slice(0,6).toUpperCase() || String(Date.now()).slice(-6));
 }
-function warehouseDialog(cloudMode = false) {
+function warehouseDialog(cloudMode = false, companyRole = null) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   box.innerHTML=`<h2>Créer un entrepôt</h2><label>Nom</label><input id="sw-name" maxlength="100"><div id="sw-error" class="errors"></div><div class="actions"><button id="sw-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
@@ -191,21 +191,21 @@ function warehouseDialog(cloudMode = false) {
     try {
       if (cloudMode) await saveCloudStockWarehouse({code:warehouseCode(name),name});
       else {const r=addWarehouse(store,name);if(!r.ok){box.querySelector("#sw-error").textContent=r.error;return;}persist();}
-      modal.close();viewStock(false,null);toast("Entrepôt créé.");
+      modal.close();viewStock(false,companyRole);toast("Entrepôt créé.");
     } catch(error) { box.querySelector("#sw-error").textContent=error?.message || "Création impossible."; }
   };
 }
 
-function movementDialog(cloudMode = false) {
+function movementDialog(cloudMode = false, companyRole = null) {
   const stock=cloudMode ? null : getStock(store);
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   if (cloudMode) {
-    readCloudStock().then(data => openMovementDialog(mapCloudStock(data),true)).catch(error => toast(error?.message || "Lecture du stock impossible.",5000));
+    readCloudStock().then(data => openMovementDialog(mapCloudStock(data),true,companyRole)).catch(error => toast(error?.message || "Lecture du stock impossible.",5000));
     return;
   }
-  openMovementDialog(stock,false);
+  openMovementDialog(stock,false,companyRole);
 }
-function openMovementDialog(stock, cloudMode) {
+function openMovementDialog(stock, cloudMode, companyRole = null) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   const physical=stock.products.filter(p=>p.type!=="service"&&p.active);
   const warehouses=stock.warehouses.filter(w=>w.active);
@@ -237,7 +237,7 @@ function openMovementDialog(stock, cloudMode) {
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }
-      modal.close();viewStock(false,null);toast("Mouvement de stock enregistré.");
+      modal.close();viewStock(false,companyRole);toast("Mouvement de stock enregistré.");
     } catch(error) { box.querySelector("#sm-error").textContent=error?.message || "Validation impossible."; }
   };
 }

@@ -68,6 +68,7 @@ function lineRow(index, source = {}) {
     <td><select class="pa-unit">${units}</select></td>
     <td><input class="pa-quantity" type="number" min="0.0001" step="0.0001" value="${source.quantity ?? 1}"></td>
     <td><input class="pa-cost" type="number" min="0" step="0.0001" value="${source.unitCost ?? 0}"></td>
+    <td><input class="pa-trace" maxlength="500" value="${esc(source.trace || "")}" placeholder="Lot ou séries"></td>
     <td><button type="button" class="secondary pa-remove" aria-label="Supprimer la ligne">×</button></td>
   </tr>`;
 }
@@ -82,7 +83,7 @@ function readLines(box) {
     const factor = Number(row.querySelector(".pa-unit").selectedOptions[0]?.dataset.factor || 1);
     const quantity = num(row.querySelector(".pa-quantity").value);
     const unitCost = num(row.querySelector(".pa-cost").value);
-    return { productId: item?.id, warehouseId: row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, baseQuantity: round(quantity * factor), baseUnitCost: factor > 0 ? round(unitCost / factor) : 0 };
+    return { productId: item?.id, warehouseId: row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity: round(quantity * factor), baseUnitCost: factor > 0 ? round(unitCost / factor) : 0 };
   });
 }
 function validateLines(lines) {
@@ -163,7 +164,7 @@ function openDocument(type) {
     ${type === "invoice" ? `<label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select>` : ""}
     <label>Référence fournisseur</label><input id="pd-reference" maxlength="120" placeholder="N° commande / facture fournisseur">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
-    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
+    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
     <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne</button>
     <p id="pd-total" class="calculator-result">Total : 0,00</p><div id="pd-error" class="errors"></div>
     <div class="actions"><button id="pd-save">Enregistrer ${type === "order" ? "la commande" : "la facture"}</button><button class="secondary" data-close>Annuler</button></div>`);
@@ -227,6 +228,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Entrer le stock restant", () => postInvoiceReceipt(doc, box));
+  if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(() => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && num(doc.receivedBase)>0) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
 async function postReceipt(doc, requestedLines, box, sourceType) {
@@ -250,7 +252,7 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
       }
     }
     delete doc[pendingKey];
-    if (doc.type === "order") doc.status = doc.lines.every(line => num(doc.receivedBase) >= line.baseQuantity) ? "received" : "partially_received";
+    if (doc.type === "order") doc.status = doc.lines.every(line => num(line.receivedBase) >= line.baseQuantity) ? "received" : "partially_received";
     persist("Entrée de stock fournisseur confirmée.");
     box?.closest("dialog")?.close(); renderList();
   } catch (error) {
@@ -264,9 +266,9 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
 function openReceipt(doc) {
   const { box } = modal(`<h2>Réception fournisseur — ${esc(doc.number)}</h2><p>Renseignez uniquement les quantités reçues aujourd'hui. Le reliquat restera à recevoir.</p>
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Restant (base)</th><th>Reçu (base)</th><th>Lot / série</th></tr></thead><tbody>${doc.lines.map((line,index) => {
-      const item=product(line.productId), left=Math.max(0,line.baseQuantity-num(doc.receivedBase));
+      const item=product(line.productId), left=Math.max(0,line.baseQuantity-num(line.receivedBase));
       return `<tr data-receive-line="${index}"><td>${esc(item?.name||"Article")}</td><td>${round(left)}</td><td><input class="pr-qty" type="number" min="0" max="${left}" step="0.0001" value="${left}"></td><td><input class="pr-trace" placeholder="${item?.tracking === "serial" ? "Séries séparées par virgule" : item?.tracking === "lot" ? "Code lot" : "Facultatif"}"></td></tr>`;
-    }).join("")}</tbody></table></div><div id="pd-detail-error" class="errors"></div>
+    }).join("")}</tbody></table></div><div id="pd-detail-error" class="errors"></div><div id="pd-detail-actions" class="actions"></div>
     <div class="actions"><button id="pr-confirm">Confirmer la réception</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#pr-confirm").addEventListener("click", () => {
     const lines=[];

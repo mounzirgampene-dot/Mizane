@@ -17,6 +17,9 @@ const invitationMigration = readFileSync(new URL("../supabase/migrations/2026112
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");
 const stockIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123090112_stock_foreign_key_indexes.sql", import.meta.url), "utf8");
+const stockTraceabilityMigration = readFileSync(new URL("../supabase/migrations/20261123090659_stock_traceability_and_units.sql", import.meta.url), "utf8");
+const stockLotFixMigration = readFileSync(new URL("../supabase/migrations/20261123090728_fix_stock_lot_balance_decrease.sql", import.meta.url), "utf8");
+const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123090856_stock_serial_guards_and_indexes.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
 const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
@@ -1157,6 +1160,52 @@ test("stock : service et entrepôt invalide refusés", () => {
   const q = addProduct(s, { sku: "PH-01", name: "Physique", type: "goods", unit: "pièce", tracking: "none" }).product;
   assert.equal(postStockMovement(s, { kind: "receipt", productId: q.id, warehouseId: "unknown", quantity: 1, unitCost: 10 }).ok, false);
 });
+
+test("stock : conversions d’unités convertissent quantité et coût vers l’unité de base", () => {
+  const s=freshStockStore(), stock=getStock(s);
+  const p=addProduct(s,{sku:"UNIT-01",name:"Cartons",type:"goods",unit:"pièce",tracking:"none",unitConversions:[{unit:"carton",factorToBase:12}]}).product;
+  const w=stock.warehouses[0];
+  const receipt=postStockMovement(s,{kind:"receipt",productId:p.id,warehouseId:w.id,quantity:2,unit:"carton",unitCost:1200});
+  assert.equal(receipt.ok,true);
+  assert.equal(receipt.movement.quantity,24);
+  assert.equal(receipt.movement.unitCost,100);
+  assert.equal(stockBalance(stock,p.id,w.id),24);
+  assert.equal(stockValuation(stock,p.id),2400);
+  const issue=postStockMovement(s,{kind:"issue",productId:p.id,warehouseId:w.id,quantity:1,unit:"carton"});
+  assert.equal(issue.ok,true);
+  assert.equal(stockBalance(stock,p.id,w.id),12);
+  assert.equal(stockValuation(stock,p.id),1200);
+  assert.equal(postStockMovement(s,{kind:"issue",productId:p.id,warehouseId:w.id,quantity:1,unit:"palette"}).ok,false);
+});
+
+test("stock : traçabilité par lot suit les quantités par entrepôt et reste atomique", () => {
+  const s=freshStockStore(), stock=getStock(s);
+  const p=addProduct(s,{sku:"LOT-01",name:"Produit par lot",type:"goods",unit:"pièce",tracking:"lot"}).product;
+  const w=stock.warehouses[0];
+  assert.equal(postStockMovement(s,{kind:"receipt",productId:p.id,warehouseId:w.id,quantity:10,unitCost:10,lotCode:"LOT-A"}).ok,true);
+  assert.equal(postStockMovement(s,{kind:"issue",productId:p.id,warehouseId:w.id,quantity:3,lotCode:"LOT-A"}).ok,true);
+  assert.equal(stock.lotBalances.find(x=>x.productId===p.id&&x.lotCode==="LOT-A").quantity,7);
+  const valueBefore=stockValuation(stock,p.id);
+  assert.equal(postStockMovement(s,{kind:"issue",productId:p.id,warehouseId:w.id,quantity:1,lotCode:"LOT-B"}).ok,false);
+  assert.equal(stockValuation(stock,p.id),valueBefore);
+  assert.equal(stockBalance(stock,p.id,w.id),7);
+});
+
+test("stock : numéros de série uniques, sorties et transferts suivis individuellement", () => {
+  const s=freshStockStore(), stock=getStock(s);
+  const p=addProduct(s,{sku:"SER-01",name:"Produit sérialisé",type:"goods",unit:"pièce",tracking:"serial"}).product;
+  const w1=stock.warehouses[0], w2=addWarehouse(s,"Dépôt série").warehouse;
+  assert.equal(addProduct(s,{sku:"SER-02",name:"Séries et conversion",type:"goods",unit:"pièce",tracking:"serial",unitConversions:[{unit:"boîte",factorToBase:2}]}).ok,false);
+  assert.equal(postStockMovement(s,{kind:"receipt",productId:p.id,warehouseId:w1.id,quantity:2,unitCost:20,serialNumbers:["SN-001","SN-002"]}).ok,true);
+  assert.equal(postStockMovement(s,{kind:"issue",productId:p.id,warehouseId:w1.id,quantity:1,serialNumbers:["SN-001"]}).ok,true);
+  assert.equal(postStockMovement(s,{kind:"transfer",productId:p.id,warehouseId:w1.id,destinationWarehouseId:w2.id,quantity:1,serialNumbers:["SN-002"]}).ok,true);
+  assert.equal(stock.serials.find(x=>x.serialNumber==="SN-001").status,"issued");
+  assert.equal(stock.serials.find(x=>x.serialNumber==="SN-002").warehouseId,w2.id);
+  assert.equal(postStockMovement(s,{kind:"receipt",productId:p.id,warehouseId:w1.id,quantity:1,serialNumbers:["SN-002"]}).ok,false);
+  assert.equal(postStockMovement(s,{kind:"receipt",productId:p.id,warehouseId:w1.id,quantity:1.5,serialNumbers:["SN-003"]}).ok,false);
+  assert.equal(stockBalance(stock,p.id,w1.id),0);
+  assert.equal(stockBalance(stock,p.id,w2.id),1);
+});
 test("stock : navigation et synchronisation cloud sont raccordées", () => {
   const app = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
   const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
@@ -1219,6 +1268,33 @@ test("stock cloud : contrepassation documentée et paramètres de valorisation v
   assert.match(stockServerMigration, /Contrepassation suspendue : le recalcul exact des couches de valorisation/);
   assert.match(stockServerMigration, /La méthode de valorisation ne peut plus être changée après le premier mouvement/);
   assert.doesNotMatch(stockServerMigration, /insert into public\.accounting_entry_lines/);
+});
+
+test("stock cloud : lots, séries et conversions sont protégés côté serveur", () => {
+  for (const table of ["stock_unit_conversions","stock_lots","stock_lot_balances","stock_serials"]) {
+    assert.match(stockTraceabilityMigration,new RegExp("create table public\\."+table+"\\b"));
+    assert.match(stockTraceabilityMigration,new RegExp("alter table public\\."+table+" enable row level security"));
+  }
+  assert.match(stockTraceabilityMigration,/private\.stock_prepare_document_line/);
+  assert.match(stockTraceabilityMigration,/private\.stock_apply_tracking_movement/);
+  assert.match(stockTraceabilityMigration,/factor_to_base/);
+  assert.match(stockTraceabilityMigration,/'unit_conversions'/);
+  assert.match(stockTraceabilityMigration,/v_qty:=round\(v_input_qty\*v_factor,6\)/);
+  assert.match(stockTraceabilityMigration,/v_cost:=round\(v_cost\/v_factor,6\)/);
+  assert.match(stockTraceabilityMigration,/Le mode de traçabilité ne peut pas être changé après le premier mouvement/);
+  assert.match(stockLotFixMigration,/update public\.stock_lot_balances set quantity=quantity\+new\.quantity_delta/);
+  assert.match(stockSerialGuardsMigration,/Les articles suivis par numéro de série ne peuvent pas utiliser des conversions/);
+  assert.match(stockSerialGuardsMigration,/stock_serials_company_last_movement_idx/);
+  assert.match(stockSerialGuardsMigration,/stock_serials_company_warehouse_idx/);
+});
+
+test("stock cloud : interface expose la saisie des lots, séries et unités alternatives", () => {
+  assert.match(stockUiSource,/unit_conversions/);
+  assert.match(stockUiSource,/id="sm-lot"/);
+  assert.match(stockUiSource,/id="sm-serials"/);
+  assert.match(stockUiSource,/id="sm-unit"/);
+  assert.doesNotMatch(stockUiSource,/value="lot" disabled/);
+  assert.doesNotMatch(stockUiSource,/value="serial" disabled/);
 });
 
 

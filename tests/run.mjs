@@ -1429,6 +1429,22 @@ test("facturation : les livraisons partielles ne postent que les lignes sélecti
   assert.match(billingUiSource,/stockFulfilledQuantity/);
   assert.match(billingUiSource,/data-bill-deliver/);
 });
+
+test("facturation : réservations explicites liées à la facture, converties et idempotentes", () => {
+  assert.match(billingUiSource,/data-bill-reserve-stock/);
+  assert.match(billingUiSource,/async function reserveInvoiceStock/);
+  assert.match(billingUiSource,/reserveCloudStock\(/);
+  assert.match(billingUiSource,/sourceType:"sales_invoice"/);
+  assert.match(billingUiSource,/sourceId:String\(invoice\.id\)/);
+  assert.match(billingUiSource,/factor_to_base/);
+  assert.match(billingUiSource,/operationUid:stockOperationUid\(\)/);
+  assert.match(billingUiSource,/operation\.status="pending"/);
+  assert.match(billingUiSource,/operation\.status="done"/);
+  assert.match(billingUiSource,/stockReservationsCreated/);
+  assert.match(billingUiSource,/stockReservationOperations/);
+  assert.match(billingUiSource,/source\?\.stockReservationsCreated/);
+});
+
 test("stock : les réceptions conservent la référence et l'origine fournisseur", () => {
   assert.match(stockUiSource,/sm-supplier/);
   assert.match(stockUiSource,/sourceType:input.kind==="receipt"\?"supplier_receipt"/);

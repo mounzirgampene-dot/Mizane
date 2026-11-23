@@ -9,6 +9,7 @@ import {
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
+import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
@@ -135,6 +136,19 @@ function test(name, fn) {
   try { fn(); passed++; console.log("  ✓ " + name); }
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }
 }
+
+test("états financiers : filtres de période et comparaison avec N-1", () => {
+  assert.match(periodControls("balance","2026-01-01","2026-12-31"),/type="date"/);
+  assert.match(periodControls("balance","2026-01-01","2026-12-31"),/name="compare" checked/);
+  assert.deepEqual(previousYearRange("2024-02-29","2024-12-31"),{start:"2023-02-28",end:"2023-12-31"});
+  assert.match(comparisonTable("Comparaison","2026","2025",[{label:"Total",current:120,previous:100}],String),/20,0 %/);
+  assert.match(reportsUiSource,/bindPeriodControls\("balance", viewBalance\)/);
+  assert.match(reportsUiSource,/bindPeriodControls\("income", viewIncome\)/);
+  assert.match(reportsUiSource,/bindPeriodControls\("sheet", viewSheet\)/);
+  assert.match(financialUiSource,/bindPeriodControls\("pilotage", viewFinancial\)/);
+  assert.match(financialUiSource,/receivables\(exerciceStart, exerciceEnd\)/);
+  assert.match(financialUiSource,/suppliers\(exerciceStart, exerciceEnd\)/);
+});
 
 test("graphiques financiers : modes tableau/graphiques pour les quatre états", () => {
   for (const id of ["balance","income","sheet","pilotage"]) {

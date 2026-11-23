@@ -95,7 +95,7 @@ Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'ent
 5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
 6. Contrôle après rollback : aucun article, entrepôt, lot ou numéro de série de test résiduel.
 
-Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **97 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
+Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **100 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
 
 ## Limites restantes
 

@@ -215,9 +215,9 @@ begin
       insert into public.stock_valuation_layers(
         company_id,product_id,warehouse_id,source_movement_id,original_quantity,remaining_quantity,unit_cost
       ) values(p_company_id,v_move.product_id,v_move.warehouse_id,v_reversal_movement_id,v_qty,v_qty,v_cost);
-    else
-      -- La contrepassation d'une entrée doit garder une trace de la couche
-      -- exacte neutralisée, notamment pour l'audit FIFO.
+    elsif v_settings.valuation_method='fifo' then
+      -- En FIFO, tracer la couche exacte neutralisée. Le CUMP n'utilise pas
+      -- les allocations et ne doit pas recevoir de fausses allocations FIFO.
       for v_layer in
         select * from public.stock_valuation_layers
         where company_id=p_company_id and source_movement_id=v_move.id

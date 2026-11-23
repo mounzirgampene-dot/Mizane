@@ -324,7 +324,6 @@ function reservationDialog(companyRole) {
 
 function movementDialog(cloudMode = false, companyRole = null) {
   const stock=cloudMode ? null : getStock(store);
-  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   if (cloudMode) {
     readCloudStock().then(data => openMovementDialog(mapCloudStock(data),true,companyRole)).catch(error => toast(error?.message || "Lecture du stock impossible.",5000));
     return;

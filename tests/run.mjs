@@ -1501,6 +1501,14 @@ test("achats : factures multiples rapprochées cumulativement par article et ent
   assert.match(purchasesUiSource,/matches\.some\(item => Math\.abs\(num\(item\.unitCost\) - num\(line\.unitCost\)\) > 0\.0001\)/);
   assert.match(purchasesUiSource,/requireReceived:stockState\?\.settings\?\.purchase_trigger === "receipt"/);
 });
+test("achats : réception d'une facture répartie sur toutes les lignes de commande correspondantes", () => {
+  assert.match(purchasesUiSource,/const orderLines = orderLinesFor\(linked, match\)/);
+  assert.match(purchasesUiSource,/let remainingToAllocate = baseQty/);
+  assert.match(purchasesUiSource,/const capacity = Math\.max\(0, num\(orderLine\.baseQuantity\) - num\(orderLine\.receivedBase\)\)/);
+  assert.match(purchasesUiSource,/remainingToAllocate = round\(remainingToAllocate - allocated\)/);
+  assert.match(purchasesUiSource,/La quantité reçue dépasse le reliquat de la commande liée/);
+});
+
 test("achats : une facture ultérieure ne perd pas son entrée de stock à cause des réceptions précédentes", () => {
   assert.match(purchasesUiSource,/const already=num\(line\.stockPostedBase\)/);
   assert.match(purchasesUiSource,/Chaque facture possède son propre cumul d'entrée/);

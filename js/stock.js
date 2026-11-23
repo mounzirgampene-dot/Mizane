@@ -38,7 +38,7 @@ function mapCloudStock(data) {
         id:first.document_id + ":" + first.product_id, kind, productId:first.product_id,
         warehouseId:negative.warehouse_id, destinationWarehouseId:positive.warehouse_id,
         quantity:Math.abs(Number(negative.quantity_delta)), quantityDelta:-Math.abs(Number(negative.quantity_delta)),
-        unitCost:Number(negative.unit_cost || 0), date:negative.movement_date,
+        unitCost:Number(negative.unit_cost || 0), date:negative.movement_date, createdAt:negative.created_at,
         reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
       });
     } else {
@@ -46,7 +46,7 @@ function mapCloudStock(data) {
         id:m.id, kind, productId:m.product_id, warehouseId:m.warehouse_id,
         destinationWarehouseId:null, quantity:Math.abs(Number(m.quantity_delta)),
         quantityDelta:Number(m.quantity_delta), unitCost:Number(m.unit_cost || 0),
-        date:m.movement_date, reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
+        date:m.movement_date, createdAt:m.created_at, reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
       });
     }
   }
@@ -133,6 +133,7 @@ async function importLegacyStock(companyRole) {
     });
     progress.settingsApplied=true; saveStockMigrationProgress(progress);
   }
+  progress.completed=0; saveStockMigrationProgress(progress);
   const movements=(legacy.movements||[]).map((m,index)=>({...m,_index:index}))
     .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.createdAt||"").localeCompare(String(b.createdAt||"")) || a._index-b._index);
   const companyId=localStorage.getItem("mizane_active_company_v1");
@@ -182,7 +183,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   const totalProducts = stock.products.length;
   const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
-  const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date))).reverse().slice(0,12);
+  const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt||"").localeCompare(String(b.createdAt||""))).reverse().slice(0,12);
   const legacyStock=cloudMode ? store.stock : null;
   const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
   const remoteIsEmpty=cloudMode && !stock.products.length && !stock.movements.length && !(stock.balances||[]).length;

@@ -291,8 +291,8 @@ begin
     raise exception 'L’unité de base ne peut pas être changée après le premier mouvement.' using errcode='55000';
   end if;
   if v_id is null then
-    insert into public.stock_products(company_id,sku,name,product_type,category,base_unit,tracking)
-    values(p_company_id,v_sku,btrim(p_product->>'name'),v_type,coalesce(p_product->>'category',''),coalesce(nullif(p_product->>'base_unit',''),'unité'),v_tracking)
+    insert into public.stock_products(company_id,sku,name,product_type,category,base_unit,tracking,active)
+    values(p_company_id,v_sku,btrim(p_product->>'name'),v_type,coalesce(p_product->>'category',''),coalesce(nullif(p_product->>'base_unit',''),'unité'),v_tracking,coalesce((p_product->>'active')::boolean,true))
     returning id into v_id;
   else
     update public.stock_products set sku=v_sku,name=btrim(p_product->>'name'),product_type=v_type,
@@ -323,7 +323,7 @@ begin
     raise exception 'Entrepôt invalide.' using errcode='22023';
   end if;
   if v_id is null then
-    insert into public.stock_warehouses(company_id,code,name) values(p_company_id,v_code,v_name) returning id into v_id;
+    insert into public.stock_warehouses(company_id,code,name,active) values(p_company_id,v_code,v_name,coalesce((p_warehouse->>'active')::boolean,true)) returning id into v_id;
   else
     update public.stock_warehouses set code=v_code,name=v_name,active=coalesce((p_warehouse->>'active')::boolean,true),updated_at=now()
     where company_id=p_company_id and id=v_id;

@@ -69,6 +69,95 @@ function mapCloudStock(data) {
   };
 }
 
+function stockMigrationKey() {
+  return "mizane_stock_migration_v1:" + localStorage.getItem("mizane_active_company_v1");
+}
+function readStockMigrationProgress() {
+  try { const raw=localStorage.getItem(stockMigrationKey()); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
+function saveStockMigrationProgress(progress) {
+  localStorage.setItem(stockMigrationKey(),JSON.stringify(progress));
+}
+async function stableStockOperationUid(value) {
+  if (!globalThis.crypto?.subtle) throw new Error("Le navigateur ne permet pas de créer une clé d’importation stable.");
+  const digest=await globalThis.crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
+  const bytes=Array.from(new Uint8Array(digest).slice(0,16));
+  bytes[6]=(bytes[6]&0x0f)|0x50; bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=bytes.map(b=>b.toString(16).padStart(2,"0")).join("");
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+}
+async function importLegacyStock(companyRole) {
+  const legacy=store.stock;
+  if (!legacy || !Array.isArray(legacy.products) || !legacy.products.length) throw new Error("Aucun ancien article local à importer.");
+  if (!["admin","accountant"].includes(companyRole)) throw new Error("Seul un administrateur ou un comptable peut lancer l’import.");
+  if (!globalThis.confirm("Importer l’ancien stock local dans l’entreprise ? Les opérations seront rejouées avec des identifiants idempotents.")) return;
+  const progress=readStockMigrationProgress() || {started:true,done:false,productMap:{},warehouseMap:{},completed:0};
+  progress.started=true; saveStockMigrationProgress(progress);
+  let remote=await readCloudStock();
+  const remoteProducts=new Map((remote.products||[]).map(p=>[String(p.sku).toLowerCase(),p]));
+  const remoteWarehouses=new Map((remote.warehouses||[]).map(w=>[String(w.name).toLowerCase(),w]));
+  for (const product of legacy.products) {
+    let saved=remoteProducts.get(String(product.sku||"").toLowerCase());
+    if (!saved) {
+      saved=await saveCloudStockProduct({
+        sku:product.sku,name:product.name,product_type:product.type||"goods",
+        base_unit:product.unit||"unité",tracking:"none",active:product.active!==false,category:"",
+      });
+      remoteProducts.set(String(saved.sku).toLowerCase(),saved);
+    }
+    progress.productMap[String(product.id)]=saved.id;
+    saveStockMigrationProgress(progress);
+  }
+  const oldWarehouses=Array.isArray(legacy.warehouses)?legacy.warehouses:[];
+  for (const warehouse of oldWarehouses) {
+    let saved=remoteWarehouses.get(String(warehouse.name||"").toLowerCase());
+    if (!saved) {
+      saved=await saveCloudStockWarehouse({
+        code:warehouseCode(warehouse.name),name:warehouse.name||"Magasin principal",active:warehouse.active!==false,
+      });
+      remoteWarehouses.set(String(saved.name).toLowerCase(),saved);
+    }
+    progress.warehouseMap[String(warehouse.id)]=saved.id;
+    saveStockMigrationProgress(progress);
+  }
+  remote=await readCloudStock();
+  if (!(remote.movements||[]).length && !progress.settingsApplied) {
+    const settings=legacy.settings||{};
+    await updateCloudStockSettings({
+      valuation_method:settings.valuationMethod==="fifo"?"fifo":"cump",
+      allow_negative:companyRole==="admin" && settings.allowNegative===true,
+      sales_trigger:settings.salesTrigger==="invoice_validation"?"invoice_validation":"delivery",
+      purchase_trigger:settings.purchaseTrigger==="supplier_invoice"?"supplier_invoice":"receipt",
+    });
+    progress.settingsApplied=true; saveStockMigrationProgress(progress);
+  }
+  const movements=(legacy.movements||[]).map((m,index)=>({...m,_index:index}))
+    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.createdAt||"").localeCompare(String(b.createdAt||"")) || a._index-b._index);
+  const companyId=localStorage.getItem("mizane_active_company_v1");
+  for (const movement of movements) {
+    const productId=progress.productMap[String(movement.productId)];
+    const warehouseId=progress.warehouseMap[String(movement.warehouseId)];
+    const destinationWarehouseId=progress.warehouseMap[String(movement.destinationWarehouseId)];
+    if (!productId || !warehouseId) throw new Error("Correspondance article/entrepôt introuvable pour un ancien mouvement.");
+    if (!["receipt","issue","transfer"].includes(movement.kind)) throw new Error("Type d’ancien mouvement non reconnu : "+movement.kind);
+    if (movement.kind==="transfer" && !destinationWarehouseId) throw new Error("Entrepôt destinataire introuvable pour un ancien transfert.");
+    const legacyId=String(movement.id ?? (movement.date+"-"+movement._index));
+    const operationUid=await stableStockOperationUid(companyId+":legacy-stock:"+legacyId);
+    const line={product_id:productId,warehouse_id:warehouseId,quantity:Number(movement.quantity),unit_cost:Number(movement.unitCost||0)};
+    if (movement.kind==="transfer") line.destination_warehouse_id=destinationWarehouseId;
+    await postCloudStockDocument({
+      operationUid,documentType:movement.kind,
+      documentDate:movement.date||new Date().toISOString().slice(0,10),
+      reference:movement.reference||"IMPORT-LOCAL",note:movement.note||"Import historique du stock local",
+      lines:[line],sourceType:"legacy_local_stock",sourceId:legacyId,
+    });
+    progress.completed+=1; saveStockMigrationProgress(progress);
+  }
+  progress.done=true; progress.completed=movements.length; saveStockMigrationProgress(progress);
+  toast("Import historique terminé : "+legacy.products.length+" article(s), "+movements.length+" mouvement(s).",6000);
+}
+
 export function viewStock(readOnly = false, companyRole = null) {
   const sequence = ++renderSequence;
   if (hasActiveStockCompany()) {
@@ -93,6 +182,10 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
   const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date))).reverse().slice(0,12);
+  const legacyStock=cloudMode ? store.stock : null;
+  const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
+  const remoteIsEmpty=cloudMode && !stock.products.length && !stock.movements.length && !(stock.balances||[]).length;
+  const showLegacyImport=cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) && legacyStock && Array.isArray(legacyStock.products) && legacyStock.products.length>0 && (remoteIsEmpty || (migrationProgress?.started && !migrationProgress?.done));
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
@@ -103,6 +196,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
       <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
     </div>
+    ${showLegacyImport ? '<section class="card"><h2>Reprise de l’ancien stock</h2><p class="muted">Ancien stock local détecté : '+legacyStock.products.length+' article(s) et '+(legacyStock.movements||[]).length+' mouvement(s). Import explicite, chronologique et idempotent.</p><button id="stock-import-legacy">'+(migrationProgress?.started ? 'Reprendre l’import' : 'Importer l’ancien stock local')+'</button><p class="muted">'+(migrationProgress?.started ? 'Progression : '+(migrationProgress.completed||0)+' mouvement(s).' : 'Aucune donnée locale ne sera supprimée.')+'</p></section>' : ""}
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
@@ -133,6 +227,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     </section>`;
   if (readOnly) return;
   document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
+  document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode));

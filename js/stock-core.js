@@ -23,6 +23,10 @@ export function getStock(store) {
 }
 
 export function stockBalance(stock, productId, warehouseId) {
+  if (Array.isArray(stock.cloudBalances)) {
+    const balance = stock.cloudBalances.find(row => row.product_id === productId && row.warehouse_id === warehouseId);
+    return round(Number(balance?.quantity || 0));
+  }
   return round(stock.movements.reduce((sum, m) => {
     if (m.productId !== productId) return sum;
     if (m.warehouseId === warehouseId) return sum + Number(m.quantityDelta);

@@ -52,6 +52,45 @@ function product(id) {
 function warehouse(id) {
   return (stockState?.warehouses || []).find(item => String(item.id) === String(id));
 }
+function purchaseLineKey(line) {
+  return String(line.productId) + "::" + String(line.warehouseId);
+}
+function orderLinesFor(order, line) {
+  return (order?.lines || []).filter(item => purchaseLineKey(item) === purchaseLineKey(line));
+}
+function orderedQuantity(order, line) {
+  return round(orderLinesFor(order, line).reduce((sum, item) => sum + num(item.baseQuantity), 0));
+}
+function invoicedQuantity(orderId, line, exceptInvoiceId = null) {
+  return round(data().documents
+    .filter(doc => doc.type === "invoice" && doc.orderId === orderId && doc.status !== "cancelled" && doc.id !== exceptInvoiceId)
+    .flatMap(doc => doc.lines || [])
+    .filter(item => purchaseLineKey(item) === purchaseLineKey(line))
+    .reduce((sum, item) => sum + num(item.baseQuantity), 0));
+}
+function validateInvoiceAgainstOrder(order, invoice, { requireReceived = false } = {}) {
+  if (!order || order.type !== "order" || order.supplierId !== invoice.supplierId) return "Commande fournisseur introuvable ou fournisseur incohérent.";
+  const invoiceTotals = new Map();
+  for (const line of invoice.lines || []) {
+    const matches = orderLinesFor(order, line);
+    if (!matches.length) return "Rapprochement impossible : article ou entrepôt absent de la commande.";
+    if (matches.some(item => Math.abs(num(item.unitCost) - num(line.unitCost)) > 0.0001)) return "Rapprochement impossible : le coût unitaire diffère de la commande.";
+    const key = purchaseLineKey(line);
+    invoiceTotals.set(key, round((invoiceTotals.get(key) || 0) + num(line.baseQuantity)));
+    if (requireReceived) {
+      const received = round(matches.reduce((sum, item) => sum + num(item.receivedBase), 0));
+      if (num(line.baseQuantity) > received) return "Rapprochement bloqué : la quantité facturée dépasse la quantité physiquement reçue.";
+    }
+  }
+  for (const [key, quantity] of invoiceTotals) {
+    const line = (invoice.lines || []).find(item => purchaseLineKey(item) === key);
+    const alreadyInvoiced = invoicedQuantity(order.id, line, invoice.id);
+    if (alreadyInvoiced + quantity > orderedQuantity(order, line) + 0.0001) {
+      return "Rapprochement impossible : le cumul des factures dépasse la quantité commandée.";
+    }
+  }
+  return "";
+}
 function unitOptions(item, selected = "") {
   const base = item.base_unit || "unité";
   const conversions = (stockState?.unit_conversions || []).filter(row => row.product_id === item.id);
@@ -195,11 +234,9 @@ function openDocument(type) {
     if (error) { box.querySelector("#pd-error").textContent = error; return; }
     if (type === "invoice" && orderId) {
       const order = p.documents.find(doc => doc.id === orderId);
-      if (!order || order.supplierId !== supplierId) { box.querySelector("#pd-error").textContent = "La commande et la facture doivent concerner le même fournisseur."; return; }
-      for (const line of lines) {
-        const match = order.lines.find(item => String(item.productId) === String(line.productId) && String(item.warehouseId) === String(line.warehouseId));
-        if (!match || line.baseQuantity > match.baseQuantity || Math.abs(line.unitCost - match.unitCost) > 0.0001) { box.querySelector("#pd-error").textContent = "Rapprochement impossible : article, quantité ou prix différent de la commande."; return; }
-      }
+      const candidate = { id:null, supplierId, lines };
+      const matchingError = validateInvoiceAgainstOrder(order, candidate);
+      if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
     const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
     p.documents.push(doc);
@@ -216,8 +253,10 @@ function openDetail(id) {
     return `<tr><td>${esc(item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "Entrepôt")}</td><td class="num">${line.quantity} ${esc(line.unit)}</td><td class="num">${money(line.unitCost)}</td><td class="num">${round(line.baseQuantity)} ${esc(item?.base_unit || "")}</td></tr>`;
   }).join("");
   const remaining = doc.lines.reduce((sum,line) => {
-    const linkedReceived = linkedOrder?.lines.find(item => String(item.productId) === String(line.productId) && String(item.warehouseId) === String(line.warehouseId))?.receivedBase;
-    const received = doc.type === "order" ? num(line.receivedBase) : doc.orderId ? num(linkedReceived) : stockState?.settings?.purchase_trigger === "supplier_invoice" ? num(line.stockPostedBase) : num(line.receivedBase);
+    const linkedReceived = orderLinesFor(linkedOrder, line).reduce((sum, item) => sum + num(item.receivedBase), 0);
+    const received = doc.type === "order" ? num(line.receivedBase) :
+      stockState?.settings?.purchase_trigger === "supplier_invoice" ? num(line.stockPostedBase) :
+      doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
@@ -305,17 +344,15 @@ function openReceipt(doc) {
 async function validateInvoice(doc, box) {
   if (doc.orderId) {
     const order=data().documents.find(item=>item.id===doc.orderId);
-    if (!order || order.supplierId!==doc.supplierId) { box.querySelector("#pd-detail-error").textContent="Commande fournisseur introuvable ou incohérente."; return; }
-    for (const line of doc.lines) {
-      const match=order.lines.find(item=>String(item.productId)===String(line.productId));
-      if (!match || line.baseQuantity>match.baseQuantity || Math.abs(line.unitCost-match.unitCost)>0.0001) { box.querySelector("#pd-detail-error").textContent="Le rapprochement commande/facture a échoué."; return; }
-      if (stockState?.settings?.purchase_trigger === "receipt" && line.baseQuantity > num(match.receivedBase)) { box.querySelector("#pd-detail-error").textContent="Rapprochement bloqué : la quantité facturée dépasse la quantité physiquement reçue."; return; }
-    }
+    const matchingError=validateInvoiceAgainstOrder(order,doc,{requireReceived:stockState?.settings?.purchase_trigger === "receipt"});
+    if (matchingError) { box.querySelector("#pd-detail-error").textContent=matchingError; return; }
   }
   if (stockState?.settings?.purchase_trigger === "supplier_invoice") {
     const lines=[];
     for (const line of doc.lines) {
-      const already=doc.orderId ? num(data().documents.find(item=>item.id===doc.orderId)?.lines.find(item=>String(item.productId)===String(line.productId) && String(item.warehouseId)===String(line.warehouseId))?.receivedBase) : num(line.stockPostedBase);
+      // Chaque facture possède son propre cumul d'entrée ; le cumul reçu de la commande
+      // ne doit jamais neutraliser une facture ultérieure portant sur une autre tranche.
+      const already=num(line.stockPostedBase);
       const qty=Math.max(0,line.baseQuantity-already);
       if (qty>0) {
         const item=product(line.productId), trace=String(line.trace||"").trim();

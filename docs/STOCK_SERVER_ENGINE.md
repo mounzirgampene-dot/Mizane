@@ -15,6 +15,8 @@ Les migrations de stock sont appliquées sur Supabase **DEV uniquement**. Les ve
 - `20261123113000_stock_physical_inventory_indexes.sql`
 - `20261123120000_stock_inventory_freeze_guard_hardening.sql`
 - `20261123121500_stock_inventory_freeze_guard_null_fix.sql`
+- `20261123130000_stock_exact_valuation_reversals.sql`
+- `20261123131500_fix_reversal_document_link.sql`
 
 Aucune de ces migrations n'a été exécutée sur Production.
 
@@ -80,6 +82,16 @@ Aucune de ces migrations n'a été exécutée sur Production.
 - Ces informations sont conservées dans le document et affichées dans l'historique des mouvements.
 - Le module Achats et les factures fournisseurs ne sont pas encore présents. Le paramètre `purchase_trigger=supplier_invoice` est donc conservé comme configuration, mais il ne déclenche pas encore automatiquement une entrée ; la réception physique reste une opération explicite.
 
+### Contrepassation exacte CUMP/FIFO
+
+- Une contrepassation crée un document correctif distinct ; le document d'origine reste dans le journal et passe à l'état `reversed`.
+- Les mouvements du document correctif portent exactement les quantités et valeurs inverses des mouvements initiaux, sans réévaluer le coût au jour de l'annulation.
+- En CUMP, la quantité et la valeur historique sont restituées directement. En FIFO, les allocations d'une sortie sont rejouées en recréant des couches au coût historique de chaque couche consommée ; les couches d'une entrée annulée sont neutralisées.
+- Les transferts sont inversés par des ajustements compensatoires sur les entrepôts source et destination, avec conservation des valeurs d'origine.
+- L'opération est idempotente par `operation_uid`, journalisée et exécutée sous le verrou transactionnel de l'entreprise.
+- Garde-fous conservateurs : la contrepassation est refusée dès qu'un mouvement ultérieur touche le même article et entrepôt ; elle est également refusée si la couche d'origine a été consommée, si elle ferait passer le stock sous les réservations actives, si la période comptable courante est clôturée, ou si l'article est suivi par lot/numéro de série.
+- Les articles suivis par lot ou numéro de série restent exclus de cette automatisation tant que leur restauration de traçabilité n'est pas traitée dans un workflow dédié. Pour les autres cas refusés, utiliser un ajustement documenté plutôt que de forcer l'historique.
+
 ### Inventaire physique guidé
 
 - Démarrage d’un inventaire intégral pour un entrepôt actif, avec photographie des quantités théoriques et du coût unitaire par article physique.
@@ -110,7 +122,7 @@ Les tests PostgreSQL ont été exécutés avec un membre administrateur de l'ent
 5. Réutilisation d'un numéro encore en stock, unité inconnue et dépassement de lot refusés.
 6. Réservation de 8 unités, livraison partielle de 3 puis sortie commerciale de 5 : réservation réduite à 5 puis marquée `fulfilled`, avec deux événements d'audit. Une sortie manuelle de 13 unités est refusée car elle empiéterait sur les 8 unités réservées.\n7. Inventaire physique : gel des mouvements, refus d’une sortie pendant le comptage, comptage de 10 à 8 unités, ajustement transactionnel et statut final `posted`.\n8. Contrôle après rollback : aucun article, entrepôt, lot, numéro de série ou session d’inventaire de test résiduel.
 
-Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **102 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
+Les tests Node couvrent également les conversions, les soldes par lot, les mouvements sérialisés et l'atomicité des refus. Sur le dernier commit contrôlé de la PR : ESLint est réussi et les **103 tests fonctionnels/résilience passent, sans échec**. Le déploiement Cloudflare Pages Preview du commit de tête s'est terminé avec le statut `success`.
 
 ## Limites restantes
 

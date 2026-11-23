@@ -360,14 +360,16 @@ async function openEditor(type, source = null) {
     const product=stockProducts.find(item=>item.id===productId);
     const select=tr.querySelector('[data-line-field="stockUnit"]');
     if(!select) return;
-    const units=product ? [product.base_unit || "unité",...(stockState.unit_conversions||[]).filter(item=>item.product_id===product.id).map(item=>item.unit_code)] : [];
+    const units=product ? [product.base_unit || "unité",...(product.tracking==="serial"?[]:(stockState.unit_conversions||[]).filter(item=>item.product_id===product.id).map(item=>item.unit_code))] : [];
     select.innerHTML=units.map(unit=>`<option value="${esc(unit)}">${esc(unit)}</option>`).join("");
     select.disabled=!product;
     if(units.includes(preferred)) select.value=preferred;
-    if(product?.tracking==="lot") tr.querySelector('[data-line-field="stockLotCode"]').placeholder="Lot obligatoire";
-    else tr.querySelector('[data-line-field="stockLotCode"]').placeholder="Lot (facultatif)";
-    if(product?.tracking==="serial") tr.querySelector('[data-line-field="stockSerialNumbers"]').placeholder="Un numéro par unité";
-    else tr.querySelector('[data-line-field="stockSerialNumbers"]').placeholder="Séries (facultatif)";
+    const lotInput=tr.querySelector('[data-line-field="stockLotCode"]');
+    const serialInput=tr.querySelector('[data-line-field="stockSerialNumbers"]');
+    lotInput.hidden=product?.tracking!=="lot";
+    serialInput.hidden=product?.tracking!=="serial";
+    lotInput.placeholder="Lot obligatoire";
+    serialInput.placeholder="Un numéro par unité";
   };
   const bindRows = () => {
     content.querySelectorAll("#bill-lines input").forEach((input) => input.addEventListener("input", refreshTotals));

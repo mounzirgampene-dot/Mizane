@@ -238,7 +238,7 @@ end;
 $$;
 revoke all on function private.stock_assert_writer(uuid) from public,anon,authenticated;
 
-create or replace function public.stock_read_state(p_company_id uuid)
+create or replace function private.stock_read_state_impl(p_company_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -263,7 +263,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_save_product(p_company_id uuid,p_product jsonb)
+create or replace function private.stock_save_product_impl(p_company_id uuid,p_product jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -306,7 +306,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_save_warehouse(p_company_id uuid,p_warehouse jsonb)
+create or replace function private.stock_save_warehouse_impl(p_company_id uuid,p_warehouse jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -334,7 +334,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_update_settings(p_company_id uuid,p_settings jsonb)
+create or replace function private.stock_update_settings_impl(p_company_id uuid,p_settings jsonb)
 returns jsonb
 language plpgsql
 security definer
@@ -374,7 +374,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_post_document(
+create or replace function private.stock_post_document_impl(
   p_company_id uuid,p_operation_uid uuid,p_document_type text,p_document_date date,
   p_reference text,p_note text,p_lines jsonb,p_source_type text default null,p_source_id text default null
 ) returns jsonb
@@ -511,7 +511,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_reserve(
+create or replace function private.stock_reserve_impl(
   p_company_id uuid,p_operation_uid uuid,p_product_id uuid,p_warehouse_id uuid,p_quantity numeric,p_reference text default ''
 ) returns jsonb
 language plpgsql
@@ -542,7 +542,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_release_reservation(p_company_id uuid,p_reservation_id uuid)
+create or replace function private.stock_release_reservation_impl(p_company_id uuid,p_reservation_id uuid)
 returns jsonb
 language plpgsql
 security definer
@@ -566,7 +566,7 @@ begin
 end;
 $$;
 
-create or replace function public.stock_reverse_document(p_company_id uuid,p_document_id uuid,p_operation_uid uuid,p_reason text)
+create or replace function private.stock_reverse_document_impl(p_company_id uuid,p_document_id uuid,p_operation_uid uuid,p_reason text)
 returns jsonb
 language plpgsql
 security definer
@@ -593,7 +593,7 @@ begin
   from public.stock_document_lines l
   left join public.stock_movements m on m.company_id=l.company_id and m.line_id=l.id
   where l.company_id=p_company_id and l.document_id=p_document_id and l.line_number<=500;
-  v_result:=public.stock_post_document(p_company_id,p_operation_uid,v_type,current_date,
+  v_result:=private.stock_post_document_impl(p_company_id,p_operation_uid,v_type,current_date,
     'REV-'||coalesce(v_doc.reference,v_doc.id::text),btrim(p_reason),v_lines,'reversal',v_doc.id::text);
   v_new_id:=(v_result->>'document_id')::uuid;
   update public.stock_documents set status='reversed',reversed_by_document_id=v_new_id where company_id=p_company_id and id=p_document_id;
@@ -603,15 +603,62 @@ begin
 end;
 $$;
 
--- L'API RPC est le seul canal d'écriture depuis le navigateur.
-revoke all on function public.stock_read_state(uuid) from public,anon;
-revoke all on function public.stock_save_product(uuid,jsonb) from public,anon;
-revoke all on function public.stock_save_warehouse(uuid,jsonb) from public,anon;
-revoke all on function public.stock_update_settings(uuid,jsonb) from public,anon;
-revoke all on function public.stock_post_document(uuid,uuid,text,date,text,text,jsonb,text,text) from public,anon;
-revoke all on function public.stock_reserve(uuid,uuid,uuid,uuid,numeric,text) from public,anon;
-revoke all on function public.stock_release_reservation(uuid,uuid) from public,anon;
-revoke all on function public.stock_reverse_document(uuid,uuid,uuid,text) from public,anon;
+
+-- Fonctions internes privilégiées dans le schéma non exposé.
+-- Les seules fonctions publiques sont des wrappers SECURITY INVOKER.
+revoke all on function private.stock_read_state_impl(uuid) from public,anon;
+revoke all on function private.stock_save_product_impl(uuid,jsonb) from public,anon;
+revoke all on function private.stock_save_warehouse_impl(uuid,jsonb) from public,anon;
+revoke all on function private.stock_update_settings_impl(uuid,jsonb) from public,anon;
+revoke all on function private.stock_post_document_impl(uuid,uuid,text,date,text,text,jsonb,text,text) from public,anon;
+revoke all on function private.stock_reserve_impl(uuid,uuid,uuid,uuid,numeric,text) from public,anon;
+revoke all on function private.stock_release_reservation_impl(uuid,uuid) from public,anon;
+revoke all on function private.stock_reverse_document_impl(uuid,uuid,uuid,text) from public,anon;
+grant execute on function private.stock_read_state_impl(uuid) to authenticated;
+grant execute on function private.stock_save_product_impl(uuid,jsonb) to authenticated;
+grant execute on function private.stock_save_warehouse_impl(uuid,jsonb) to authenticated;
+grant execute on function private.stock_update_settings_impl(uuid,jsonb) to authenticated;
+grant execute on function private.stock_post_document_impl(uuid,uuid,text,date,text,text,jsonb,text,text) to authenticated;
+grant execute on function private.stock_reserve_impl(uuid,uuid,uuid,uuid,numeric,text) to authenticated;
+grant execute on function private.stock_release_reservation_impl(uuid,uuid) to authenticated;
+grant execute on function private.stock_reverse_document_impl(uuid,uuid,uuid,text) to authenticated;
+
+create or replace function public.stock_read_state(p_company_id uuid)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_read_state_impl(p_company_id) $;
+create or replace function public.stock_save_product(p_company_id uuid,p_product jsonb)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_save_product_impl(p_company_id,p_product) $;
+create or replace function public.stock_save_warehouse(p_company_id uuid,p_warehouse jsonb)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_save_warehouse_impl(p_company_id,p_warehouse) $;
+create or replace function public.stock_update_settings(p_company_id uuid,p_settings jsonb)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_update_settings_impl(p_company_id,p_settings) $;
+create or replace function public.stock_post_document(
+  p_company_id uuid,p_operation_uid uuid,p_document_type text,p_document_date date,
+  p_reference text,p_note text,p_lines jsonb,p_source_type text default null,p_source_id text default null
+) returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_post_document_impl(p_company_id,p_operation_uid,p_document_type,p_document_date,p_reference,p_note,p_lines,p_source_type,p_source_id) $;
+create or replace function public.stock_reserve(
+  p_company_id uuid,p_operation_uid uuid,p_product_id uuid,p_warehouse_id uuid,p_quantity numeric,p_reference text default ''
+) returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_reserve_impl(p_company_id,p_operation_uid,p_product_id,p_warehouse_id,p_quantity,p_reference) $;
+create or replace function public.stock_release_reservation(p_company_id uuid,p_reservation_id uuid)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_release_reservation_impl(p_company_id,p_reservation_id) $;
+create or replace function public.stock_reverse_document(p_company_id uuid,p_document_id uuid,p_operation_uid uuid,p_reason text)
+returns jsonb language sql security invoker set search_path = ''
+as $ select private.stock_reverse_document_impl(p_company_id,p_document_id,p_operation_uid,p_reason) $;
+
+revoke all on function public.stock_read_state(uuid) from public,anon,authenticated;
+revoke all on function public.stock_save_product(uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.stock_save_warehouse(uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.stock_update_settings(uuid,jsonb) from public,anon,authenticated;
+revoke all on function public.stock_post_document(uuid,uuid,text,date,text,text,jsonb,text,text) from public,anon,authenticated;
+revoke all on function public.stock_reserve(uuid,uuid,uuid,uuid,numeric,text) from public,anon,authenticated;
+revoke all on function public.stock_release_reservation(uuid,uuid) from public,anon,authenticated;
+revoke all on function public.stock_reverse_document(uuid,uuid,uuid,text) from public,anon,authenticated;
 grant execute on function public.stock_read_state(uuid) to authenticated;
 grant execute on function public.stock_save_product(uuid,jsonb) to authenticated;
 grant execute on function public.stock_save_warehouse(uuid,jsonb) to authenticated;
@@ -620,5 +667,7 @@ grant execute on function public.stock_post_document(uuid,uuid,text,date,text,te
 grant execute on function public.stock_reserve(uuid,uuid,uuid,uuid,numeric,text) to authenticated;
 grant execute on function public.stock_release_reservation(uuid,uuid) to authenticated;
 grant execute on function public.stock_reverse_document(uuid,uuid,uuid,text) to authenticated;
+
+-- L'API RPC est le seul canal d'écriture depuis le navigateur.
 
 commit;

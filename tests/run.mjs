@@ -1486,6 +1486,16 @@ test("stock : catalogue extensible par entreprise et prix d’achat/vente HT", (
   assert.match(stockPriceUnitsMigration,/Les conversions ne peuvent plus être modifiées après le premier mouvement/);
   assert.match(stockUiSource,/saveCloudStockProduct/);
 });
+test("facturation : date et heure d’enregistrement automatiques visibles sur la facture", () => {
+  assert.match(billingUiSource,/createdAt: source \? source\.createdAt : new Date\(\)\.toISOString\(\)/);
+  assert.match(billingUiSource,/function formatRecordedAt\(value, locale = "fr"\)/);
+  assert.match(billingUiSource,/timeStyle: "medium"/);
+  assert.match(billingUiSource,/Enregistrée le :/);
+  assert.match(billingUiSource,/<th>Enregistrée le<\/th>/);
+  assert.match(billingUiSource,/formatRecordedAt\(doc\.createdAt/);
+  assert.match(billingUiSource,/createdAt: new Date\(\)\.toISOString\(\),[\s\S]*sourceQuoteId: quote\.id/);
+});
+
 test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {
   assert.match(billingUiSource,/stockProductId/);
   assert.match(billingUiSource,/stockWarehouseId/);

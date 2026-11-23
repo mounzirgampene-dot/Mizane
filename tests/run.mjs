@@ -1433,6 +1433,10 @@ test("stock : catalogue extensible par entreprise et prix d’achat/vente HT", (
   assert.match(stockCloudSource,/saveCloudStockType/);
   assert.match(stockUiSource,/Prix d’achat HT/);
   assert.match(stockUiSource,/Prix de vente HT/);
+  assert.match(stockUiSource,/id="sp-purchase-unit"/);
+  assert.match(stockUiSource,/id="sp-sale-unit"/);
+  assert.match(stockUiSource,/syncPriceUnits/);
+  assert.match(stockUiSource,/readonly aria-readonly="true"/);
   assert.match(stockUiSource,/saveCloudStockProduct/);
 });
 test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {

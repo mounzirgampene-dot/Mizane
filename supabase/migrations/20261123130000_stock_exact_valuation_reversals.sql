@@ -12,7 +12,8 @@ declare
   v_doc public.stock_documents%rowtype;
   v_settings public.stock_settings%rowtype;
   v_existing public.stock_documents%rowtype;
-  v_new_id uuid;
+  v_reversal_doc_id uuid;
+  v_reversal_movement_id bigint;
   v_line record;
   v_move record;
   v_layer record;
@@ -107,7 +108,7 @@ begin
     p_company_id,p_operation_uid,v_hash,'adjustment',current_date,
     left('REV-'||coalesce(v_doc.reference,v_doc.id::text),120),
     v_reason,'reversal',p_document_id::text,v_actor
-  ) returning id into v_new_id;
+  ) returning id into v_reversal_doc_id;
 
   for v_move in
     select m.*,l.line_number,l.lot_code,l.serial_numbers
@@ -184,7 +185,7 @@ begin
     insert into public.stock_document_lines(
       company_id,document_id,line_number,product_id,warehouse_id,quantity,unit_cost,total_cost,lot_code,serial_numbers
     ) values(
-      p_company_id,v_new_id,v_line_no,v_move.product_id,v_move.warehouse_id,
+      p_company_id,v_reversal_doc_id,v_line_no,v_move.product_id,v_move.warehouse_id,
       v_qty,v_cost,v_value,v_move.lot_code,coalesce(v_move.serial_numbers,'[]'::jsonb)
     );
 
@@ -193,10 +194,9 @@ begin
     ) values(
       p_company_id,v_new_id,currval(pg_get_serial_sequence('public.stock_document_lines','id'))::bigint,
       v_move.product_id,v_move.warehouse_id,-v_move.quantity_delta,-v_move.value_delta,v_cost,current_date
-    ) returning id into v_new_id;
+    ) returning id into v_reversal_movement_id;
 
-    -- v_new_id est l'identifiant du mouvement retourné ; récupérer l'identifiant
-    -- du document depuis source_id pour les insertions suivantes.
+    -- Le document et chaque mouvement ont des identifiants distincts.
     if v_move.quantity_delta<0 and v_settings.valuation_method='fifo' then
       for v_allocation in
         select a.* from public.stock_valuation_allocations a
@@ -204,11 +204,11 @@ begin
         order by a.id
       loop
         insert into public.stock_valuation_allocations(company_id,movement_id,layer_id,quantity,unit_cost)
-        values(p_company_id,v_new_id,v_allocation.layer_id,v_allocation.quantity,v_allocation.unit_cost);
+        values(p_company_id,v_reversal_movement_id,v_allocation.layer_id,v_allocation.quantity,v_allocation.unit_cost);
         insert into public.stock_valuation_layers(
           company_id,product_id,warehouse_id,source_movement_id,original_quantity,remaining_quantity,unit_cost
         ) values(
-          p_company_id,v_move.product_id,v_move.warehouse_id,v_new_id,
+          p_company_id,v_move.product_id,v_move.warehouse_id,v_reversal_movement_id,
           v_allocation.quantity,v_allocation.quantity,v_allocation.unit_cost
         );
       end loop;
@@ -224,28 +224,21 @@ begin
         where company_id=p_company_id and source_movement_id=v_move.id
       loop
         insert into public.stock_valuation_allocations(company_id,movement_id,layer_id,quantity,unit_cost)
-        values(p_company_id,v_new_id,v_layer.id,v_layer.original_quantity,v_layer.unit_cost);
+        values(p_company_id,v_reversal_movement_id,v_layer.id,v_layer.original_quantity,v_layer.unit_cost);
       end loop;
     end if;
   end loop;
 
   -- L'identifiant du document n'est pas celui du dernier mouvement.
   update public.stock_documents
-  set status='reversed',reversed_by_document_id=(
-    select d.id from public.stock_documents d
-    where d.company_id=p_company_id and d.operation_uid=p_operation_uid
-  )
+  set status='reversed',reversed_by_document_id=v_reversal_doc_id
   where company_id=p_company_id and id=p_document_id;
 
   insert into public.stock_audit_logs(company_id,actor_user_id,action,entity_type,entity_id,details)
   values(p_company_id,v_actor,'stock.document_reversed','stock_document',p_document_id::text,
-    jsonb_build_object('reversal_document_id',(
-      select d.id from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid
-    ),'reason',v_reason,'valuation_method',v_settings.valuation_method));
+    jsonb_build_object('reversal_document_id',v_reversal_doc_id,'reason',v_reason,'valuation_method',v_settings.valuation_method));
 
-  return jsonb_build_object('ok',true,'duplicate',false,'reversal_document_id',(
-    select d.id from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid
-  ));
+  return jsonb_build_object('ok',true,'duplicate',false,'reversal_document_id',v_reversal_doc_id);
 end;
 $$;
 

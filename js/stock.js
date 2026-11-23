@@ -365,18 +365,18 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     <div id="sm-serial-wrap" hidden><label>Numéros de série (un par ligne ou séparés par virgule)</label><textarea id="sm-serials" rows="2"></textarea></div>
     <div id="sm-cost-wrap"><label>Coût unitaire (${esc(store.settings.currency)})</label><input id="sm-cost" type="number" min="0" step="0.0001" value="0"></div>
     <div><label>Date</label><input id="sm-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div><label>Référence</label><input id="sm-ref" maxlength="120"></div>
+    <div><label>Référence</label><input id="sm-ref" maxlength="120" placeholder="BL / facture fournisseur"></div><div id="sm-supplier-wrap" hidden><label>Fournisseur</label><input id="sm-supplier" maxlength="180"></div>
   </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
   <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Les entrées peuvent être référencées par un bon de livraison ou une pièce fournisseur ; le journal conserve leur origine.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   const kind=box.querySelector("#sm-kind"), productSelect=box.querySelector("#sm-product"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
-  const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
+  const supplierWrap=box.querySelector("#sm-supplier-wrap");const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";supplierWrap.hidden=kind.value!=="receipt";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
     const units=[product?.unit||"unité",...(product?.unitConversions||[]).map(c=>c.unit)];box.querySelector("#sm-unit").innerHTML=units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("");
     box.querySelector("#sm-lot-wrap").hidden=product?.tracking!=="lot";box.querySelector("#sm-serial-wrap").hidden=product?.tracking!=="serial";
   };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
     const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
-    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value,direction:box.querySelector("#sm-direction")?.value};
+    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value,supplier:box.querySelector("#sm-supplier").value.trim(),direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {
         const operationUid=globalThis.crypto?.randomUUID?.();
@@ -386,7 +386,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
-        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
+        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:[input.supplier?"Fournisseur : "+input.supplier:"",input.note].filter(Boolean).join(" — "),lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }

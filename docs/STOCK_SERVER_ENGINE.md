@@ -48,6 +48,22 @@ Aucune de ces migrations n'a été exécutée sur Production.
 - Les documents conservent la quantité saisie, l'unité et le facteur appliqué pour l'audit.
 - Les conversions et l'unité de base ne peuvent plus être modifiées après le premier mouvement, afin de préserver l'interprétation historique.
 
+
+### Raccordement des ventes et livraisons
+
+- Les lignes de facture client peuvent être liées à un article physique, un entrepôt et une unité de stock.
+- Les conversions d'unités, les lots et les numéros de série sont transmis au moteur serveur lors de la sortie.
+- Avec le déclenchement `invoice_validation`, la validation de la facture génère une sortie de stock idempotente.
+- Avec le déclenchement `delivery`, l'utilisateur confirme les livraisons depuis la facture ; les livraisons partielles ne consomment que les quantités saisies et le reliquat reste livrable.
+- Les opérations utilisent un `operation_uid` conservé avant l'appel serveur. En cas de délai réseau ou d'échec, la facture affiche une action de reprise ; la répétition utilise le même identifiant et le même contenu.
+- Les sorties conservent l'origine `sales_invoice` ou `sales_delivery` et la référence de facture. Les factures ayant déjà généré une sortie ne peuvent plus être modifiées depuis l'éditeur standard.
+
+### Raccordement des réceptions fournisseurs
+
+- Les réceptions physiques peuvent enregistrer le nom du fournisseur, la référence du bon de livraison ou de la facture et une origine `supplier_receipt`.
+- Ces informations sont conservées dans le document et affichées dans l'historique des mouvements.
+- Le module Achats et les factures fournisseurs ne sont pas encore présents. Le paramètre `purchase_trigger=supplier_invoice` est donc conservé comme configuration, mais il ne déclenche pas encore automatiquement une entrée ; la réception physique reste une opération explicite.
+
 ## Valorisation et mouvements
 
 - CUMP et FIFO restent pris en charge ; les transferts préservent la valeur totale de l'entreprise.
@@ -72,8 +88,8 @@ Les tests Node couvrent également les conversions, les soldes par lot, les mouv
 
 ## Limites restantes
 
-1. Intégration des réceptions fournisseurs, factures d'achat et commandes d'achat.
-2. Intégration des ventes, livraisons partielles et consommation automatique des réservations.
+1. Module Achats complet : fournisseurs, commandes, factures fournisseurs, rapprochement commande/réception/facture et déclenchement automatique selon le paramètre d'achat.
+2. Consommation automatique des réservations lors des livraisons ; le flux de livraison actuel contrôle le stock disponible mais ne consomme pas encore les réservations actives.
 3. Workflow d'inventaire physique guidé, avec comptage, gel, rapprochement et validation.
 4. Contrepassation exacte et auditée pour CUMP/FIFO.
 5. Génération des écritures comptables après validation du plan comptable de chaque entreprise et des règles CGNC.

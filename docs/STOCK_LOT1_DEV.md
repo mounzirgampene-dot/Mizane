@@ -22,8 +22,8 @@ L'import de l'ancien stock local vers le nouveau moteur cloud est explicite, non
 
 ## Limites toujours ouvertes
 
-1. Lots et numéros de série non activés ; seuls les articles avec tracking=none sont acceptés par le RPC.
-2. Conversions d'unités non activées ; seule l'unité de base est prise en charge.
+1. Traçabilité par lots et numéros de série désormais livrée dans le moteur serveur transactionnel ; les états et soldes sont vérifiés côté serveur.
+2. Conversions d'unités désormais livrées : les quantités et coûts sont convertis vers l'unité de base avant valorisation.
 3. Achats, réceptions fournisseurs, commandes et livraisons partielles non raccordés aux flux métier.
 4. Réservations créées et libérées, mais pas consommées automatiquement par une livraison.
 5. Contrepassation automatique bloquée jusqu'à la restauration exacte des valorisations CUMP/FIFO.
@@ -34,6 +34,6 @@ L'import de l'ancien stock local vers le nouveau moteur cloud est explicite, non
 
 - PR : [#68 — Gestion de stock](https://github.com/mounzirgampene-dot/Mizane/pull/68), maintenue en brouillon.
 - ESLint et tests Node : réussis sur la dernière révision contrôlée.
-- Migration SQL : préparée dans la branche, non appliquée à Supabase DEV.
-- Aucun déploiement Preview ou Production effectué.
-- Aucune donnée DEV ou Production modifiée.
+- Migrations du moteur et de la traçabilité appliquées à Supabase DEV ; tests fictifs exécutés dans des transactions annulées.
+- La branche possède un aperçu Cloudflare Preview ; aucun déploiement Production n'a été effectué.
+- Aucune donnée métier DEV ou Production n'a été conservée ou modifiée par les tests.

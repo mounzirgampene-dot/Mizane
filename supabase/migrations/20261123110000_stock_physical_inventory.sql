@@ -264,4 +264,41 @@ grant execute on function public.stock_count_submit(uuid,uuid) to authenticated;
 grant execute on function public.stock_count_finalize(uuid,uuid,uuid,date) to authenticated;
 grant execute on function public.stock_count_cancel(uuid,uuid) to authenticated;
 
+
+create or replace function private.stock_count_read_impl(p_company_id uuid)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare v_result jsonb;
+begin
+  if auth.uid() is null or not private.is_active_company_member(p_company_id) then
+    raise exception 'Accès au stock refusé.' using errcode='42501';
+  end if;
+  select coalesce(jsonb_agg(
+    (to_jsonb(s)-'company_id') || jsonb_build_object(
+      'warehouse_name',w.name,
+      'lines',coalesce((
+        select jsonb_agg(to_jsonb(l)-'company_id' order by p.sku,p.name)
+        from public.stock_count_lines l
+        join public.stock_products p on p.company_id=l.company_id and p.id=l.product_id
+        where l.company_id=s.company_id and l.session_id=s.id
+      ),'[]'::jsonb)
+    ) order by s.created_at desc
+  ),'[]'::jsonb) into v_result
+  from (
+    select * from public.stock_count_sessions
+    where company_id=p_company_id
+    order by created_at desc limit 20
+  ) s
+  join public.stock_warehouses w on w.company_id=s.company_id and w.id=s.warehouse_id;
+  return jsonb_build_object('sessions',coalesce(v_result,'[]'::jsonb));
+end;
+$$;
+create or replace function public.stock_count_read(p_company_id uuid)
+returns jsonb language sql security invoker set search_path = ''
+as $$ select private.stock_count_read_impl(p_company_id) $$;
+revoke all on function private.stock_count_read_impl(uuid) from public,anon;
+grant execute on function private.stock_count_read_impl(uuid) to authenticated;
+revoke all on function public.stock_count_read(uuid) from public,anon,authenticated;
+grant execute on function public.stock_count_read(uuid) to authenticated;
+
 commit;

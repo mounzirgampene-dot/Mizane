@@ -108,7 +108,7 @@ export function viewFinancial(period = null) {
   const forecastChart = renderHorizontalBars("Trésorerie projetée",forecastTotals.map(item=>({label:"À "+item.days+" jours",amount:Math.max(0,item.amount)})),[{key:"amount",label:"Solde projeté"}],money);
   $app.innerHTML = `
     <h1>Pilotage financier</h1>
-    ${periodControls("pilotage",exerciceStart,exerciceEnd)}
+    ${periodControls("pilotage",exerciceStart,exerciceEnd,period?.compare !== false)}
     ${chartModeControls("pilotage")}
     ${comparison}
     <p class="muted">Les créances et soldes fournisseurs affichés ci-dessous portent sur les factures et écritures de la période sélectionnée. La trésorerie comptabilisée reste le solde actuel.</p>

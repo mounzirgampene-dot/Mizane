@@ -192,7 +192,7 @@ begin
     insert into public.stock_movements(
       company_id,document_id,line_id,product_id,warehouse_id,quantity_delta,value_delta,unit_cost,movement_date
     ) values(
-      p_company_id,v_reversal_movement_id,currval(pg_get_serial_sequence('public.stock_document_lines','id'))::bigint,
+      p_company_id,v_reversal_doc_id,currval(pg_get_serial_sequence('public.stock_document_lines','id'))::bigint,
       v_move.product_id,v_move.warehouse_id,-v_move.quantity_delta,-v_move.value_delta,v_cost,current_date
     ) returning id into v_reversal_movement_id;
 

@@ -86,15 +86,20 @@ export function syncCloudIfReady() {
     if (!localRaw) throw new Error("Données locales introuvables après la synchronisation comptable.");
     let localStore;
     try { localStore = JSON.parse(localRaw); } catch { throw new Error("Données locales illisibles après la synchronisation comptable."); }
-    const billingResult = await syncBilling(supabase, companyId, membership.role, localStore.billing);
+    const billingPayload = { ...(localStore.billing || {}), stock: localStore.stock || null };
+    const billingResult = await syncBilling(supabase, companyId, membership.role, billingPayload);
     if (billingResult.pulled > 0) {
-      localStore.billing = billingResult.billing;
+      const syncedBilling = { ...billingResult.billing };
+      if (syncedBilling.stock && typeof syncedBilling.stock === "object") localStore.stock = syncedBilling.stock;
+      delete syncedBilling.stock;
+      localStore.billing = syncedBilling;
       localStorage.setItem("mizane_v1", JSON.stringify(localStore));
     }
     const result = {
       ...accountingResult,
       billingPushed: billingResult.pushed,
       billingPulled: billingResult.pulled,
+      stockIncluded: Boolean(localStore.stock),
       pulled: (Number(accountingResult.pulled) || 0) + (Number(billingResult.pulled) || 0),
     };
     window.dispatchEvent(new CustomEvent("mizane:cloud-synced", { detail: result }));

@@ -17,8 +17,10 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
 const notificationsMigration = readFileSync(new URL("../supabase/migrations/20261123203000_accounting_notifications.sql", import.meta.url), "utf8");
+const accountingAnomalyReportingMigration = readFileSync(new URL("../supabase/migrations/20261123210000_accounting_anomaly_reporting.sql", import.meta.url), "utf8");
 const notificationsSource = readFileSync(new URL("../js/notifications.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const coreSource = readFileSync(new URL("../js/views/core.js", import.meta.url), "utf8");
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");
 const stockIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123090112_stock_foreign_key_indexes.sql", import.meta.url), "utf8");
@@ -1633,6 +1635,12 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
   assert.match(notificationsMigration, /m\.role = 'admin'/);
   assert.match(notificationsMigration, /flag_duplicate_accounting_reference/);
   assert.match(notificationsMigration, /Référence comptable déjà utilisée/);
+  assert.match(accountingAnomalyReportingMigration, /report_accounting_anomalies_impl/);
+  assert.match(accountingAnomalyReportingMigration, /md5\(/);
+  assert.match(accountingAnomalyReportingMigration, /security invoker/i);
+  assert.match(notificationsSource, /notifyDetectedAnomalies/);
+  assert.match(notificationsSource, /report_accounting_anomalies/);
+  assert.match(coreSource, /notifyDetectedAnomalies\(anomalies\)/);
   assert.match(notificationsSource, /notifySyncFailure/);
   assert.match(notificationsSource, /review_accounting_notification/);
   assert.match(notificationsSource, /Marquer comme lue/);

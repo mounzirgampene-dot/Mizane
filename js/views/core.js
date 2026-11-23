@@ -3,6 +3,7 @@ import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatemen
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
+import { notifyDetectedAnomalies } from "../notifications.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -13,6 +14,7 @@ export function viewDashboard(readOnly = false) {
   const is = incomeStatement(store, exerciceStart, exerciceEnd);
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
   const anomalies = checkAnomalies(store);
+  if (anomalies.length) notifyDetectedAnomalies(anomalies).catch(error => console.warn("Signalement des anomalies comptables impossible :", error?.message || error));
   const cash = cashBalance(store, exerciceStart, exerciceEnd);
   const balanced = tb.totals.debit === tb.totals.credit;
   $app.innerHTML = `

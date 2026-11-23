@@ -7,6 +7,7 @@ const COMPANY_KEY = "mizane_active_company_v1";
 let client = null;
 let context = null;
 let unreadCount = 0;
+let lastAnomalySignature = "";
 
 function getClient() {
   if (!client && SUPABASE_URL && SUPABASE_ANON_KEY) client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -89,6 +90,21 @@ export async function notifySyncFailure(error) {
   });
   if (rpcError) throw rpcError;
   try { localStorage.setItem(throttleKey, JSON.stringify({ message, at: Date.now() })); } catch { /* notification déjà créée côté serveur */ }
+  await refreshUnreadCount();
+  return true;
+}
+
+export async function notifyDetectedAnomalies(anomalies) {
+  const ctx = await getContext(true);
+  if (!ctx || ctx.role !== "accountant" || !Array.isArray(anomalies) || !anomalies.length) return false;
+  const reported = anomalies.filter(item => item && item.entryId != null && item.type && item.message).slice(0, 50)
+    .map(item => ({ entryId: String(item.entryId), type: String(item.type), message: String(item.message).slice(0, 1800) }));
+  if (!reported.length) return false;
+  const signature = ctx.companyId + ":" + ctx.user.id + ":" + JSON.stringify(reported);
+  if (signature === lastAnomalySignature) return false;
+  const { error } = await getClient().rpc("report_accounting_anomalies", { p_company_id: ctx.companyId, p_anomalies: reported });
+  if (error) throw error;
+  lastAnomalySignature = signature;
   await refreshUnreadCount();
   return true;
 }

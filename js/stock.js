@@ -3,7 +3,8 @@ import { store, $app, saveNow, esc, money, toast } from "./state.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
 import {
   hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
-  updateCloudStockSettings, postCloudStockDocument,
+  updateCloudStockSettings, postCloudStockDocument, reverseCloudStockDocument,
+  reserveCloudStock, releaseCloudStockReservation,
 } from "./cloud-sync.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
@@ -38,14 +39,14 @@ function mapCloudStock(data) {
         warehouseId:negative.warehouse_id, destinationWarehouseId:positive.warehouse_id,
         quantity:Math.abs(Number(negative.quantity_delta)), quantityDelta:-Math.abs(Number(negative.quantity_delta)),
         unitCost:Number(negative.unit_cost || 0), date:negative.movement_date,
-        reference:doc.reference || "", note:doc.note || "", documentId:doc.id,
+        reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
       });
     } else {
       for (const m of entries) movements.push({
         id:m.id, kind, productId:m.product_id, warehouseId:m.warehouse_id,
         destinationWarehouseId:null, quantity:Math.abs(Number(m.quantity_delta)),
         quantityDelta:Number(m.quantity_delta), unitCost:Number(m.unit_cost || 0),
-        date:m.movement_date, reference:doc.reference || "", note:doc.note || "", documentId:doc.id,
+        date:m.movement_date, reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
       });
     }
   }
@@ -64,7 +65,7 @@ function mapCloudStock(data) {
     },
     warehouses, products, movements, layers,
     cloudBalances:data?.balances || [],
-    reservations:data?.reservations || [],
+    reservations:data?.reservations || [], documents:data?.documents || [],
     balances:data?.balances || [],
   };
 }
@@ -189,7 +190,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
-      <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>'}</div>
+      <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>${cloudMode ? '<button class="secondary" id="stock-new-reservation">Réserver du stock</button>' : ""}'}</div>
     </div>
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
@@ -230,10 +231,11 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
-  document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode));
-  document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode));
-  document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode));
-  document.getElementById("stock-purchase-trigger").addEventListener("change", e => changeSettings({purchase_trigger:e.target.value}, cloudMode));
+  document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
+  document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode, companyRole));
+  document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-purchase-trigger").addEventListener("change", e => changeSettings({purchase_trigger:e.target.value}, cloudMode, companyRole));
 }
 
 async function changeSettings(changes, cloudMode, companyRole) {
@@ -290,6 +292,41 @@ function warehouseDialog(cloudMode = false, companyRole = null) {
       modal.close();viewStock(false,companyRole);toast("Entrepôt créé.");
     } catch(error) { box.querySelector("#sw-error").textContent=error?.message || "Création impossible."; }
   };
+}
+
+
+async function reverseDocument(documentId, companyRole) {
+  if (!globalThis.crypto?.randomUUID) { toast("Navigateur incompatible : opération sécurisée indisponible."); return; }
+  const reason=globalThis.prompt("Motif obligatoire de la contrepassation (5 à 500 caractères) :");
+  if (reason===null) return;
+  try {
+    await reverseCloudStockDocument(documentId,globalThis.crypto.randomUUID(),reason);
+    toast("Document contrepassé.");
+    viewStock(false,companyRole);
+  } catch(error) { toast(error?.message||"Contrepassation impossible.",6000); }
+}
+async function releaseReservation(reservationId, companyRole) {
+  try {
+    await releaseCloudStockReservation(reservationId);
+    toast("Réservation libérée.");
+    viewStock(false,companyRole);
+  } catch(error) { toast(error?.message||"Libération impossible.",5000); }
+}
+function reservationDialog(companyRole) {
+  readCloudStock().then(data => {
+    const stock=mapCloudStock(data), modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+    const products=stock.products.filter(p=>p.active&&p.type!=="service");
+    const warehouses=stock.warehouses.filter(w=>w.active);
+    if(!products.length||!warehouses.length){toast("Créez d'abord un article physique et un entrepôt.");return;}
+    box.innerHTML='<h2>Réserver du stock</h2><label>Article</label><select id="sr-product">'+products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.sku)+' — '+esc(p.name)+'</option>').join("")+'</select><label>Entrepôt</label><select id="sr-warehouse">'+warehouses.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join("")+'</select><label>Quantité</label><input id="sr-quantity" type="number" min="0.0001" step="0.0001"><label>Référence</label><input id="sr-reference" maxlength="120"><div id="sr-error" class="errors"></div><div class="actions"><button id="sr-save">Réserver</button><button class="secondary" data-close>Annuler</button></div>';
+    modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
+    box.querySelector("#sr-save").onclick=async()=>{
+      try {
+        await reserveCloudStock({operationUid:globalThis.crypto.randomUUID(),productId:box.querySelector("#sr-product").value,warehouseId:box.querySelector("#sr-warehouse").value,quantity:Number(box.querySelector("#sr-quantity").value),reference:box.querySelector("#sr-reference").value});
+        modal.close();toast("Stock réservé.");viewStock(false,companyRole);
+      } catch(error) { box.querySelector("#sr-error").textContent=error?.message||"Réservation impossible."; }
+    };
+  }).catch(error=>toast(error?.message||"Lecture du stock impossible.",5000));
 }
 
 function movementDialog(cloudMode = false, companyRole = null) {

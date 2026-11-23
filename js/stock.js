@@ -10,6 +10,7 @@ import {
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
 const movementLabels = { receipt:"Entrée", issue:"Sortie", transfer:"Transfert", adjustment:"Ajustement" };
+const trackingLabels = { none:"Aucune", lot:"Par lot", serial:"Par numéro de série" };
 const persist = () => { saveNow(); window.dispatchEvent(new Event("mizane:billing-changed")); };
 let renderSequence = 0;
 
@@ -68,6 +69,7 @@ function mapCloudStock(data) {
     warehouses, products, movements, layers,
     cloudBalances:data?.balances || [],
     reservations:data?.reservations || [], documents:data?.documents || [],
+    lots:data?.lots || [], serials:data?.serials || [],
     balances:data?.balances || [],
   };
 }
@@ -204,8 +206,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     ${showLegacyImport ? '<section class="card"><h2>Reprise de l’ancien stock</h2><p class="muted">Ancien stock local détecté : '+legacyStock.products.length+' article(s) et '+(legacyStock.movements||[]).length+' mouvement(s). Import explicite, chronologique et idempotent.</p><button id="stock-import-legacy">'+(migrationProgress?.started ? 'Reprendre l’import' : 'Importer l’ancien stock local')+'</button><p class="muted">'+(migrationProgress?.started ? 'Progression : '+(migrationProgress.completed||0)+' mouvement(s).' : 'Aucune donnée locale ne sera supprimée.')+'</p></section>' : ""}
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
-      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${kinds[p.type] || p.type}</td><td>${esc(p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td></tr>`).join("") || '<tr><td colspan="6" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
+      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${kinds[p.type] || p.type}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card">
       <h2>Stocks par entrepôt</h2>

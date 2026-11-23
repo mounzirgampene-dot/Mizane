@@ -14,6 +14,7 @@ const uuid = () => {
 const money = value => num(value).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 let stockState = null;
 let renderToken = 0;
+const activeReceiptOperations = new Set();
 
 function data() {
   if (!store.billing || typeof store.billing !== "object") store.billing = { documents: [], settings: {} };
@@ -238,6 +239,9 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
   const pendingKey = sourceType === "supplier_invoice" ? "pendingInvoiceReceipt" : "pendingReceipt";
   if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id) }; persist(); }
   const pending = doc[pendingKey];
+  const requestKey = String(doc.id) + ":" + pendingKey;
+  if (activeReceiptOperations.has(requestKey)) return;
+  activeReceiptOperations.add(requestKey);
   try {
     const result = await postCloudStockDocument({
       operationUid:pending.operationUid, documentType:"receipt", documentDate:doc.date,
@@ -271,6 +275,8 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
       const retry = document.createElement("button"); retry.id="pd-retry"; retry.textContent="Réessayer la même réception";
       retry.addEventListener("click", () => postReceipt(doc, requestedLines, box, sourceType)); box.querySelector("#pd-detail-actions").append(retry);
     }
+  } finally {
+    activeReceiptOperations.delete(requestKey);
   }
 }
 function openReceipt(doc) {

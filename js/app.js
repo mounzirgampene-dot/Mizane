@@ -163,6 +163,11 @@ async function start() {
 
 // Si le portail SaaS met à jour le stockage local dans un autre onglet,
  // recharger l'état en mémoire avant toute nouvelle sauvegarde comptable.
+window.addEventListener("mizane:legacy-stock-loaded", (event) => {
+  if (event.detail && typeof event.detail === "object") store.stock = event.detail;
+  if (currentRoute === "stock") render();
+});
+
 window.addEventListener("storage", async (event) => {
   if (event.key === "mizane_active_company_v1") {
     await refreshCompanyRole();

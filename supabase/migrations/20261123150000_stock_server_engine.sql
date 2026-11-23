@@ -386,7 +386,7 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select to_jsonb(d) into v_existing from public.stock_documents d where d.company_id=p_company_id and d.operation_uid=p_operation_uid;
-  if v_existing is not null then return jsonb_build_object('ok',true,'duplicate',true,'document',v_existing); end if;
+  if v_existing is not null then return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing); end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_settings from public.stock_settings where company_id=p_company_id for update;
   insert into public.stock_documents(company_id,operation_uid,document_type,document_date,reference,note,source_type,source_id,created_by)
@@ -401,6 +401,9 @@ begin
     v_dest:=nullif(v_line->>'destination_warehouse_id','')::uuid;
     v_qty:=(v_line->>'quantity')::numeric;
     v_cost:=coalesce(nullif(v_line->>'unit_cost','')::numeric,0);
+    if p_document_type='adjustment' and coalesce(v_line->>'direction','') not in ('increase','decrease') then
+      raise exception 'Un ajustement doit préciser increase ou decrease.' using errcode='22023';
+    end if;
     if v_qty<=0 or v_qty>999999999999 or v_cost<0 or v_cost>999999999999
        or (p_document_type='transfer' and (v_dest is null or v_dest=v_wh))
        or (p_document_type<>'transfer' and v_dest is not null) then
@@ -548,14 +551,13 @@ as $$
 declare v_actor uuid; v_doc public.stock_documents%rowtype; v_lines jsonb; v_type text; v_result jsonb; v_new_id uuid;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
+  select id into v_new_id from public.stock_documents where company_id=p_company_id and operation_uid=p_operation_uid;
+  if found then return jsonb_build_object('ok',true,'duplicate',true,'reversal_document_id',v_new_id); end if;
   if length(btrim(coalesce(p_reason,'')))<5 or length(btrim(p_reason))>500 then raise exception 'Motif de contrepassation obligatoire (5 à 500 caractères).' using errcode='22023'; end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select * into v_doc from public.stock_documents where company_id=p_company_id and id=p_document_id for update;
   if not found or v_doc.status<>'posted' then raise exception 'Document non disponible pour contrepassation.' using errcode='55000'; end if;
-  if exists(select 1 from public.stock_documents where company_id=p_company_id and reversed_by_document_id=p_document_id) then
-    raise exception 'Document déjà contrepassé.' using errcode='55000';
-  end if;
-  if v_doc.document_type='receipt' then v_type:='issue';
+    if v_doc.document_type='receipt' then v_type:='issue';
   elsif v_doc.document_type='issue' then v_type:='receipt';
   else v_type:=v_doc.document_type; end if;
   select jsonb_agg(jsonb_build_object(

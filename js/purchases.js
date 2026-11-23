@@ -196,7 +196,7 @@ function openDocument(type) {
       const order = p.documents.find(doc => doc.id === orderId);
       if (!order || order.supplierId !== supplierId) { box.querySelector("#pd-error").textContent = "La commande et la facture doivent concerner le même fournisseur."; return; }
       for (const line of lines) {
-        const match = order.lines.find(item => String(item.productId) === String(line.productId));
+        const match = order.lines.find(item => String(item.productId) === String(line.productId) && String(item.warehouseId) === String(line.warehouseId));
         if (!match || line.baseQuantity > match.baseQuantity || Math.abs(line.unitCost - match.unitCost) > 0.0001) { box.querySelector("#pd-error").textContent = "Rapprochement impossible : article, quantité ou prix différent de la commande."; return; }
       }
     }
@@ -210,9 +210,8 @@ function openDetail(id) {
   if (!doc) return;
   const p = data();
   const linkedOrder = doc.orderId ? p.documents.find(item => item.id === doc.orderId) : null;
-  const lines = doc.lines.map((line,index) => {
+  const lines = doc.lines.map(line => {
     const item = product(line.productId);
-    const received = doc.type === "order" ? num(line.receivedBase) : num(line.stockPostedBase);
     return `<tr><td>${esc(item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "Entrepôt")}</td><td class="num">${line.quantity} ${esc(line.unit)}</td><td class="num">${money(line.unitCost)}</td><td class="num">${round(line.baseQuantity)} ${esc(item?.base_unit || "")}</td></tr>`;
   }).join("");
   const remaining = doc.lines.reduce((sum,line) => sum + Math.max(0,line.baseQuantity - (doc.type === "order" ? num(line.receivedBase) : num(line.stockPostedBase))),0);
@@ -227,7 +226,7 @@ function openDetail(id) {
   const addAction = (label, fn) => { const button = document.createElement("button"); button.textContent = label; button.addEventListener("click", fn); actions.append(button); };
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
-  if (doc.type === "invoice" && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Entrer le stock restant", () => postInvoiceReceipt(doc, box));
+  if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(() => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
@@ -322,11 +321,6 @@ async function validateInvoice(doc, box) {
     }
   }
   doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); box.closest("dialog").close(); renderList();
-}
-function postInvoiceReceipt(doc, box) {
-  const lines=doc.lines.map((line,index)=>({line,index})).filter(({line})=>line.baseQuantity>num(line.stockPostedBase)).map(({line,index})=>({line_index:index,product_id:line.productId,warehouse_id:line.warehouseId,quantity:round(line.baseQuantity-num(line.stockPostedBase)),unit_cost:line.baseUnitCost,lot_code:null,serial_numbers:[]}));
-  if (!lines.length) return;
-  postReceipt(doc,lines,box,"supplier_invoice");
 }
 
 export async function viewPurchases(readOnly = false, role = null) {

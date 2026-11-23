@@ -23,6 +23,8 @@ const stockSerialGuardsMigration = readFileSync(new URL("../supabase/migrations/
 const stockSerialNormalizeMigration = readFileSync(new URL("../supabase/migrations/20261123091005_normalize_stock_serial_inputs.sql", import.meta.url), "utf8");
 const stockReservationFulfillmentMigration = readFileSync(new URL("../supabase/migrations/20261123094940_stock_auto_reservation_fulfillment.sql", import.meta.url), "utf8");
 const stockPhysicalInventoryMigration = readFileSync(new URL("../supabase/migrations/20261123110000_stock_physical_inventory.sql", import.meta.url), "utf8");
+const stockInventoryGuardMigration = readFileSync(new URL("../supabase/migrations/20261123120000_stock_inventory_freeze_guard_hardening.sql", import.meta.url), "utf8");
+const stockInventoryNullFixMigration = readFileSync(new URL("../supabase/migrations/20261123121500_stock_inventory_freeze_guard_null_fix.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -49,7 +51,7 @@ test("inventaire physique : gel intégral, comptage, soumission et ajustement at
   assert.match(stockPhysicalInventoryMigration, /v_source_type='inventory_count'/);
   assert.match(stockPhysicalInventoryMigration, /stock_count_finalize_impl/);
   assert.match(stockPhysicalInventoryMigration, /stock\.count_approved_and_posted/);
-  assert.match(stockPhysicalInventoryMigration, /v_role<>'admin'/);
+  assert.match(stockPhysicalInventoryMigration, /v_role<>'admin'/);\n  assert.match(stockInventoryGuardMigration, /mizane\.stock_count_finalize_session/);\n  assert.match(stockInventoryNullFixMigration, /is not distinct from s\.id::text/);
   assert.match(stockUiSource, /readCloudStockCounts/);
   assert.match(stockUiSource, /data-count-open/);
   assert.match(stockCloudSource, /stock_count_finalize/);

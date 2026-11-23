@@ -13,6 +13,8 @@ Les migrations de stock sont appliquées sur Supabase **DEV uniquement**. Les ve
 - `20261123094940_stock_auto_reservation_fulfillment.sql`
 - `20261123110000_stock_physical_inventory.sql`
 - `20261123113000_stock_physical_inventory_indexes.sql`
+- `20261123120000_stock_inventory_freeze_guard_hardening.sql`
+- `20261123121500_stock_inventory_freeze_guard_null_fix.sql`
 
 Aucune de ces migrations n'a été exécutée sur Production.
 
@@ -81,7 +83,7 @@ Aucune de ces migrations n'a été exécutée sur Production.
 ### Inventaire physique guidé
 
 - Démarrage d’un inventaire intégral pour un entrepôt actif, avec photographie des quantités théoriques et du coût unitaire par article physique.
-- Le serveur gèle les mouvements de l’entrepôt dès la création de la session ; le verrou transactionnel d’entreprise sérialise le démarrage avec les écritures de stock, et un trigger serveur bloque aussi les insertions de mouvements qui contourneraient les RPC ordinaires.
+- Le serveur gèle les mouvements de l’entrepôt dès la création de la session ; le verrou transactionnel d’entreprise sérialise le démarrage avec les écritures de stock, et un trigger serveur bloque aussi les insertions de mouvements qui contourneraient les RPC ordinaires. Le contournement par falsification de l’origine `inventory_count` est également refusé : seul le RPC d’approbation active temporairement le contexte transactionnel autorisé.
 - Le comptage est saisi ligne par ligne, enregistré côté serveur et contrôlé pour empêcher les quantités négatives ou non numériques.
 - La soumission est refusée tant qu’une ligne n’a pas été comptée. Après soumission, seul un administrateur peut approuver et comptabiliser l’inventaire.
 - La validation calcule les écarts et génère les ajustements dans la même transaction que la clôture de la session ; les mouvements portent l’origine `inventory_count` et sont journalisés dans l’audit.

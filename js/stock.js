@@ -42,14 +42,14 @@ function mapCloudStock(data) {
         warehouseId:negative.warehouse_id, destinationWarehouseId:positive.warehouse_id,
         quantity:Math.abs(Number(negative.quantity_delta)), quantityDelta:-Math.abs(Number(negative.quantity_delta)),
         unitCost:Number(negative.unit_cost || 0), date:negative.movement_date, createdAt:negative.created_at,
-        reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
+        reference:doc.reference || "", note:doc.note || "", sourceType:doc.source_type || null, sourceId:doc.source_id || null, documentId:doc.id, documentStatus:doc.status,
       });
     } else {
       for (const m of entries) movements.push({
         id:m.id, kind, productId:m.product_id, warehouseId:m.warehouse_id,
         destinationWarehouseId:null, quantity:Math.abs(Number(m.quantity_delta)),
         quantityDelta:Number(m.quantity_delta), unitCost:Number(m.unit_cost || 0),
-        date:m.movement_date, createdAt:m.created_at, reference:doc.reference || "", note:doc.note || "", documentId:doc.id, documentStatus:doc.status,
+        date:m.movement_date, createdAt:m.created_at, reference:doc.reference || "", note:doc.note || "", sourceType:doc.source_type || null, sourceId:doc.source_id || null, documentId:doc.id, documentStatus:doc.status,
       });
     }
   }
@@ -223,8 +223,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     ${traceabilityHtml}
     <section class="card">
       <h2>Derniers mouvements</h2>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${""}</tr></thead><tbody>
-      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td>${""}</tr>`; }).join("") || '<tr><td colspan="7" class="muted">Aucun mouvement enregistré.</td></tr>'}
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th><th>Origine</th></tr></thead><tbody>
+      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td><td>${m.sourceType === "sales_invoice" ? "Facture client" : m.sourceType === "sales_delivery" ? "Livraison client" : m.sourceType === "supplier_receipt" ? "Réception fournisseur" : "Mouvement manuel"}</td></tr>`; }).join("") || '<tr><td colspan="7" class="muted">Aucun mouvement enregistré.</td></tr>'}
       </tbody></table></div>
     </section>
     ${cloudMode && stock.reservations.length ? `<section class="card"><h2>Réservations actives</h2><div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${readOnly ? "" : "<th>Action</th>"}</tr></thead><tbody>${stock.reservations.map(r => { const p=stock.products.find(x=>x.id===r.product_id); const w=stock.warehouses.find(x=>x.id===r.warehouse_id); return `<tr><td>${esc(p?.name || "Article")}</td><td>${esc(w?.name || "Entrepôt")}</td><td class="num">${fmtQty(r.quantity)}</td><td>${esc(r.reference || "—")}</td>${readOnly ? "" : `<td><button class="secondary" data-stock-release="${esc(r.id)}">Libérer</button></td>`}</tr>`; }).join("")}</tbody></table></div></section>` : ""}
@@ -367,7 +367,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     <div><label>Date</label><input id="sm-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
     <div><label>Référence</label><input id="sm-ref" maxlength="120"></div>
   </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
-  <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Le journal des mouvements est conservé.</p>`;
+  <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Les entrées peuvent être référencées par un bon de livraison ou une pièce fournisseur ; le journal conserve leur origine.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   const kind=box.querySelector("#sm-kind"), productSelect=box.querySelector("#sm-product"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
   const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
@@ -386,7 +386,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
-        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line]});
+        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }

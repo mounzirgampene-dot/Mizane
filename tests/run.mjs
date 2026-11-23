@@ -30,6 +30,7 @@ const stockReversalLinkFixMigration = readFileSync(new URL("../supabase/migratio
 const stockCumpReversalCleanupMigration = readFileSync(new URL("../supabase/migrations/20261123133000_stock_cump_reversal_allocation_cleanup.sql", import.meta.url), "utf8");
 const stockTrackedReversalMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_tracked_valuation_reversals.sql", import.meta.url), "utf8");
 const stockCatalogWriteSerializationMigration = readFileSync(new URL("../supabase/migrations/20261123160000_stock_catalog_write_serialization.sql", import.meta.url), "utf8");
+const stockReservationInvoiceLinkMigration = readFileSync(new URL("../supabase/migrations/20261123170000_stock_reservation_invoice_link.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -65,6 +66,14 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
   assert.match(stockCloudSource, /stock_reverse_document/);
 });
  
+test("stock : les réservations sont consommées uniquement par leur facture liée", () => {
+  assert.match(stockReservationInvoiceLinkMigration,/stock_reservations_source_link_check/);
+  assert.match(stockReservationInvoiceLinkMigration,/stock_reserve_linked_impl/);
+  assert.match(stockReservationInvoiceLinkMigration,/r\\.source_type='sales_invoice'/);
+  assert.match(stockReservationInvoiceLinkMigration,/split_part\\(coalesce\\(p_source_id,''\\),':',1\\)/);
+  assert.match(stockCloudSyncSource,/stock_reserve_linked/);
+});
+
 test("stock : écritures du catalogue sérialisées avec les mouvements", () => {
   for (const fn of ["stock_save_product_impl","stock_save_warehouse_impl","stock_update_settings_impl"]) {
     assert.match(stockCatalogWriteSerializationMigration,new RegExp(fn));

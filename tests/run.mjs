@@ -71,7 +71,7 @@ test("stock : les réservations sont consommées uniquement par leur facture li�
   assert.match(stockReservationInvoiceLinkMigration,/stock_reserve_linked_impl/);
   assert.match(stockReservationInvoiceLinkMigration,/r\\.source_type='sales_invoice'/);
   assert.match(stockReservationInvoiceLinkMigration,/split_part\\(coalesce\\(p_source_id,''\\),':',1\\)/);
-  assert.match(stockCloudSyncSource,/stock_reserve_linked/);
+  assert.match(stockCloudSource,/stock_reserve_linked/);
 });
 
 test("stock : écritures du catalogue sérialisées avec les mouvements", () => {

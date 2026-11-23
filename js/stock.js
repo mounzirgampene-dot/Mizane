@@ -130,6 +130,7 @@ async function importLegacyStock(companyRole) {
       allow_negative:companyRole==="admin" && settings.allowNegative===true,
       sales_trigger:settings.salesTrigger==="invoice_validation"?"invoice_validation":"delivery",
       purchase_trigger:settings.purchaseTrigger==="supplier_invoice"?"supplier_invoice":"receipt",
+      accounting_mode:settings.accountingMode==="periodic"?"periodic":"perpetual",
     });
     progress.settingsApplied=true; saveStockMigrationProgress(progress);
   }

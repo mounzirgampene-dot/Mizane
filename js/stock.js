@@ -341,9 +341,10 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
   if(!physical.length){toast("Créez d'abord un article physique.");return;}
   if(!warehouses.length){toast("Créez d'abord un entrepôt.");return;}
   box.innerHTML=`<h2>Nouveau mouvement de stock</h2><div class="grid cols-2">
-    <div><label>Opération</label><select id="sm-kind"><option value="receipt">Entrée</option><option value="issue">Sortie</option><option value="transfer">Transfert</option></select></div>
+    <div><label>Opération</label><select id="sm-kind"><option value="receipt">Entrée</option><option value="issue">Sortie</option><option value="transfer">Transfert</option><option value="adjustment" ${cloudMode ? "" : "disabled"}>Ajustement</option></select></div>
     <div><label>Article</label><select id="sm-product">${physical.map(p=>`<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select></div>
     <div><label>Entrepôt source</label><select id="sm-warehouse">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
+    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>
     <div id="sm-dest-wrap" hidden><label>Entrepôt destination</label><select id="sm-dest">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
     <div><label>Quantité</label><input id="sm-qty" type="number" min="0.0001" step="0.0001"></div>
     <div id="sm-cost-wrap"><label>Coût unitaire (${esc(store.settings.currency)})</label><input id="sm-cost" type="number" min="0" step="0.0001" value="0"></div>
@@ -352,8 +353,8 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
   </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
   <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Le journal des mouvements est conservé.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
-  const kind=box.querySelector("#sm-kind"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap");
-  const update=()=>{dest.hidden=kind.value!=="transfer";cost.hidden=kind.value!=="receipt";};kind.onchange=update;update();
+  const kind=box.querySelector("#sm-kind"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
+  const update=()=>{dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));};kind.onchange=update;direction.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
     const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unitCost:box.querySelector("#sm-cost").value,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:box.querySelector("#sm-note").value};
     try {
@@ -362,6 +363,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if (!operationUid) throw new Error("Navigateur incompatible : génération sécurisée de clé d’opération indisponible.");
         const line={product_id:input.productId,warehouse_id:input.warehouseId,quantity:Number(input.quantity),unit_cost:Number(input.unitCost||0)};
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
+        if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
         await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line]});
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();

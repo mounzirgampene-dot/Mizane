@@ -2,9 +2,13 @@
 
 ## État du lot
 
-Cette migration ajoute le socle de persistance et de traitement serveur du stock. Elle est **préparée dans GitHub mais non exécutée** sur Supabase DEV ou Production.
+Ces migrations ont été appliquées et vérifiées sur Supabase **DEV uniquement**. Aucune migration de stock n'a été exécutée sur Production.
 
-Fichier : `supabase/migrations/20261123150000_stock_server_engine.sql`
+Fichiers :
+- `supabase/migrations/20261123085959_stock_server_engine.sql`
+- `supabase/migrations/20261123090112_stock_foreign_key_indexes.sql`
+
+La première tentative a été rejetée par PostgreSQL à cause d'un délimiteur dollar incorrect dans les wrappers RPC. Le SQL a été corrigé dans GitHub puis appliqué avec succès. La migration appliquée accorde également `USAGE` sur le schéma privé aux utilisateurs authentifiés afin que les wrappers `SECURITY INVOKER` puissent résoudre les implémentations privées ; les privilèges `EXECUTE` restent accordés fonction par fonction.
 
 ## Architecture livrée
 
@@ -39,16 +43,32 @@ Les éléments suivants ne sont pas activés dans cette migration et ne doivent 
 
 ## Contrôles et validation
 
-Les tests Node ajoutés vérifient statiquement les invariants de sécurité, le cloisonnement, la frontière RPC, le raccordement de l’interface, l’import historique, les verrous, l'idempotence, les protections append-only et les garde-fous FIFO/réservations. Ils ne remplacent pas une exécution PostgreSQL.
+Les tests Node du dépôt vérifient statiquement les invariants de sécurité, le cloisonnement, la frontière RPC, le raccordement de l’interface, l’import historique, les verrous, l'idempotence, les protections append-only et les garde-fous FIFO/réservations.
 
-Avant toute activation sur DEV :
-1. Générer/valider la migration avec la version Supabase CLI du dépôt et vérifier son ordre dans `supabase migration list`.
-2. Appliquer sur DEV après sauvegarde explicite.
-3. Vérifier les signatures, privilèges, politiques RLS et triggers dans PostgreSQL.
-4. Exécuter des tests transactionnels avec entreprise/utilisateurs/articles/entrepôts fictifs, concurrence, idempotence, FIFO, CUMP, transfert, réservation, contrepassation et rollback/nettoyage.
-5. Exécuter Supabase Security et Performance Advisors.
-6. Tester deux sessions distinctes (admin/comptable/reader) et valider le comportement de l’import historique avant de rendre la PR fusionnable.
+### Vérifications PostgreSQL DEV effectuées
+
+Les deux migrations sont présentes dans l'historique DEV : `20261123085959 stock_server_engine` et `20261123090112 stock_foreign_key_indexes`.
+
+Les tests ont été exécutés dans des transactions explicitement annulées (`ROLLBACK)), avec entreprises, membres, articles et entrepôts fictifs :
+1. Création article physique, service et entrepôts ; un service est refusé dans une réception physique.
+2. Réception et idempotence ; une réutilisation du même `operation_uid` avec un contenu différent est refusée.
+3. Réservation ; une sortie qui consomme une quantité réservée est refusée.
+4. Transfert entre entrepôts ; la quantité globale est conservée.
+5. CUMP : deux réceptions de 10 unités à 5 et 7, puis sortie de 5 ; solde attendu 15 unités et valeur 90.
+6. FIFO : deux réceptions de 10 unités à 5 et 7, puis sortie de 12 ; solde attendu 8 unités et valeur 56, avec deux allocations FIFO.
+7. Stock négatif refusé par défaut.
+8. Un membre reader peut lire, mais ne peut pas écrire ; un non-membre ne peut pas lire l'entreprise de test.
+9. Les privilèges directs d'insertion sur le journal des mouvements sont absents pour `authenticated`, et l'accès RPC anonyme est refusé.
+
+Après rollback, les requêtes de contrôle ont confirmé zéro entreprise fictive et zéro mouvement de test résiduel. Les 11 tables de stock ont RLS activée et 11 politiques de lecture sont présentes.
+
+### Supabase Advisors
+
+- Sécurité : aucun nouvel avertissement propre au stock. Les alertes restantes concernent des fonctions SECURITY DEFINER déjà présentes (`create_company`, `manage_accounting_period`), trois tables historiques sans politique RLS, et la protection des mots de passe compromis désactivée.
+- Performance : les 17 index couvrant les clés étrangères du stock ont été ajoutés dans la seconde migration. L'Advisor ne signale plus de clé étrangère stock non indexée ; il signale encore des index non utilisés, ce qui est attendu tant que le module a très peu de données.
+
+Les tests transactionnels valident les chemins principaux du moteur, mais ne remplacent pas encore un test de concurrence multi-session avec plusieurs clients authentifiés ni un test navigateur complet.
 
 ## Sécurité
 
-Aucune migration n'a été appliquée, aucune donnée DEV n'a été modifiée, aucun déploiement Preview/Production n'a été effectué et aucune PR n'a été fusionnée.
+Les deux migrations ont été appliquées sur Supabase DEV. Les tests ont utilisé des données fictives et toutes leurs transactions ont été annulées ; aucune donnée métier DEV n'a été conservée ou modifiée. Aucun changement n'a été apporté à Supabase Production. La PR reste ouverte en brouillon et n'a pas été fusionnée.

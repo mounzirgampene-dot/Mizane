@@ -256,11 +256,11 @@ async function changeSettings(changes, cloudMode, companyRole) {
     viewStock(false, companyRole);
   } catch(error) {
     toast(error?.message || "Enregistrement du paramètre impossible.", 5000);
-    viewStock(false, null);
+    viewStock(false, companyRole);
   }
 }
 
-function productDialog(cloudMode = false) {
+function productDialog(cloudMode = false, companyRole = null) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   box.innerHTML=`<h2>Créer un article</h2><div class="grid cols-2">
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>

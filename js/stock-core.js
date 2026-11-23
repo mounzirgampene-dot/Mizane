@@ -118,6 +118,19 @@ export function postStockMovement(store, input) {
   if (product.tracking === "lot" && (!lotCode || lotCode.length > 80 || serialNumbers.length)) return { ok:false, error:"Un code de lot valide est obligatoire." };
   if (product.tracking === "serial" && (quantity !== Math.trunc(quantity) || serialNumbers.length !== quantity || serialNumbers.some(v=>!v || v.length>120) || new Set(serialNumbers.map(v=>v.toLowerCase())).size !== serialNumbers.length || lotCode)) return { ok:false, error:"Saisissez un numéro de série unique pour chaque unité entière." };
   if (product.tracking === "none" && (lotCode || serialNumbers.length)) return { ok:false, error:"Cet article ne prend pas en charge la traçabilité." };
+  const stockLotBalances = stock.lotBalances ||= [];
+  const stockSerials = stock.serials ||= [];
+  const sourceLot = product.tracking === "lot" ? stockLotBalances.find(x=>x.productId===product.id && x.warehouseId===warehouse.id && x.lotCode===lotCode) : null;
+  if (product.tracking === "lot" && (kind === "issue" || kind === "transfer") && (!sourceLot || sourceLot.quantity < quantity)) return {ok:false,error:"Quantité insuffisante pour ce lot dans cet entrepôt."};
+  if (product.tracking === "serial") {
+    if (kind === "receipt") {
+      const invalid = serialNumbers.find(serialNumber => { const existing=stockSerials.find(x=>x.serialNumber.toLowerCase()===serialNumber.toLowerCase()); return existing && (existing.productId!==product.id || existing.status!=="issued"); });
+      if (invalid) return {ok:false,error:`Numéro de série déjà enregistré ou non disponible : ${invalid}.`};
+    } else {
+      const invalid = serialNumbers.find(serialNumber => !stockSerials.some(x=>x.productId===product.id && x.serialNumber.toLowerCase()===serialNumber.toLowerCase() && x.status==="in_stock" && x.warehouseId===warehouse.id));
+      if (invalid) return {ok:false,error:`Numéro de série indisponible dans cet entrepôt : ${invalid}.`};
+    }
+  }
   let valuationCost = round(quantity * unitCost);
   if (kind === "issue" || kind === "transfer") {
     if (stock.settings.valuationMethod === "fifo") {
@@ -138,11 +151,7 @@ export function postStockMovement(store, input) {
       }
     }
   }
-  const stockLotBalances = stock.lotBalances ||= [];
-  const stockSerials = stock.serials ||= [];
   if (product.tracking === "lot") {
-    const sourceLot = stockLotBalances.find(x=>x.productId===product.id && x.warehouseId===warehouse.id && x.lotCode===lotCode);
-    if ((kind === "issue" || kind === "transfer" || (kind === "adjustment" && input.direction === "decrease")) && (!sourceLot || sourceLot.quantity < quantity)) return {ok:false,error:"Quantité insuffisante pour ce lot dans cet entrepôt."};
     if (kind === "receipt" || (kind === "adjustment" && input.direction === "increase")) {
       if (sourceLot) sourceLot.quantity=round(sourceLot.quantity+quantity); else stockLotBalances.push({productId:product.id,warehouseId:warehouse.id,lotCode,quantity});
     } else {
@@ -154,13 +163,11 @@ export function postStockMovement(store, input) {
     if (kind === "receipt" || (kind === "adjustment" && input.direction === "increase")) {
       for (const serialNumber of serialNumbers) {
         const existing=stockSerials.find(x=>x.serialNumber.toLowerCase()===serialNumber.toLowerCase());
-        if (existing && (existing.productId!==product.id || existing.status!=="issued")) return {ok:false,error:`Numéro de série déjà enregistré ou non disponible : ${serialNumber}.`};
         if (existing) { existing.status="in_stock"; existing.warehouseId=warehouse.id; } else stockSerials.push({productId:product.id,serialNumber,warehouseId:warehouse.id,status:"in_stock"});
       }
     } else {
       for (const serialNumber of serialNumbers) {
         const existing=stockSerials.find(x=>x.productId===product.id && x.serialNumber.toLowerCase()===serialNumber.toLowerCase() && x.status==="in_stock" && x.warehouseId===warehouse.id);
-        if (!existing) return {ok:false,error:`Numéro de série indisponible dans cet entrepôt : ${serialNumber}.`};
         if (kind === "transfer") existing.warehouseId=input.destinationWarehouseId; else { existing.status="issued"; existing.warehouseId=null; }
       }
     }

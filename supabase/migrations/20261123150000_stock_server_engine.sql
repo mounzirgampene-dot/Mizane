@@ -561,12 +561,12 @@ begin
   select jsonb_agg(jsonb_build_object(
     'product_id',l.product_id,'warehouse_id',case when v_doc.document_type='transfer' then l.destination_warehouse_id else l.warehouse_id end,
     'destination_warehouse_id',case when v_doc.document_type='transfer' then l.warehouse_id else null end,
-    'quantity',l.quantity,'unit_cost',l.unit_cost,'direction',case when v_doc.document_type='adjustment' then 'decrease' else null end
+    'quantity',l.quantity,'unit_cost',l.unit_cost,
+    'direction',case when v_doc.document_type='adjustment' then case when m.quantity_delta<0 then 'increase' else 'decrease' end else null end
   ) order by l.line_number) into v_lines
-  from public.stock_document_lines l where l.company_id=p_company_id and l.document_id=p_document_id and l.line_number<500;
-  if v_doc.document_type='adjustment' then
-    raise exception 'La contrepassation d’un ajustement doit être effectuée par un document d’ajustement inverse dédié.' using errcode='0A000';
-  end if;
+  from public.stock_document_lines l
+  left join public.stock_movements m on m.company_id=l.company_id and m.line_id=l.id
+  where l.company_id=p_company_id and l.document_id=p_document_id and l.line_number<500;
   v_result:=public.stock_post_document(p_company_id,p_operation_uid,v_type,current_date,
     'REV-'||coalesce(v_doc.reference,v_doc.id::text),btrim(p_reason),v_lines,'reversal',v_doc.id::text);
   v_new_id:=(v_result->>'document_id')::uuid;

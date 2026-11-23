@@ -643,31 +643,31 @@ grant execute on function private.stock_reverse_document_impl(uuid,uuid,uuid,tex
 
 create or replace function public.stock_read_state(p_company_id uuid)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_read_state_impl(p_company_id) $;
+as $$ select private.stock_read_state_impl(p_company_id) $$;
 create or replace function public.stock_save_product(p_company_id uuid,p_product jsonb)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_save_product_impl(p_company_id,p_product) $;
+as $$ select private.stock_save_product_impl(p_company_id,p_product) $$;
 create or replace function public.stock_save_warehouse(p_company_id uuid,p_warehouse jsonb)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_save_warehouse_impl(p_company_id,p_warehouse) $;
+as $$ select private.stock_save_warehouse_impl(p_company_id,p_warehouse) $$;
 create or replace function public.stock_update_settings(p_company_id uuid,p_settings jsonb)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_update_settings_impl(p_company_id,p_settings) $;
+as $$ select private.stock_update_settings_impl(p_company_id,p_settings) $$;
 create or replace function public.stock_post_document(
   p_company_id uuid,p_operation_uid uuid,p_document_type text,p_document_date date,
   p_reference text,p_note text,p_lines jsonb,p_source_type text default null,p_source_id text default null
 ) returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_post_document_impl(p_company_id,p_operation_uid,p_document_type,p_document_date,p_reference,p_note,p_lines,p_source_type,p_source_id) $;
+as $$ select private.stock_post_document_impl(p_company_id,p_operation_uid,p_document_type,p_document_date,p_reference,p_note,p_lines,p_source_type,p_source_id) $$;
 create or replace function public.stock_reserve(
   p_company_id uuid,p_operation_uid uuid,p_product_id uuid,p_warehouse_id uuid,p_quantity numeric,p_reference text default ''
 ) returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_reserve_impl(p_company_id,p_operation_uid,p_product_id,p_warehouse_id,p_quantity,p_reference) $;
+as $$ select private.stock_reserve_impl(p_company_id,p_operation_uid,p_product_id,p_warehouse_id,p_quantity,p_reference) $$;
 create or replace function public.stock_release_reservation(p_company_id uuid,p_reservation_id uuid)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_release_reservation_impl(p_company_id,p_reservation_id) $;
+as $$ select private.stock_release_reservation_impl(p_company_id,p_reservation_id) $$;
 create or replace function public.stock_reverse_document(p_company_id uuid,p_document_id uuid,p_operation_uid uuid,p_reason text)
 returns jsonb language sql security invoker set search_path = ''
-as $ select private.stock_reverse_document_impl(p_company_id,p_document_id,p_operation_uid,p_reason) $;
+as $$ select private.stock_reverse_document_impl(p_company_id,p_document_id,p_operation_uid,p_reason) $$;
 
 revoke all on function public.stock_read_state(uuid) from public,anon,authenticated;
 revoke all on function public.stock_save_product(uuid,jsonb) from public,anon,authenticated;

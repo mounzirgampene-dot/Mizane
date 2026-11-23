@@ -246,7 +246,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
   document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
-  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));\n  document.getElementById("stock-count-start")?.addEventListener("click", () => inventoryCreateDialog(stock,companyRole));\n  document.querySelectorAll("[data-count-open]").forEach(b=>b.addEventListener("click",()=>inventoryOpenDialog(stock.countSessions.find(x=>x.id===b.dataset.countOpen),stock,companyRole)));
+  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
+  document.getElementById("stock-count-start")?.addEventListener("click", () => inventoryCreateDialog(stock,companyRole));\n  document.querySelectorAll("[data-count-open]").forEach(b=>b.addEventListener("click",()=>inventoryOpenDialog(stock.countSessions.find(x=>x.id===b.dataset.countOpen),stock,companyRole)));
   document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
   document.querySelectorAll("[data-stock-release]").forEach(button => button.addEventListener("click", () => releaseReservation(button.dataset.stockRelease, companyRole)));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));

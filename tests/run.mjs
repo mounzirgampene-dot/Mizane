@@ -1295,6 +1295,9 @@ test("stock cloud : interface expose la saisie des lots, séries et unités alte
   assert.match(stockUiSource,/id="sm-lot"/);
   assert.match(stockUiSource,/id="sm-serials"/);
   assert.match(stockUiSource,/id="sm-unit"/);
+  assert.match(stockUiSource,/Lots disponibles/);
+  assert.match(stockUiSource,/Numéros de série/);
+  assert.match(stockUiSource,/const lots = cloudMode/);
   assert.doesNotMatch(stockUiSource,/value="lot" disabled/);
   assert.doesNotMatch(stockUiSource,/value="serial" disabled/);
 });

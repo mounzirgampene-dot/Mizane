@@ -1439,7 +1439,7 @@ test("facturation : réservations explicites liées à la facture, converties et
   assert.match(billingUiSource,/factor_to_base/);
   assert.match(billingUiSource,/Math\.round\(\(item\.remaining\*item\.factor\+Number\.EPSILON\)\*10000\)\/10000/);
   assert.match(billingUiSource,/async function invoiceReservationOperationUid/);
-  assert.match(billingUiSource,/crypto\.subtle\.digest/);
+  assert.match(billingUiSource,/subtle\.digest\("SHA-256"/);
   assert.match(billingUiSource,/operationUid:await invoiceReservationOperationUid/);
   assert.match(billingUiSource,/status:"pending"/);
   assert.match(billingUiSource,/operation\.status="done"/);

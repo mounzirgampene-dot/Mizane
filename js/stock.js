@@ -5,6 +5,8 @@ import {
   hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
   updateCloudStockSettings, postCloudStockDocument,
   reserveCloudStock, releaseCloudStockReservation,
+  readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
+  submitCloudStockCount, finalizeCloudStockCount, cancelCloudStockCount,
 } from "./cloud-sync.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
@@ -220,7 +222,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       ${physical.map(p => `<tr><td>${esc(p.sku)} — ${esc(p.name)}</td>${stock.warehouses.map(w => `<td class="num">${fmtQty(stockBalance(stock,p.id,w.id))}</td>`).join("")}</tr>`).join("") || '<tr><td class="muted">Aucun article physique.</td></tr>'}
       </tbody></table></div>
     </section>
-    ${traceabilityHtml}
+    ${traceabilityHtml}\n    ${cloudMode ? `<section class="card"><h2>Inventaire physique</h2><p class="muted">Le comptage intégral gèle les mouvements de l’entrepôt jusqu’à validation ou annulation.</p><button id="stock-count-start">Démarrer un inventaire</button>${(stock.countSessions||[]).filter(s=>["counting","submitted"].includes(s.status)).map(s=>`<p><strong>${esc(s.reference)}</strong> — ${esc(s.warehouse_name)} — ${s.status==="counting"?"Comptage en cours":"En attente d’approbation"}</p><button class="secondary" data-count-open="${esc(s.id)}">Ouvrir le comptage</button>`).join("")}</section>` : ""}
     <section class="card">
       <h2>Derniers mouvements</h2>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th><th>Origine</th></tr></thead><tbody>
@@ -244,7 +246,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
   document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
-  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
+  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));\n  document.getElementById("stock-count-start")?.addEventListener("click", () => inventoryCreateDialog(stock,companyRole));\n  document.querySelectorAll("[data-count-open]").forEach(b=>b.addEventListener("click",()=>inventoryOpenDialog(stock.countSessions.find(x=>x.id===b.dataset.countOpen),stock,companyRole)));
   document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
   document.querySelectorAll("[data-stock-release]").forEach(button => button.addEventListener("click", () => releaseReservation(button.dataset.stockRelease, companyRole)));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));
@@ -393,4 +395,24 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
       modal.close();viewStock(false,companyRole);toast("Mouvement de stock enregistré.");
     } catch(error) { box.querySelector("#sm-error").textContent=error?.message || "Validation impossible."; }
   };
+}
+
+
+function inventoryCreateDialog(stock,companyRole) {
+  const warehouses=stock.warehouses.filter(w=>w.active); if(!warehouses.length){toast("Créez d’abord un entrepôt actif.");return;}
+  const modal=document.getElementById("modal"),box=document.getElementById("modal-content");
+  box.innerHTML='<h2>Démarrer un inventaire</h2><label>Entrepôt</label><select id="sic-warehouse">'+warehouses.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join("")+'</select><label>Référence</label><input id="sic-reference" maxlength="120" value="INV-'+new Date().toISOString().slice(0,10)+'"><p class="muted">Tous les mouvements de cet entrepôt seront gelés jusqu’à validation ou annulation.</p><div id="sic-error" class="errors"></div><div class="actions"><button id="sic-create">Démarrer</button><button class="secondary" data-close>Annuler</button></div>';
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#sic-create").onclick=async()=>{try{await createCloudStockCount({warehouseId:box.querySelector("#sic-warehouse").value,reference:box.querySelector("#sic-reference").value.trim()});modal.close();toast("Inventaire démarré. Entrepôt gelé.");viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Démarrage impossible."; }};
+}
+function inventoryOpenDialog(session,stock,companyRole) {
+  if(!session)return; const modal=document.getElementById("modal"),box=document.getElementById("modal-content");
+  const products=new Map(stock.products.map(p=>[p.id,p]));
+  const rows=session.lines.map(l=>{const p=products.get(l.product_id);return '<tr><td>'+esc(p?.sku||"")+' — '+esc(p?.name||"Article")+'</td><td>'+fmtQty(l.snapshot_quantity)+'</td><td>'+(session.status==="counting"?'<input type="number" min="0" step="0.0001" data-count-line="'+esc(l.id)+'" value="'+(l.counted_quantity??"")+'">':fmtQty(l.counted_quantity))+'</td><td>'+(l.counted_quantity==null?"—":fmtQty(Number(l.counted_quantity)-Number(l.snapshot_quantity)))+'</td></tr>';}).join("");
+  box.innerHTML='<h2>Inventaire — '+esc(session.reference)+'</h2><p>'+esc(session.warehouse_name)+'</p><div class="table-wrap"><table><thead><tr><th>Article</th><th>Théorique</th><th>Compté</th><th>Écart</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(session.status==="counting"?'<div class="actions"><button id="sic-save">Enregistrer les quantités</button><button class="secondary" id="sic-submit">Soumettre</button>':'<p class="muted">Inventaire soumis : validation finale réservée à un administrateur.</p>'+(companyRole==="admin"?'<button id="sic-finalize">Approuver et comptabiliser</button>':""))+'<button class="secondary" id="sic-cancel">Annuler l’inventaire</button><button class="secondary" data-close>Fermer</button><div id="sic-error" class="errors"></div>';
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#sic-save")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-save");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}toast("Comptages enregistrés.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Enregistrement impossible.";btn.disabled=false;}});
+  box.querySelector("#sic-submit")?.addEventListener("click",async()=>{try{await submitCloudStockCount(session.id);toast("Inventaire soumis pour approbation.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Soumission impossible."; }});
+  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{await finalizeCloudStockCount({sessionId:session.id,operationUid:globalThis.crypto.randomUUID(),documentDate:new Date().toISOString().slice(0,10)});toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
+  box.querySelector("#sic-cancel")?.addEventListener("click",async()=>{if(!confirm("Annuler l’inventaire et libérer l’entrepôt ?"))return;try{await cancelCloudStockCount(session.id);toast("Inventaire annulé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Annulation impossible."; }});
 }

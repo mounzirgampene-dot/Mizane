@@ -84,6 +84,7 @@ create table public.stock_document_lines (
   foreign key(company_id,product_id) references public.stock_products(company_id,id),
   foreign key(company_id,warehouse_id) references public.stock_warehouses(company_id,id),
   foreign key(company_id,destination_warehouse_id) references public.stock_warehouses(company_id,id),
+  unique(company_id,id),
   unique(company_id,document_id,line_number),
   check (destination_warehouse_id is null or destination_warehouse_id <> warehouse_id)
 );
@@ -256,7 +257,7 @@ begin
   v_tracking:=coalesce(p_product->>'tracking','none');
   if length(v_sku) not between 1 and 64 or length(btrim(coalesce(p_product->>'name',''))) not between 1 and 180
      or v_type not in ('goods','raw','semi','finished','consumable','service')
-     or v_tracking not in ('none','lot','serial')
+     or v_tracking not in ('none','lot','serial') or v_tracking<>'none'
      or (v_type='service' and v_tracking<>'none') then
     raise exception 'Données article invalides.' using errcode='22023';
   end if;
@@ -322,6 +323,10 @@ begin
      or coalesce(p_settings->>'accounting_mode',v_old.accounting_mode) not in ('perpetual','periodic') then
     raise exception 'Paramètres de stock invalides.' using errcode='22023';
   end if;
+  if p_settings ? 'allow_negative' and (p_settings->>'allow_negative')::boolean is distinct from v_old.allow_negative
+     and not exists(select 1 from public.company_memberships m where m.company_id=p_company_id and m.user_id=v_actor and m.status='active' and m.role='admin') then
+    raise exception 'Seul un administrateur peut modifier l’autorisation de stock négatif.' using errcode='42501';
+  end if;
   if coalesce(p_settings->>'valuation_method',v_old.valuation_method)<>v_old.valuation_method
      and exists(select 1 from public.stock_movements where company_id=p_company_id) then
     raise exception 'La méthode de valorisation ne peut plus être changée après le premier mouvement sans procédure de recalcul.' using errcode='55000';
@@ -353,7 +358,7 @@ declare
   v_line jsonb; v_no integer:=0; v_product uuid; v_wh uuid; v_dest uuid;
   v_qty numeric(20,6); v_cost numeric(20,6); v_total numeric(20,6);
   v_balance public.stock_balances%rowtype; v_layer record; v_left numeric(20,6);
-  v_take numeric(20,6); v_issue_cost numeric(20,6); v_unit_cost numeric(20,6);
+  v_take numeric(20,6); v_issue_cost numeric(20,6); v_unit_cost numeric(20,6); v_reserved numeric(20,6);
   v_source_movement bigint; v_dest_movement bigint; v_signed numeric(20,6);
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
@@ -394,8 +399,13 @@ begin
     insert into public.stock_balances(company_id,product_id,warehouse_id) values(p_company_id,v_product,v_wh) on conflict do nothing;
     select * into v_balance from public.stock_balances where company_id=p_company_id and product_id=v_product and warehouse_id=v_wh for update;
     if p_document_type in ('issue','transfer') or (p_document_type='adjustment' and coalesce((v_line->>'direction'),'')='decrease') then
-      if (p_document_type='transfer' or not v_settings.allow_negative) and v_balance.quantity<v_qty then
-        raise exception 'Stock insuffisant pour l’article % : disponible %, demandé %.',v_product,v_balance.quantity,v_qty using errcode='23514';
+      select coalesce(sum(r.quantity),0) into v_reserved from public.stock_reservations r
+        where r.company_id=p_company_id and r.product_id=v_product and r.warehouse_id=v_wh and r.status='active';
+      if v_balance.quantity < v_reserved then
+        raise exception 'Le stock physique est inférieur aux quantités déjà réservées.' using errcode='23514';
+      end if;
+      if (p_document_type='transfer' or not v_settings.allow_negative) and v_balance.quantity-v_reserved<v_qty then
+        raise exception 'Stock disponible insuffisant pour l’article % : disponible hors réservations %, demandé %.',v_product,v_balance.quantity-v_reserved,v_qty using errcode='23514';
       end if;
       v_issue_cost:=0;
       if v_settings.valuation_method='fifo' then
@@ -469,7 +479,7 @@ declare v_actor uuid; v_existing public.stock_reservations%rowtype; v_balance nu
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
   if p_operation_uid is null or p_quantity is null or p_quantity<=0 then raise exception 'Réservation invalide.' using errcode='22023'; end if;
-  perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock:'||p_product_id::text||':'||p_warehouse_id::text,0));
+  perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select * into v_existing from public.stock_reservations where company_id=p_company_id and operation_uid=p_operation_uid;
   if found then return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',v_existing.id); end if;
   select coalesce(quantity,0) into v_balance from public.stock_balances where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id for update;

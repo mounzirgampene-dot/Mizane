@@ -61,7 +61,7 @@ export function viewStock(readOnly = false, companyRole = null) {
   document.getElementById("stock-purchase-trigger").addEventListener("change", e => { stock.settings.purchaseTrigger=e.target.value; persist(); toast("Paramètre de déclenchement enregistré."); });
 }
 function productDialog() {
-  const stock=getStock(store), modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   box.innerHTML=`<h2>Créer un article</h2><div class="grid cols-2">
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
     <div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>
@@ -72,7 +72,7 @@ function productDialog() {
   box.querySelector("#sp-save").onclick=()=>{ const result=addProduct(store,{sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value}); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist();modal.close();viewStock();toast("Article créé."); };
 }
 function warehouseDialog() {
-  const stock=getStock(store), modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   box.innerHTML=`<h2>Créer un entrepôt</h2><label>Nom</label><input id="sw-name" maxlength="100"><div id="sw-error" class="errors"></div><div class="actions"><button id="sw-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   box.querySelector("#sw-save").onclick=()=>{const r=addWarehouse(store,box.querySelector("#sw-name").value);if(!r.ok){box.querySelector("#sw-error").textContent=r.error;return;}persist();modal.close();viewStock();toast("Entrepôt créé.");};

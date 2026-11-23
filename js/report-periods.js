@@ -1,12 +1,12 @@
 // MIZANE — Filtres de période communs aux états financiers.
 import { validatePeriodRange } from "./periods.js";
 
-export function periodControls(id, start, end) {
+export function periodControls(id, start, end, compare = true) {
   return `<form class="card report-period-controls" data-period-form="${id}">
     <div class="row">
       <div><label for="${id}-period-start">Du</label><input id="${id}-period-start" name="start" type="date" value="${start}" required></div>
       <div><label for="${id}-period-end">Au</label><input id="${id}-period-end" name="end" type="date" value="${end}" required></div>
-      <div class="period-compare"><label><input type="checkbox" name="compare" checked> Comparer avec la période équivalente de N-1</label></div>
+      <div class="period-compare"><label><input type="checkbox" name="compare" ${compare ? "checked" : ""}> Comparer avec la période équivalente de N-1</label></div>
       <div class="nogrow"><button type="submit">Appliquer</button></div>
     </div>
     <p class="muted" data-period-error hidden></p>

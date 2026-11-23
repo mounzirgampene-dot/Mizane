@@ -25,6 +25,8 @@ const stockReservationFulfillmentMigration = readFileSync(new URL("../supabase/m
 const stockPhysicalInventoryMigration = readFileSync(new URL("../supabase/migrations/20261123110000_stock_physical_inventory.sql", import.meta.url), "utf8");
 const stockInventoryGuardMigration = readFileSync(new URL("../supabase/migrations/20261123120000_stock_inventory_freeze_guard_hardening.sql", import.meta.url), "utf8");
 const stockInventoryNullFixMigration = readFileSync(new URL("../supabase/migrations/20261123121500_stock_inventory_freeze_guard_null_fix.sql", import.meta.url), "utf8");
+const stockExactReversalMigration = readFileSync(new URL("../supabase/migrations/20261123130000_stock_exact_valuation_reversals.sql", import.meta.url), "utf8");
+const stockReversalLinkFixMigration = readFileSync(new URL("../supabase/migrations/20261123131500_fix_reversal_document_link.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -43,6 +45,21 @@ test("invitations : création atomique protégée par verrou et vérification ad
   assert.doesNotMatch(invitationFunction, /\.from\("company_invitations"\)\s*\.insert\(/);
 });
 
+test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () => {
+  assert.match(stockExactReversalMigration, /private\.stock_reverse_document_impl/);
+  assert.match(stockExactReversalMigration, /later\.id>original\.last_original_movement/);
+  assert.match(stockExactReversalMigration, /tracking<>'none'/);
+  assert.match(stockExactReversalMigration, /stock_valuation_allocations/);
+  assert.match(stockExactReversalMigration, /remaining_quantity=0/);
+  assert.match(stockExactReversalMigration, /inventory_value=round\(inventory_value\+v_value,6\)/);
+  assert.match(stockReversalLinkFixMigration, /p_company_id,v_reversal_doc_id,currval/);
+  assert.match(stockReversalLinkFixMigration, /returning id into v_reversal_movement_id/);
+  assert.match(stockUiSource, /data-stock-reverse/);
+  assert.match(stockUiSource, /reverseCloudStockDocument/);
+  assert.match(stockUiSource, /Motif obligatoire/);
+  assert.match(stockCloudSource, /stock_reverse_document/);
+});
+ 
 test("inventaire physique : gel intégral, comptage, soumission et ajustement atomique", () => {
   assert.match(stockPhysicalInventoryMigration, /stock_count_sessions/);
   assert.match(stockPhysicalInventoryMigration, /stock_count_lines/);

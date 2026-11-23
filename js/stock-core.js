@@ -5,7 +5,7 @@ const uuid = () => globalThis.crypto?.randomUUID?.() || `local-${Date.now()}-${M
 export function getStock(store) {
   if (!store.stock || typeof store.stock !== "object") {
     store.stock = {
-      settings: { valuationMethod: "cump", allowNegative: false, salesTrigger: "delivery", purchaseTrigger: "receipt" },
+      settings: { valuationMethod: "cump", allowNegative: false, salesTrigger: "delivery", purchaseTrigger: "receipt", accountingMode: "perpetual" },
       warehouses: [{ id: "main", name: "Magasin principal", active: true }],
       products: [], movements: [], layers: [], nextProductId: 1,
     };

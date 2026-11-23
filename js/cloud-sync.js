@@ -97,6 +97,7 @@ export function syncCloudIfReady() {
       delete syncedBilling.stock;
       localStore.billing = syncedBilling;
       localStorage.setItem("mizane_v1", JSON.stringify(localStore));
+      if (localStore.stock && typeof localStore.stock === "object") window.dispatchEvent(new CustomEvent("mizane:legacy-stock-loaded", { detail: localStore.stock }));
     }
     const result = {
       ...accountingResult,

@@ -5,9 +5,9 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
 const movementLabels = { receipt:"Entrée", issue:"Sortie", transfer:"Transfert" };
-const persist = () => saveNow();
+const persist = () => { saveNow(); window.dispatchEvent(new Event("mizane:billing-changed")); };
 
-export function viewStock(readOnly = false) {
+export function viewStock(readOnly = false, companyRole = null) {
   const stock = getStock(store);
   const physical = stock.products.filter(p => p.type !== "service");
   const totalProducts = stock.products.length;
@@ -45,7 +45,7 @@ export function viewStock(readOnly = false) {
       <h2>Paramètres</h2>
       <div class="row" style="align-items:end;flex-wrap:wrap">
         <div><label>Méthode de valorisation</label><select id="stock-valuation" ${readOnly?"disabled":""}><option value="cump" ${stock.settings.valuationMethod==="cump"?"selected":""}>CUMP</option><option value="fifo" ${stock.settings.valuationMethod==="fifo"?"selected":""}>FIFO</option></select></div>
-        <div><label><input type="checkbox" id="stock-negative" ${stock.settings.allowNegative?"checked":""} ${readOnly?"disabled":""}> Autoriser les stocks négatifs</label></div>
+        <div><label><input type="checkbox" id="stock-negative" ${stock.settings.allowNegative?"checked":""} ${(readOnly || (companyRole && companyRole !== "admin"))?"disabled":""}> Autoriser les stocks négatifs</label></div>
         <div><label>Déclenchement des sorties de ventes</label><select id="stock-sales-trigger" ${readOnly?"disabled":""}><option value="delivery" ${stock.settings.salesTrigger==="delivery"?"selected":""}>À la livraison</option><option value="invoice_validation" ${stock.settings.salesTrigger==="invoice_validation"?"selected":""}>À la validation de facture</option></select></div>
         <div><label>Déclenchement des entrées d'achats</label><select id="stock-purchase-trigger" ${readOnly?"disabled":""}><option value="receipt" ${stock.settings.purchaseTrigger==="receipt"?"selected":""}>À la réception physique</option><option value="supplier_invoice" ${stock.settings.purchaseTrigger==="supplier_invoice"?"selected":""}>À la validation facture fournisseur</option></select></div>
       </div>
@@ -56,7 +56,7 @@ export function viewStock(readOnly = false) {
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog());
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog());
   document.getElementById("stock-valuation").addEventListener("change", e => { stock.settings.valuationMethod=e.target.value; persist(); viewStock(); });
-  document.getElementById("stock-negative").addEventListener("change", e => { stock.settings.allowNegative=e.target.checked; persist(); toast("Paramètre de stock enregistré."); });
+  if (!companyRole || companyRole === "admin") document.getElementById("stock-negative").addEventListener("change", e => { stock.settings.allowNegative=e.target.checked; persist(); toast("Paramètre de stock enregistré."); });
   document.getElementById("stock-sales-trigger").addEventListener("change", e => { stock.settings.salesTrigger=e.target.value; persist(); toast("Paramètre de déclenchement enregistré."); });
   document.getElementById("stock-purchase-trigger").addEventListener("change", e => { stock.settings.purchaseTrigger=e.target.value; persist(); toast("Paramètre de déclenchement enregistré."); });
 }

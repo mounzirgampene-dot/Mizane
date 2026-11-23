@@ -77,8 +77,8 @@ test("stock : réservations liées verrouillent le catalogue avant validation", 
 test("stock : les réservations sont consommées uniquement par leur facture liée", () => {
   assert.match(stockReservationInvoiceLinkMigration,/stock_reservations_source_link_check/);
   assert.match(stockReservationInvoiceLinkMigration,/stock_reserve_linked_impl/);
-  assert.match(stockReservationInvoiceLinkMigration,/r\\.source_type='sales_invoice'/);
-  assert.match(stockReservationInvoiceLinkMigration,/split_part\\(coalesce\\(p_source_id,''\\),':',1\\)/);
+  assert.match(stockReservationInvoiceLinkMigration,/r\.source_type='sales_invoice'/);
+  assert.match(stockReservationInvoiceLinkMigration,/split_part\(coalesce\(p_source_id,''\),':',1\)/);
   assert.match(stockCloudSource,/stock_reserve_linked/);
 });
 

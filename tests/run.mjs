@@ -1438,7 +1438,7 @@ test("facturation : réservations explicites liées à la facture, converties et
   assert.match(billingUiSource,/sourceId:String\(invoice\.id\)/);
   assert.match(billingUiSource,/factor_to_base/);
   assert.match(billingUiSource,/operationUid:stockOperationUid\(\)/);
-  assert.match(billingUiSource,/operation\.status="pending"/);
+  assert.match(billingUiSource,/status:"pending"/);
   assert.match(billingUiSource,/operation\.status="done"/);
   assert.match(billingUiSource,/stockReservationsCreated/);
   assert.match(billingUiSource,/stockReservationOperations/);

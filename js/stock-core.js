@@ -11,7 +11,8 @@ export function getStock(store) {
     };
   }
   const stock = store.stock;
-  stock.settings ||= { valuationMethod: "cump", allowNegative: false, salesTrigger: "delivery", purchaseTrigger: "receipt" };
+  stock.settings ||= { valuationMethod: "cump", allowNegative: false, salesTrigger: "delivery", purchaseTrigger: "receipt", accountingMode: "perpetual" };
+  stock.settings.accountingMode ||= "perpetual";
   stock.warehouses ||= [{ id: "main", name: "Magasin principal", active: true }];
   stock.products ||= [];
   stock.movements ||= [];

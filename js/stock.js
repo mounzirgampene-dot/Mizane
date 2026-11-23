@@ -72,7 +72,8 @@ function mapCloudStock(data) {
     cloudBalances:data?.balances || [],
     reservations:data?.reservations || [], documents:data?.documents || [],
     lots:data?.lots || [], serials:data?.serials || [],
-    balances:data?.balances || [],\n    countSessions:data?.countSessions || [],
+    balances:data?.balances || [],
+    countSessions:data?.countSessions || [],
   };
 }
 
@@ -171,7 +172,10 @@ export function viewStock(readOnly = false, companyRole = null) {
   const sequence = ++renderSequence;
   if (hasActiveStockCompany()) {
     $app.innerHTML = '<section class="card"><p>Chargement du stock de l’entreprise…</p></section>';
-    Promise.all([readCloudStock(),readCloudStockCounts()]).then(([data,countData]) => {\n      if (sequence !== renderSequence) return;\n      data.countSessions=countData?.sessions || [];\n      renderStock(mapCloudStock(data), readOnly, companyRole, true);
+    Promise.all([readCloudStock(),readCloudStockCounts()]).then(([data,countData]) => {
+      if (sequence !== renderSequence) return;
+      data.countSessions=countData?.sessions || [];
+      renderStock(mapCloudStock(data), readOnly, companyRole, true);
     }).catch(error => {
       if (sequence !== renderSequence) return;
       $app.innerHTML = '<section class="card"><h2>Stock cloud indisponible</h2><p class="errors"></p><p class="muted">Aucune modification locale ne sera utilisée comme substitut aux données de l’entreprise.</p><button id="stock-retry">Réessayer</button></section>';

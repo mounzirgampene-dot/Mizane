@@ -206,11 +206,11 @@ create or replace function private.stock_reject_immutable_change()
 returns trigger
 language plpgsql
 set search_path = ''
-as $
+as $$
 begin
   raise exception 'Journal de stock immuable : utilisez une contrepassation.' using errcode='55000';
 end;
-$;
+$$;
 revoke all on function private.stock_reject_immutable_change() from public,anon,authenticated;
 create trigger stock_movements_immutable before update or delete on public.stock_movements
 for each row execute function private.stock_reject_immutable_change();

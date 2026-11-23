@@ -1342,7 +1342,7 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
   assert.match(app, /\["stock", "Gestion de stock"\]/);
   assert.match(app, /\["purchases", "Achats"\]/);
-  assert.match(app, /"stock", "purchases"\]\s*;/);
+  assert.match(app, /"stock", "purchases"(?:, "notifications")?\]\s*;/);
   assert.match(cloud, /delete billingPayload\.stock/);
   assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);

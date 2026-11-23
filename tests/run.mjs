@@ -1624,10 +1624,6 @@ test("achats : données fournisseurs synchronisées dans la facturation cloud sa
   assert.match(appSource,/readerRestrictedRoutes[\s\S]*purchases/);
 });
 
-console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
-process.exit(failed ? 1 : 0);
-
-
 test("notifications comptables : boîte personnelle, alertes de blocage et revue admin", () => {
   assert.match(notificationsMigration, /create table if not exists public\.accounting_notifications/);
   assert.match(notificationsMigration, /recipient_user_id = \(select auth\.uid\(\)\)/);
@@ -1644,3 +1640,6 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
   assert.match(appSource, /getUnreadNotificationCount/);
   assert.match(appSource, /notifySyncFailure/);
 });
+
+console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
+process.exit(failed ? 1 : 0);

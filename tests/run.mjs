@@ -1344,6 +1344,12 @@ test("facturation : les livraisons partielles ne postent que les lignes sélecti
   assert.match(billingUiSource,/stockFulfilledQuantity/);
   assert.match(billingUiSource,/data-bill-deliver/);
 });
+test("stock : les réceptions conservent la référence et l'origine fournisseur", () => {
+  assert.match(stockUiSource,/sm-supplier/);
+  assert.match(stockUiSource,/sourceType:input.kind==="receipt"\?"supplier_receipt"/);
+  assert.match(stockUiSource,/Fournisseur : /);
+  assert.match(stockUiSource,/Réception fournisseur/);
+});
 
 test("stock cloud : les soldes complets du serveur priment sur les 500 mouvements récents", () => {
   assert.match(stockCoreSource, /Array\.isArray\(stock\.cloudBalances\)/);

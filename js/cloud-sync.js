@@ -86,11 +86,14 @@ export function syncCloudIfReady() {
     if (!localRaw) throw new Error("Données locales introuvables après la synchronisation comptable.");
     let localStore;
     try { localStore = JSON.parse(localRaw); } catch { throw new Error("Données locales illisibles après la synchronisation comptable."); }
-    const billingPayload = { ...(localStore.billing || {}), stock: localStore.stock || null };
+    const billingPayload = { ...(localStore.billing || {}) };
+    // Le stock possède désormais son propre journal transactionnel : ne plus le
+    // réécrire dans company_billing. L'ancien champ reste lisible pour migration.
+    delete billingPayload.stock;
     const billingResult = await syncBilling(supabase, companyId, membership.role, billingPayload);
     if (billingResult.pulled > 0) {
       const syncedBilling = { ...billingResult.billing };
-      if (syncedBilling.stock && typeof syncedBilling.stock === "object") localStore.stock = syncedBilling.stock;
+      if (!localStore.stock && syncedBilling.stock && typeof syncedBilling.stock === "object") localStore.stock = syncedBilling.stock;
       delete syncedBilling.stock;
       localStore.billing = syncedBilling;
       localStorage.setItem("mizane_v1", JSON.stringify(localStore));
@@ -99,7 +102,7 @@ export function syncCloudIfReady() {
       ...accountingResult,
       billingPushed: billingResult.pushed,
       billingPulled: billingResult.pulled,
-      stockIncluded: Boolean(localStore.stock),
+      legacyStockAvailable: Boolean(localStore.stock),
       pulled: (Number(accountingResult.pulled) || 0) + (Number(billingResult.pulled) || 0),
     };
     window.dispatchEvent(new CustomEvent("mizane:cloud-synced", { detail: result }));

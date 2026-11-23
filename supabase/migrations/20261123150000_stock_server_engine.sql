@@ -404,6 +404,9 @@ begin
       if v_balance.quantity < v_reserved then
         raise exception 'Le stock physique est inférieur aux quantités déjà réservées.' using errcode='23514';
       end if;
+      if v_reserved>0 and v_qty>greatest(v_balance.quantity-v_reserved,0) then
+        raise exception 'Cette sortie empiéterait sur des quantités réservées.' using errcode='23514';
+      end if;
       if (p_document_type='transfer' or not v_settings.allow_negative) and v_balance.quantity-v_reserved<v_qty then
         raise exception 'Stock disponible insuffisant pour l’article % : disponible hors réservations %, demandé %.',v_product,v_balance.quantity-v_reserved,v_qty using errcode='23514';
       end if;
@@ -421,9 +424,7 @@ begin
           v_left:=v_left-v_take;
         end loop;
         if v_left>0 then
-          if p_document_type='transfer' or not v_settings.allow_negative then
-            raise exception 'Couches FIFO insuffisantes.' using errcode='23514';
-          end if;
+          raise exception 'Couches FIFO insuffisantes : la méthode FIFO interdit le stock négatif.' using errcode='23514';
         end if;
       else
         v_unit_cost:=case when v_balance.quantity>0 then v_balance.inventory_value/v_balance.quantity else 0 end;
@@ -482,7 +483,8 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select * into v_existing from public.stock_reservations where company_id=p_company_id and operation_uid=p_operation_uid;
   if found then return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',v_existing.id); end if;
-  select coalesce(quantity,0) into v_balance from public.stock_balances where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id for update;
+  select quantity into v_balance from public.stock_balances where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id for update;
+  v_balance:=coalesce(v_balance,0);
   select coalesce(sum(quantity),0) into v_reserved from public.stock_reservations where company_id=p_company_id and product_id=p_product_id and warehouse_id=p_warehouse_id and status='active';
   if v_balance-v_reserved<p_quantity then raise exception 'Stock disponible insuffisant pour réserver.' using errcode='23514'; end if;
   insert into public.stock_reservations(company_id,operation_uid,product_id,warehouse_id,quantity,reference,created_by)

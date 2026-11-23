@@ -63,6 +63,7 @@ function mapCloudStock(data) {
       accountingMode:settings.accounting_mode || "perpetual",
     },
     warehouses, products, movements, layers,
+    cloudBalances:data?.balances || [],
     reservations:data?.reservations || [],
     balances:data?.balances || [],
   };

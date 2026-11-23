@@ -214,7 +214,11 @@ function openDetail(id) {
     const item = product(line.productId);
     return `<tr><td>${esc(item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "Entrepôt")}</td><td class="num">${line.quantity} ${esc(line.unit)}</td><td class="num">${money(line.unitCost)}</td><td class="num">${round(line.baseQuantity)} ${esc(item?.base_unit || "")}</td></tr>`;
   }).join("");
-  const remaining = doc.lines.reduce((sum,line) => sum + Math.max(0,line.baseQuantity - (doc.type === "order" ? num(line.receivedBase) : num(line.stockPostedBase))),0);
+  const remaining = doc.lines.reduce((sum,line) => {
+    const linkedReceived = linkedOrder?.lines.find(item => String(item.productId) === String(line.productId) && String(item.warehouseId) === String(line.warehouseId))?.receivedBase;
+    const received = doc.type === "order" || stockState?.settings?.purchase_trigger !== "supplier_invoice" ? num(line.receivedBase) : doc.orderId ? num(linkedReceived) : num(line.stockPostedBase);
+    return sum + Math.max(0,line.baseQuantity - received);
+  },0);
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
@@ -299,6 +303,7 @@ async function validateInvoice(doc, box) {
     for (const line of doc.lines) {
       const match=order.lines.find(item=>String(item.productId)===String(line.productId));
       if (!match || line.baseQuantity>match.baseQuantity || Math.abs(line.unitCost-match.unitCost)>0.0001) { box.querySelector("#pd-detail-error").textContent="Le rapprochement commande/facture a échoué."; return; }
+      if (stockState?.settings?.purchase_trigger === "receipt" && line.baseQuantity > num(match.receivedBase)) { box.querySelector("#pd-detail-error").textContent="Rapprochement bloqué : la quantité facturée dépasse la quantité physiquement reçue."; return; }
     }
   }
   if (stockState?.settings?.purchase_trigger === "supplier_invoice") {

@@ -46,6 +46,8 @@ export function validateProduct(input, products = []) {
   if (!["goods","raw","semi","finished","consumable","service"].includes(input.type)) errors.push("Type d'article invalide.");
   if (!["none","lot","serial"].includes(input.tracking)) errors.push("Traçabilité invalide.");
   if (input.type === "service" && input.tracking !== "none") errors.push("Un service ne peut pas avoir de traçabilité de stock.");
+  if (input.purchasePriceHT != null && (!Number.isFinite(Number(input.purchasePriceHT)) || Number(input.purchasePriceHT)<0)) errors.push("Prix d’achat HT invalide.");
+  if (input.salePriceHT != null && (!Number.isFinite(Number(input.salePriceHT)) || Number(input.salePriceHT)<0)) errors.push("Prix de vente HT invalide.");
   const conversions = Array.isArray(input.unitConversions) ? input.unitConversions : [];
   const seenUnits = new Set([String(input.unit || "unité").trim().toLowerCase()]);
   for (const conversion of conversions) {
@@ -65,6 +67,7 @@ export function addProduct(store, input) {
     id: stock.nextProductId++, sku: String(input.sku).trim(), name: String(input.name).trim(),
     type: input.type, unit: String(input.unit || "unité").trim(), tracking: input.tracking,
     unitConversions: (input.unitConversions || []).map(c => ({ unit:String(c.unit).trim(), factorToBase:Number(c.factorToBase) })),
+    purchasePriceHT:Number(input.purchasePriceHT||0), salePriceHT:Number(input.salePriceHT||0),
     active: true, createdAt: new Date().toISOString(),
   };
   stock.products.push(product);

@@ -8,6 +8,7 @@ import {
 } from "../js/accounting.js";
 import { allAccounts, findAccount, searchAccounts, PLANS } from "../js/plans.js";
 import { COUNTRIES, formatMoney } from "../js/countries.js";
+import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
@@ -38,6 +39,8 @@ const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migration
 const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165146_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
 const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20261123172036_stock_product_price_units.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
+const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
 const billingUiSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
@@ -132,6 +135,24 @@ function test(name, fn) {
   try { fn(); passed++; console.log("  ✓ " + name); }
   catch (e) { failed++; console.error("  ✗ " + name + "\n    " + e.message); }
 }
+
+test("graphiques financiers : modes tableau/graphiques pour les quatre états", () => {
+  for (const id of ["balance","income","sheet","pilotage"]) {
+    assert.ok(chartModeControls(id).includes(`data-chart-id="${id}"`));
+  }
+  assert.match(reportsUiSource,/bindChartMode\("balance"\)/);
+  assert.match(reportsUiSource,/bindChartMode\("income"\)/);
+  assert.match(reportsUiSource,/bindChartMode\("sheet"\)/);
+  assert.match(financialUiSource,/bindChartMode\("pilotage"\)/);
+  assert.match(reportsUiSource,/renderHorizontalBars/);
+  assert.match(financialUiSource,/renderHorizontalBars/);
+  const chart = renderHorizontalBars("Test",[{label:"Banque",debit:120,credit:80}],[{key:"debit",label:"Débit"},{key:"credit",label:"Crédit"}],value=>String(value));
+  assert.match(chart,/Banque/);
+  assert.match(chart,/120/);
+  assert.match(chart,/80/);
+  assert.match(chart,/chart-bar-fill/);
+  assert.match(renderHorizontalBars("Vide",[],[{key:"amount",label:"Montant"}]),/Aucune donnée/);
+});
 
 console.log("— Plans comptables —");
 for (const id of Object.keys(PLANS)) {

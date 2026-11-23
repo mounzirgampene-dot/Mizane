@@ -32,6 +32,7 @@ const stockTrackedReversalMigration = readFileSync(new URL("../supabase/migratio
 const stockCatalogWriteSerializationMigration = readFileSync(new URL("../supabase/migrations/20261123160000_stock_catalog_write_serialization.sql", import.meta.url), "utf8");
 const stockReservationInvoiceLinkMigration = readFileSync(new URL("../supabase/migrations/20261123170000_stock_reservation_invoice_link.sql", import.meta.url), "utf8");
 const stockReservationLockOrderMigration = readFileSync(new URL("../supabase/migrations/20261123171500_stock_reservation_lock_order.sql", import.meta.url), "utf8");
+const stockReservationIdempotencyMigration = readFileSync(new URL("../supabase/migrations/20261123173000_fix_stock_reservation_idempotency.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -67,6 +68,11 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
   assert.match(stockCloudSource, /stock_reverse_document/);
 });
  
+test("stock : idempotence des réservations compare aussi les liens nuls", () => {
+  assert.match(stockReservationIdempotencyMigration,/source_type is distinct from p_source_type/);
+  assert.match(stockReservationIdempotencyMigration,/source_id is distinct from p_source_id/);
+});
+
 test("stock : réservations liées verrouillent le catalogue avant validation", () => {
   assert.match(stockReservationLockOrderMigration,/stock_reserve_linked_impl/);
   assert.match(stockReservationLockOrderMigration,/stock_reserve_impl/);

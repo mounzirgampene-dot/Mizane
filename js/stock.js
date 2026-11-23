@@ -31,6 +31,7 @@ function mapCloudStock(data) {
       typeName:catalogType?.name || kinds[p.product_type] || p.product_type,
       familyName:familyById.get(p.family_id)?.name || "",
       purchasePriceHT:Number(p.purchase_price_ht || 0), salePriceHT:Number(p.sale_price_ht || 0),
+      purchasePriceUnit:p.purchase_price_unit || p.base_unit || "unité", salePriceUnit:p.sale_price_unit || p.base_unit || "unité",
       unit:p.base_unit || "unité", tracking:p.tracking || "none",
       unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
     };
@@ -312,21 +313,52 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
     ${cloudMode ? `<div><label>Famille</label><div class="row"><select id="sp-family">${familyOptions}</select><button type="button" class="secondary" id="sp-add-family">+</button></div></div>
     <div><label>Type d’article</label><div class="row"><select id="sp-type">${defaultType?typeOptions(defaultType.family_id):""}</select><button type="button" class="secondary" id="sp-add-type">+</button></div></div>` : `<div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>`}
-    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-purchase-unit">Unitaire</label><input id="sp-purchase-unit" value="unité" readonly aria-readonly="true"></div>
-    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-sale-unit">Unitaire</label><input id="sp-sale-unit" value="unité" readonly aria-readonly="true"></div>
+    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-purchase-unit">Unitaire</label><select id="sp-purchase-unit"></select></div>
+    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-sale-unit">Unitaire</label><select id="sp-sale-unit"></select></div>
     <div><label>Unité de base</label><input id="sp-unit" value="unité" maxlength="24"></div>
     <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
-    <div><label>Conversions (format : carton=12 ; palette=120)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"></div>
+    <div><label>Conversions d’unités (unité=équivalence)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"><button type="button" class="secondary" id="sp-custom-units">Personnaliser les unités</button></div>
   </div><p class="muted">Les prix sont saisis hors taxes. La TVA sera déterminée séparément selon le paramétrage fiscal. Les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
   const baseUnitInput=box.querySelector("#sp-unit");
-  const syncPriceUnits=()=>{
-    const unit=baseUnitInput.value.trim()||"unité";
-    box.querySelector("#sp-purchase-unit").value=unit;
-    box.querySelector("#sp-sale-unit").value=unit;
+  const conversionsInput=box.querySelector("#sp-conversions");
+  const purchaseUnitSelect=box.querySelector("#sp-purchase-unit");
+  const saleUnitSelect=box.querySelector("#sp-sale-unit");
+  const parseUnitConversions=()=>conversionsInput.value.split(/[;\\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{
+    const [unit,factor]=part.split("=");
+    return {unit:String(unit||"").trim(),factorToBase:Number(factor)};
+  });
+  const refreshPriceUnits=()=>{
+    const base=baseUnitInput.value.trim()||"unité";
+    const conversions=parseUnitConversions().filter(c=>c.unit && c.unit.length<=24 && Number.isFinite(c.factorToBase) && c.factorToBase>0);
+    const units=[base,...conversions.map(c=>c.unit)].filter((unit,index,list)=>list.findIndex(x=>x.toLowerCase()===unit.toLowerCase())===index);
+    for(const select of [purchaseUnitSelect,saleUnitSelect]){
+      const previous=select.value;
+      select.innerHTML=units.map(unit=>`<option value="${esc(unit)}">${esc(unit)}</option>`).join("");
+      select.value=units.some(unit=>unit.toLowerCase()===previous.toLowerCase())?units.find(unit=>unit.toLowerCase()===previous.toLowerCase()):base;
+    }
   };
-  baseUnitInput.addEventListener("input",syncPriceUnits);
-  syncPriceUnits();
+  baseUnitInput.addEventListener("input",refreshPriceUnits);
+  conversionsInput.addEventListener("input",refreshPriceUnits);
+  box.querySelector("#sp-custom-units").onclick=()=>{
+    const unit=prompt("Nom de l’unité personnalisée (ex. carton, palette, douzaine) :");
+    if(unit===null)return;
+    const clean=unit.trim();
+    if(!clean||clean.length>24){box.querySelector("#sp-error").textContent="Le nom de l’unité doit contenir de 1 à 24 caractères.";return;}
+    const base=(baseUnitInput.value.trim()||"unité");
+    const existing=parseUnitConversions();
+    if(clean.toLowerCase()===base.toLowerCase()||existing.some(c=>c.unit.toLowerCase()===clean.toLowerCase())){box.querySelector("#sp-error").textContent="Cette unité existe déjà pour cet article.";return;}
+    const factorText=prompt("Combien de « "+base+" » contient une unité « "+clean+" » ? (ex. 12)");
+    if(factorText===null)return;
+    const factor=Number(factorText);
+    if(!Number.isFinite(factor)||factor<=0||factor>1e9){box.querySelector("#sp-error").textContent="L’équivalence doit être un nombre supérieur à zéro.";return;}
+    conversionsInput.value=[conversionsInput.value.trim(),clean+"="+factor].filter(Boolean).join(" ; ");
+    refreshPriceUnits();
+    purchaseUnitSelect.value=clean;
+    saleUnitSelect.value=clean;
+    box.querySelector("#sp-error").textContent="";
+  };
+  refreshPriceUnits();
   const familySelect=box.querySelector("#sp-family"), typeSelect=box.querySelector("#sp-type");
   if (cloudMode) {
     const refreshTypes=(preferredId=null)=>{
@@ -363,15 +395,14 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
     };
   }
   box.querySelector("#sp-save").onclick=async()=>{
-    const rawConversions=box.querySelector("#sp-conversions").value;
-    const unitConversions=rawConversions.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{const [unit,factor]=part.split("=");return {unit:String(unit||"").trim(),factorToBase:Number(factor)};});
+    const unitConversions=parseUnitConversions();
     const purchasePrice=Number(box.querySelector("#sp-purchase").value||0), salePrice=Number(box.querySelector("#sp-sale").value||0);
     if(!Number.isFinite(purchasePrice)||purchasePrice<0||!Number.isFinite(salePrice)||salePrice<0){box.querySelector("#sp-error").textContent="Les prix HT doivent être des nombres positifs ou nuls.";return;}
     const selectedType=cloudMode?types.find(t=>t.id===typeSelect.value):null;
     if(cloudMode&&!selectedType){box.querySelector("#sp-error").textContent="Sélectionnez un type d’article.";return;}
-    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:cloudMode?(selectedType.nature==="service"?"service":selectedType.legacy_kind):box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions,purchasePriceHT:purchasePrice,salePriceHT:salePrice};
+    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:cloudMode?(selectedType.nature==="service"?"service":selectedType.legacy_kind):box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions,purchasePriceHT:purchasePrice,salePriceHT:salePrice,purchasePriceUnit:purchaseUnitSelect.value,salePriceUnit:saleUnitSelect.value};
     try {
-      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,product_type_id:selectedType.id,family_id:familySelect.value,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),purchase_price_ht:purchasePrice,sale_price_ht:salePrice,category:families.find(f=>f.id===familySelect.value)?.name||""});
+      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,product_type_id:selectedType.id,family_id:familySelect.value,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),purchase_price_ht:purchasePrice,sale_price_ht:salePrice,purchase_price_unit:input.purchasePriceUnit,sale_price_unit:input.salePriceUnit,category:families.find(f=>f.id===familySelect.value)?.name||""});
       else { const result=addProduct(store,input); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist(); }
       modal.close();viewStock(false,companyRole);toast("Article créé.");
     } catch(error) { box.querySelector("#sp-error").textContent=error?.message || "Création impossible."; }

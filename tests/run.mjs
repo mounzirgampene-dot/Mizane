@@ -15,7 +15,8 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
 
-const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_server_engine.sql", import.meta.url), "utf8");
+const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");
+const stockIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123090112_stock_foreign_key_indexes.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
 const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
@@ -1176,6 +1177,21 @@ test("stock cloud : tables dédiées et cloisonnement company_id", () => {
   assert.match(stockServerMigration, /private\.is_active_company_member\(company_id\)/);
   assert.match(stockServerMigration, /unique\(company_id,operation_uid\)/);
   assert.match(stockServerMigration, /request_hash text not null/);
+});
+test("stock cloud : wrappers invoker résolvent les fonctions privées et les clés étrangères sont indexées", () => {
+  assert.match(stockServerMigration, /grant usage on schema private to authenticated/i);
+  assert.match(stockServerMigration, /as \$\$ select private\.stock_read_state_impl/);
+  for (const index of [
+    "stock_audit_logs_actor_user_id_idx","stock_audit_logs_company_id_idx",
+    "stock_balances_company_warehouse_idx","stock_document_lines_company_destination_warehouse_idx",
+    "stock_document_lines_company_product_idx","stock_document_lines_company_warehouse_idx",
+    "stock_documents_company_reversed_by_idx","stock_documents_created_by_idx",
+    "stock_movements_company_line_idx","stock_movements_company_warehouse_idx",
+    "stock_reservations_company_warehouse_idx","stock_reservations_created_by_idx",
+    "stock_settings_updated_by_idx","stock_valuation_allocations_company_layer_idx",
+    "stock_valuation_allocations_company_movement_idx","stock_valuation_layers_company_source_movement_idx",
+    "stock_valuation_layers_company_warehouse_idx"
+  ]) assert.match(stockIndexesMigration, new RegExp("create index if not exists " + index));
 });
 test("stock cloud : écritures serveur réservées aux rôles admin et accountant", () => {
   assert.match(stockServerMigration, /m\.role in \('admin','accountant'\)/);

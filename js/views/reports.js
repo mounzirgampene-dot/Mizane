@@ -33,7 +33,7 @@ export function viewBalance(period = null) {
   const charts = renderHorizontalBars("Comptes les plus mouvementés",chartRows,[{key:"debit",label:"Débit"},{key:"credit",label:"Crédit"}],money);
   $app.innerHTML = `
     <h1>Balance générale</h1>
-    ${periodControls("balance",exerciceStart,exerciceEnd)}
+    ${periodControls("balance",exerciceStart,exerciceEnd,period?.compare !== false)}
     ${chartModeControls("balance")}
     ${comparison}
     <div id="balance-table-view"><div class="card table-wrap">${table}
@@ -101,7 +101,7 @@ export function viewIncome(period = null) {
   const incomeCharts = renderHorizontalBars("Répartition des charges et des produits",incomeRows,[{key:"charges",label:"Charges"},{key:"produits",label:"Produits"}],money);
   $app.innerHTML = `
     <h1>Compte de résultat</h1>
-    ${periodControls("income",exerciceStart,exerciceEnd)}
+    ${periodControls("income",exerciceStart,exerciceEnd,period?.compare !== false)}
     ${chartModeControls("income")}
     ${comparison}
     <div id="income-table-view">
@@ -179,7 +179,7 @@ export function viewSheet(period = null) {
     + renderHorizontalBars("Composition du passif",liabilityRows,[{key:"amount",label:"Passif"}],money);
   $app.innerHTML = `
     <h1>Bilan</h1>
-    ${periodControls("sheet",exerciceStart,exerciceEnd)}
+    ${periodControls("sheet",exerciceStart,exerciceEnd,period?.compare !== false)}
     ${chartModeControls("sheet")}
     ${comparison}
     <div id="sheet-table-view">

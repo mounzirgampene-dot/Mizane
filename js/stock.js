@@ -302,6 +302,17 @@ function productDialog(cloudMode = false, companyRole = null) {
   openProductDialog(null, false, companyRole);
 }
 
+const STOCK_BASE_UNITS = [
+  {group:"Unités générales",units:[["unité","Unité"],["pièce","Pièce"],["paire","Paire"],["douzaine","Douzaine"]]},
+  {group:"Masse",units:[["kg","Kilogramme (kg)"],["g","Gramme (g)"],["t","Tonne (t)"]]},
+  {group:"Volume",units:[["L","Litre (L)"],["mL","Millilitre (mL)"],["m³","Mètre cube (m³)"]]},
+  {group:"Longueur et surface",units:[["m","Mètre (m)"],["cm","Centimètre (cm)"],["m²","Mètre carré (m²)"]]},
+  {group:"Conditionnement",units:[["carton","Carton"],["paquet","Paquet"],["sac","Sac"],["boîte","Boîte"],["rouleau","Rouleau"],["palette","Palette"]]},
+];
+const STOCK_BASE_UNIT_OPTIONS = STOCK_BASE_UNITS.map(group =>
+  `<optgroup label="${esc(group.group)}">${group.units.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join("")}</optgroup>`
+).join("");
+
 function openProductDialog(catalogData, cloudMode, companyRole) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   const families=catalogData?.families || [];
@@ -315,13 +326,14 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
     <div><label>Type d’article</label><div class="row"><select id="sp-type">${defaultType?typeOptions(defaultType.family_id):""}</select><button type="button" class="secondary" id="sp-add-type">+</button></div></div>` : `<div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>`}
     <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-purchase-unit">Unitaire</label><select id="sp-purchase-unit"></select></div>
     <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-sale-unit">Unitaire</label><select id="sp-sale-unit"></select></div>
-    <div><label>Unité de base</label><input id="sp-unit" value="unité" maxlength="24"></div>
+    <div><label>Unité de base</label><select id="sp-unit">${STOCK_BASE_UNIT_OPTIONS}<option value="__custom__">Autre unité personnalisée…</option></select></div>
     <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
-    <div><label>Conversions d’unités (unité=équivalence)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"><button type="button" class="secondary" id="sp-custom-units">Personnaliser les unités</button></div>
-  </div><p class="muted">Les prix sont saisis hors taxes. La TVA sera déterminée séparément selon le paramétrage fiscal. Les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+    <div><label>Conversions d’unités (unité=équivalence)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"><button type="button" class="secondary" id="sp-custom-units">Ajouter une unité d’achat/vente</button></div>
+  </div><p class="muted">Choisissez l’unité de base parmi les unités courantes. Les unités d’achat et de vente proposent l’unité de base et les conversions ajoutées ci-dessus. Exemple : carton=12 signifie qu’un carton contient 12 unités de base. Les prix sont saisis hors taxes ; les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
   const baseUnitInput=box.querySelector("#sp-unit");
   const conversionsInput=box.querySelector("#sp-conversions");
+  baseUnitInput.value="unité";
   const purchaseUnitSelect=box.querySelector("#sp-purchase-unit");
   const saleUnitSelect=box.querySelector("#sp-sale-unit");
   const parseUnitConversions=()=>conversionsInput.value.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{
@@ -338,10 +350,19 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
       select.value=units.some(unit=>unit.toLowerCase()===previous.toLowerCase())?units.find(unit=>unit.toLowerCase()===previous.toLowerCase()):base;
     }
   };
-  baseUnitInput.addEventListener("input",refreshPriceUnits);
+  baseUnitInput.addEventListener("change",()=>{
+    if(baseUnitInput.value==="__custom__"){
+      const custom=prompt("Nom de l’unité de base personnalisée :");
+      const clean=String(custom||"").trim();
+      if(!clean||clean.length>24){baseUnitInput.value="unité";box.querySelector("#sp-error").textContent="Le nom de l’unité doit contenir de 1 à 24 caractères.";return;}
+      const option=document.createElement("option");option.value=clean;option.textContent=clean;
+      baseUnitInput.insertBefore(option,baseUnitInput.lastElementChild);baseUnitInput.value=clean;
+    }
+    refreshPriceUnits();
+  });
   conversionsInput.addEventListener("input",refreshPriceUnits);
   box.querySelector("#sp-custom-units").onclick=()=>{
-    const unit=prompt("Nom de l’unité personnalisée (ex. carton, palette, douzaine) :");
+    const unit=prompt("Nom de l’unité d’achat/vente à ajouter (ex. carton, palette, douzaine) :");
     if(unit===null)return;
     const clean=unit.trim();
     if(!clean||clean.length>24){box.querySelector("#sp-error").textContent="Le nom de l’unité doit contenir de 1 à 24 caractères.";return;}

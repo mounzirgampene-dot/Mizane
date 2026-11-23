@@ -575,6 +575,7 @@ as $$
 declare v_actor uuid; v_doc public.stock_documents%rowtype; v_lines jsonb; v_type text; v_result jsonb; v_new_id uuid;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
+  raise exception 'Contrepassation suspendue : le recalcul exact des couches de valorisation doit être validé avant activation.' using errcode='0A000';
   select id into v_new_id from public.stock_documents where company_id=p_company_id and operation_uid=p_operation_uid;
   if found then return jsonb_build_object('ok',true,'duplicate',true,'reversal_document_id',v_new_id); end if;
   if length(btrim(coalesce(p_reason,'')))<5 or length(btrim(p_reason))>500 then raise exception 'Motif de contrepassation obligatoire (5 à 500 caractères).' using errcode='22023'; end if;

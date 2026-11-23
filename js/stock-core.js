@@ -75,7 +75,7 @@ export function postStockMovement(store, input) {
   if (product.type === "service") return { ok: false, error: "Un service ne peut pas faire l'objet d'un mouvement physique." };
   const quantity = round(Number(input.quantity));
   const movementDate = String(input.date || new Date().toISOString().slice(0,10));
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(movementDate) || Number.isNaN(Date.parse(movementDate + "T00:00:00Z")) || new Date(movementDate + "T00:00:00Z").toISOString().slice(0,10) !== movementDate) return { ok: false, error: "Date de mouvement invalide." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate) || Number.isNaN(Date.parse(movementDate + "T00:00:00Z")) || new Date(movementDate + "T00:00:00Z").toISOString().slice(0,10) !== movementDate) return { ok: false, error: "Date de mouvement invalide." };
   if (!(quantity > 0) || !Number.isFinite(quantity)) return { ok: false, error: "Quantité invalide." };
   const warehouse = stock.warehouses.find(w => w.id === input.warehouseId && w.active);
   if (!warehouse) return { ok: false, error: "Entrepôt source invalide." };

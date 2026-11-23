@@ -13,7 +13,7 @@ import { viewStock } from "./stock.js";
 import { viewPurchases } from "./purchases.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
-import { initNotifications, getUnreadNotificationCount, notifySyncFailure, viewNotifications } from "./notifications.js";
+import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
 
 let currentCompanyRole = null;
 
@@ -227,6 +227,7 @@ window.addEventListener("mizane:cloud-synced", (event) => {
 async function syncWhenActive() {
   if (document.visibilityState !== "visible") return;
   await refreshCompanyRole();
+  try { await refreshUnreadCount(); } catch (error) { console.warn("Actualisation des notifications impossible :", error?.message || error); }
   if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
   renderNav();
   render();

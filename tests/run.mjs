@@ -1494,6 +1494,7 @@ test("achats : fournisseurs, commandes, factures et rapprochement commande/factu
 });
 test("achats : factures multiples rapprochées cumulativement par article et entrepôt", () => {
   assert.match(purchasesUiSource,/function purchaseLineKey\(line\)/);
+  assert.match(purchasesUiSource,/doc\.type === "order" && doc\.status !== "cancelled"/);
   assert.match(purchasesUiSource,/function orderLinesFor\(order, line\)/);
   assert.match(purchasesUiSource,/function invoicedQuantity\(orderId, line, exceptInvoiceId = null\)/);
   assert.match(purchasesUiSource,/cumul des factures dépasse la quantité commandée/);

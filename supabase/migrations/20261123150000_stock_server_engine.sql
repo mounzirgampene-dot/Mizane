@@ -104,7 +104,8 @@ create table public.stock_movements (
   foreign key(company_id,document_id) references public.stock_documents(company_id,id),
   foreign key(company_id,line_id) references public.stock_document_lines(company_id,id),
   foreign key(company_id,product_id) references public.stock_products(company_id,id),
-  foreign key(company_id,warehouse_id) references public.stock_warehouses(company_id,id)
+  foreign key(company_id,warehouse_id) references public.stock_warehouses(company_id,id),
+  unique(company_id,id)
 );
 create index stock_movements_balance_idx on public.stock_movements(company_id,product_id,warehouse_id,movement_date,id);
 create index stock_movements_document_idx on public.stock_movements(company_id,document_id);
@@ -133,18 +134,21 @@ create table public.stock_valuation_layers (
   created_at timestamptz not null default now(),
   foreign key(company_id,product_id) references public.stock_products(company_id,id),
   foreign key(company_id,warehouse_id) references public.stock_warehouses(company_id,id),
-  foreign key(source_movement_id) references public.stock_movements(id)
+  foreign key(company_id,source_movement_id) references public.stock_movements(company_id,id),
+  unique(company_id,id)
 );
 create index stock_valuation_layers_fifo_idx on public.stock_valuation_layers(company_id,product_id,warehouse_id,created_at,id) where remaining_quantity > 0;
 
 create table public.stock_valuation_allocations (
   id bigint generated always as identity primary key,
   company_id uuid not null,
-  movement_id bigint not null references public.stock_movements(id),
-  layer_id bigint not null references public.stock_valuation_layers(id),
+  movement_id bigint not null,
+  layer_id bigint not null,
   quantity numeric(20,6) not null check (quantity > 0),
   unit_cost numeric(20,6) not null check (unit_cost >= 0),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  foreign key(company_id,movement_id) references public.stock_movements(company_id,id),
+  foreign key(company_id,layer_id) references public.stock_valuation_layers(company_id,id)
 );
 
 create table public.stock_reservations (
@@ -389,6 +393,9 @@ begin
   if v_existing is not null then return jsonb_build_object('ok',true,'duplicate',true,'document_id',(v_existing->>'id')::uuid,'document',v_existing); end if;
   insert into public.stock_settings(company_id) values(p_company_id) on conflict do nothing;
   select * into v_settings from public.stock_settings where company_id=p_company_id for update;
+  if exists(select 1 from public.accounting_periods p where p.company_id=p_company_id and p.status='closed' and p_document_date between p.start_date and p.end_date) then
+    raise exception 'Période comptable clôturée : mouvement de stock interdit à cette date.' using errcode='55000';
+  end if;
   insert into public.stock_documents(company_id,operation_uid,document_type,document_date,reference,note,source_type,source_id,created_by)
   values(p_company_id,p_operation_uid,p_document_type,p_document_date,coalesce(p_reference,''),coalesce(p_note,''),p_source_type,p_source_id,v_actor)
   returning id into v_doc;

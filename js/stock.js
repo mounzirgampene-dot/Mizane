@@ -3,7 +3,7 @@ import { store, $app, saveNow, esc, money, toast } from "./state.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
 import {
   hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
-  updateCloudStockSettings, postCloudStockDocument, reverseCloudStockDocument,
+  updateCloudStockSettings, postCloudStockDocument,
   reserveCloudStock, releaseCloudStockReservation,
 } from "./cloud-sync.js";
 
@@ -211,8 +211,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     </section>
     <section class="card">
       <h2>Derniers mouvements</h2>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${cloudMode && !readOnly ? "<th>Action</th>" : ""}</tr></thead><tbody>
-      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td>${cloudMode && !readOnly ? `<td>${m.documentId && m.documentStatus==="posted" ? `<button class="secondary" data-stock-reverse="${esc(m.documentId)}">Contrepasser</button>` : "—"}</td>` : ""}</tr>`; }).join("") || '<tr><td colspan="7" class="muted">Aucun mouvement enregistré.</td></tr>'}
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${""}</tr></thead><tbody>
+      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td>${""}</tr>`; }).join("") || '<tr><td colspan="7" class="muted">Aucun mouvement enregistré.</td></tr>'}
       </tbody></table></div>
     </section>
     ${cloudMode && stock.reservations.length ? `<section class="card"><h2>Réservations actives</h2><div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${readOnly ? "" : "<th>Action</th>"}</tr></thead><tbody>${stock.reservations.map(r => { const p=stock.products.find(x=>x.id===r.product_id); const w=stock.warehouses.find(x=>x.id===r.warehouse_id); return `<tr><td>${esc(p?.name || "Article")}</td><td>${esc(w?.name || "Entrepôt")}</td><td class="num">${fmtQty(r.quantity)}</td><td>${esc(r.reference || "—")}</td>${readOnly ? "" : `<td><button class="secondary" data-stock-release="${esc(r.id)}">Libérer</button></td>`}</tr>`; }).join("")}</tbody></table></div></section>` : ""}
@@ -233,7 +233,6 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
   document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
-  document.querySelectorAll("[data-stock-reverse]").forEach(button => button.addEventListener("click", () => reverseDocument(button.dataset.stockReverse, companyRole)));
   document.querySelectorAll("[data-stock-release]").forEach(button => button.addEventListener("click", () => releaseReservation(button.dataset.stockRelease, companyRole)));
   document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));
   document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode, companyRole));
@@ -298,16 +297,6 @@ function warehouseDialog(cloudMode = false, companyRole = null) {
 }
 
 
-async function reverseDocument(documentId, companyRole) {
-  if (!globalThis.crypto?.randomUUID) { toast("Navigateur incompatible : opération sécurisée indisponible."); return; }
-  const reason=globalThis.prompt("Motif obligatoire de la contrepassation (5 à 500 caractères) :");
-  if (reason===null) return;
-  try {
-    await reverseCloudStockDocument(documentId,globalThis.crypto.randomUUID(),reason);
-    toast("Document contrepassé.");
-    viewStock(false,companyRole);
-  } catch(error) { toast(error?.message||"Contrepassation impossible.",6000); }
-}
 async function releaseReservation(reservationId, companyRole) {
   try {
     await releaseCloudStockReservation(reservationId);

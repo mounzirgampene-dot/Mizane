@@ -283,6 +283,12 @@ begin
      or (v_type='service' and v_tracking<>'none') then
     raise exception 'Données article invalides.' using errcode='22023';
   end if;
+  if v_id is not null and v_type='service' and exists(select 1 from public.stock_balances b where b.company_id=p_company_id and b.product_id=v_id and (b.quantity<>0 or b.inventory_value<>0)) then
+    raise exception 'Un article ayant un historique de stock ne peut pas être converti en service.' using errcode='55000';
+  end if;
+  if v_id is not null and exists(select 1 from public.stock_movements m join public.stock_products p on p.company_id=m.company_id and p.id=m.product_id where m.company_id=p_company_id and m.product_id=v_id and p.base_unit<>coalesce(nullif(p_product->>'base_unit',''),'unité')) then
+    raise exception 'L’unité de base ne peut pas être changée après le premier mouvement.' using errcode='55000';
+  end if;
   if v_id is null then
     insert into public.stock_products(company_id,sku,name,product_type,category,base_unit,tracking)
     values(p_company_id,v_sku,btrim(p_product->>'name'),v_type,coalesce(p_product->>'category',''),coalesce(nullif(p_product->>'base_unit',''),'unité'),v_tracking)
@@ -515,6 +521,10 @@ declare v_actor uuid; v_existing public.stock_reservations%rowtype; v_balance nu
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
   if p_operation_uid is null or p_quantity is null or p_quantity<=0 then raise exception 'Réservation invalide.' using errcode='22023'; end if;
+  if not exists(select 1 from public.stock_products p where p.company_id=p_company_id and p.id=p_product_id and p.active and p.product_type<>'service')
+     or not exists(select 1 from public.stock_warehouses w where w.company_id=p_company_id and w.id=p_warehouse_id and w.active) then
+    raise exception 'Article ou entrepôt invalide pour la réservation.' using errcode='22023';
+  end if;
   perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   select * into v_existing from public.stock_reservations where company_id=p_company_id and operation_uid=p_operation_uid;
   if found then return jsonb_build_object('ok',true,'duplicate',true,'reservation_id',v_existing.id); end if;
@@ -540,6 +550,7 @@ as $$
 declare v_actor uuid;
 begin
   v_actor:=private.stock_assert_writer(p_company_id);
+  perform pg_advisory_xact_lock(hashtextextended(p_company_id::text||':stock',0));
   update public.stock_reservations set status='released',released_at=now()
   where company_id=p_company_id and id=p_reservation_id and status='active';
   if not found then raise exception 'Réservation active introuvable.' using errcode='P0002'; end if;

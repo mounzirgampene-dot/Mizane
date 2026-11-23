@@ -46,6 +46,15 @@ export function validateProduct(input, products = []) {
   if (!["goods","raw","semi","finished","consumable","service"].includes(input.type)) errors.push("Type d'article invalide.");
   if (!["none","lot","serial"].includes(input.tracking)) errors.push("Traçabilité invalide.");
   if (input.type === "service" && input.tracking !== "none") errors.push("Un service ne peut pas avoir de traçabilité de stock.");
+  const conversions = Array.isArray(input.unitConversions) ? input.unitConversions : [];
+  const seenUnits = new Set([String(input.unit || "unité").trim().toLowerCase()]);
+  for (const conversion of conversions) {
+    const unit = String(conversion?.unit || "").trim().toLowerCase();
+    const factor = Number(conversion?.factorToBase);
+    if (!unit || unit.length > 24 || seenUnits.has(unit) || !(factor > 0) || !Number.isFinite(factor) || factor > 1e9) errors.push("Une conversion d’unité est invalide ou dupliquée.");
+    seenUnits.add(unit);
+  }
+  if (input.tracking === "serial" && conversions.length) errors.push("Les articles suivis par numéro de série utilisent uniquement leur unité de base.");
   return errors;
 }
 export function addProduct(store, input) {
@@ -55,6 +64,7 @@ export function addProduct(store, input) {
   const product = {
     id: stock.nextProductId++, sku: String(input.sku).trim(), name: String(input.name).trim(),
     type: input.type, unit: String(input.unit || "unité").trim(), tracking: input.tracking,
+    unitConversions: (input.unitConversions || []).map(c => ({ unit:String(c.unit).trim(), factorToBase:Number(c.factorToBase) })),
     active: true, createdAt: new Date().toISOString(),
   };
   stock.products.push(product);
@@ -78,7 +88,12 @@ export function postStockMovement(store, input) {
   const product = stock.products.find(p => p.id === Number(input.productId) && p.active);
   if (!product) return { ok: false, error: "Article introuvable ou inactif." };
   if (product.type === "service") return { ok: false, error: "Un service ne peut pas faire l'objet d'un mouvement physique." };
-  const quantity = round(Number(input.quantity));
+  const inputUnit = String(input.unit || product.unit || "unité").trim();
+  const conversion = inputUnit === product.unit ? null : (product.unitConversions || []).find(c => String(c.unit).toLowerCase() === inputUnit.toLowerCase());
+  if (inputUnit !== product.unit && !conversion) return { ok:false, error:`Unité non autorisée : ${inputUnit}.` };
+  const factor = conversion ? Number(conversion.factorToBase) : 1;
+  if (product.tracking === "serial" && (factor !== 1 || inputUnit !== product.unit)) return { ok:false, error:"Les articles suivis par série doivent être saisis dans leur unité de base." };
+  const quantity = round(Number(input.quantity) * factor);
   const movementDate = String(input.date || new Date().toISOString().slice(0,10));
   if (!/^\d{4}-\d{2}-\d{2}$/.test(movementDate) || Number.isNaN(Date.parse(movementDate + "T00:00:00Z")) || new Date(movementDate + "T00:00:00Z").toISOString().slice(0,10) !== movementDate) return { ok: false, error: "Date de mouvement invalide." };
   if (!(quantity > 0) || !Number.isFinite(quantity)) return { ok: false, error: "Quantité invalide." };
@@ -96,8 +111,13 @@ export function postStockMovement(store, input) {
   if (kind !== "receipt" && !stock.settings.allowNegative && before < quantity) {
     return { ok: false, error: `Stock insuffisant : ${before} ${product.unit} disponible(s).` };
   }
-  let unitCost = round(Number(input.unitCost || 0));
+  let unitCost = round(Number(input.unitCost || 0) / factor);
   if (kind === "receipt" && (!(unitCost >= 0) || !Number.isFinite(unitCost))) return { ok: false, error: "Coût unitaire invalide." };
+  const lotCode = String(input.lotCode || "").trim();
+  const serialNumbers = Array.isArray(input.serialNumbers) ? input.serialNumbers.map(v=>String(v).trim()) : [];
+  if (product.tracking === "lot" && (!lotCode || lotCode.length > 80 || serialNumbers.length)) return { ok:false, error:"Un code de lot valide est obligatoire." };
+  if (product.tracking === "serial" && (quantity !== Math.trunc(quantity) || serialNumbers.length !== quantity || serialNumbers.some(v=>!v || v.length>120) || new Set(serialNumbers.map(v=>v.toLowerCase())).size !== serialNumbers.length || lotCode)) return { ok:false, error:"Saisissez un numéro de série unique pour chaque unité entière." };
+  if (product.tracking === "none" && (lotCode || serialNumbers.length)) return { ok:false, error:"Cet article ne prend pas en charge la traçabilité." };
   let valuationCost = round(quantity * unitCost);
   if (kind === "issue" || kind === "transfer") {
     if (stock.settings.valuationMethod === "fifo") {
@@ -118,11 +138,38 @@ export function postStockMovement(store, input) {
       }
     }
   }
+  const stockLotBalances = stock.lotBalances ||= [];
+  const stockSerials = stock.serials ||= [];
+  if (product.tracking === "lot") {
+    const sourceLot = stockLotBalances.find(x=>x.productId===product.id && x.warehouseId===warehouse.id && x.lotCode===lotCode);
+    if ((kind === "issue" || kind === "transfer" || (kind === "adjustment" && input.direction === "decrease")) && (!sourceLot || sourceLot.quantity < quantity)) return {ok:false,error:"Quantité insuffisante pour ce lot dans cet entrepôt."};
+    if (kind === "receipt" || (kind === "adjustment" && input.direction === "increase")) {
+      if (sourceLot) sourceLot.quantity=round(sourceLot.quantity+quantity); else stockLotBalances.push({productId:product.id,warehouseId:warehouse.id,lotCode,quantity});
+    } else {
+      sourceLot.quantity=round(sourceLot.quantity-quantity);
+      if (kind === "transfer") { const destLot=stockLotBalances.find(x=>x.productId===product.id && x.warehouseId===input.destinationWarehouseId && x.lotCode===lotCode); if(destLot) destLot.quantity=round(destLot.quantity+quantity); else stockLotBalances.push({productId:product.id,warehouseId:input.destinationWarehouseId,lotCode,quantity}); }
+    }
+  }
+  if (product.tracking === "serial") {
+    if (kind === "receipt" || (kind === "adjustment" && input.direction === "increase")) {
+      for (const serialNumber of serialNumbers) {
+        const existing=stockSerials.find(x=>x.serialNumber.toLowerCase()===serialNumber.toLowerCase());
+        if (existing && (existing.productId!==product.id || existing.status!=="issued")) return {ok:false,error:`Numéro de série déjà enregistré ou non disponible : ${serialNumber}.`};
+        if (existing) { existing.status="in_stock"; existing.warehouseId=warehouse.id; } else stockSerials.push({productId:product.id,serialNumber,warehouseId:warehouse.id,status:"in_stock"});
+      }
+    } else {
+      for (const serialNumber of serialNumbers) {
+        const existing=stockSerials.find(x=>x.productId===product.id && x.serialNumber.toLowerCase()===serialNumber.toLowerCase() && x.status==="in_stock" && x.warehouseId===warehouse.id);
+        if (!existing) return {ok:false,error:`Numéro de série indisponible dans cet entrepôt : ${serialNumber}.`};
+        if (kind === "transfer") existing.warehouseId=input.destinationWarehouseId; else { existing.status="issued"; existing.warehouseId=null; }
+      }
+    }
+  }
   const movement = {
     id: uuid(), kind, productId: product.id, warehouseId: warehouse.id,
     destinationWarehouseId: kind === "transfer" ? input.destinationWarehouseId : null,
     quantity, quantityDelta: kind === "receipt" ? quantity : -quantity,
-    unitCost, totalCost: valuationCost, reference: String(input.reference || "").trim(),
+    unitCost, totalCost: valuationCost, lotCode:lotCode || null, serialNumbers, inputQuantity:Number(input.quantity), inputUnit, conversionFactor:factor, reference: String(input.reference || "").trim(),
     date: movementDate,
     note: String(input.note || "").trim(), createdAt: new Date().toISOString(),
   };

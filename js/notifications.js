@@ -1,7 +1,7 @@
 // MIZANE — Notifications d'anomalies comptables.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
-import { $app, esc, router } from "./state.js";
+import { $app, esc } from "./state.js";
 
 const COMPANY_KEY = "mizane_active_company_v1";
 let client = null;

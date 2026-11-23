@@ -312,13 +312,21 @@ function openProductDialog(catalogData, cloudMode, companyRole) {
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
     ${cloudMode ? `<div><label>Famille</label><div class="row"><select id="sp-family">${familyOptions}</select><button type="button" class="secondary" id="sp-add-family">+</button></div></div>
     <div><label>Type d’article</label><div class="row"><select id="sp-type">${defaultType?typeOptions(defaultType.family_id):""}</select><button type="button" class="secondary" id="sp-add-type">+</button></div></div>` : `<div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>`}
-    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"></div>
-    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"></div>
+    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-purchase-unit">Unitaire</label><input id="sp-purchase-unit" value="unité" readonly aria-readonly="true"></div>
+    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"><label class="muted" for="sp-sale-unit">Unitaire</label><input id="sp-sale-unit" value="unité" readonly aria-readonly="true"></div>
     <div><label>Unité de base</label><input id="sp-unit" value="unité" maxlength="24"></div>
     <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
     <div><label>Conversions (format : carton=12 ; palette=120)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"></div>
   </div><p class="muted">Les prix sont saisis hors taxes. La TVA sera déterminée séparément selon le paramétrage fiscal. Les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
+  const baseUnitInput=box.querySelector("#sp-unit");
+  const syncPriceUnits=()=>{
+    const unit=baseUnitInput.value.trim()||"unité";
+    box.querySelector("#sp-purchase-unit").value=unit;
+    box.querySelector("#sp-sale-unit").value=unit;
+  };
+  baseUnitInput.addEventListener("input",syncPriceUnits);
+  syncPriceUnits();
   const familySelect=box.querySelector("#sp-family"), typeSelect=box.querySelector("#sp-type");
   if (cloudMode) {
     const refreshTypes=(preferredId=null)=>{

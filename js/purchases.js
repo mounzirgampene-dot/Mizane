@@ -297,8 +297,16 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
           match.stockPostedBase = round(num(match.stockPostedBase) + baseQty);
           if (doc.orderId) {
             const linked = data().documents.find(item => item.id === doc.orderId);
-            const orderLine = linked?.lines.find(item => String(item.productId) === String(match.productId) && String(item.warehouseId) === String(match.warehouseId));
-            if (orderLine) orderLine.receivedBase = round(num(orderLine.receivedBase) + baseQty);
+            const orderLines = orderLinesFor(linked, match);
+            let remainingToAllocate = baseQty;
+            for (const orderLine of orderLines) {
+              if (remainingToAllocate <= 0) break;
+              const capacity = Math.max(0, num(orderLine.baseQuantity) - num(orderLine.receivedBase));
+              const allocated = Math.min(capacity, remainingToAllocate);
+              orderLine.receivedBase = round(num(orderLine.receivedBase) + allocated);
+              remainingToAllocate = round(remainingToAllocate - allocated);
+            }
+            if (remainingToAllocate > 0.0001) throw new Error("La quantité reçue dépasse le reliquat de la commande liée.");
             if (linked) linked.status = linked.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
           }
         } else match.receivedBase = round(num(match.receivedBase) + baseQty);

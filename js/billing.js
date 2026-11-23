@@ -94,8 +94,9 @@ function invoiceStockLines(invoice, stockState, rows = null) {
     if (!line.stockProductId) continue;
     const product=products.get(line.stockProductId);
     if (!product || product.product_type==="service" || !line.stockWarehouseId) throw new Error("Chaque ligne liée au stock doit désigner un article physique et un entrepôt.");
+    if (rows && !rows[index]) continue;
     const row=rows?.[index] || {};
-    const quantity=Number(row.quantity ?? line.quantity);
+    const quantity=Number(rows ? row.quantity : line.quantity);
     if (!(quantity>0) || !Number.isFinite(quantity)) continue;
     const lotCode=String(row.lotCode ?? line.stockLotCode ?? "").trim();
     const serialNumbers=stockSerials(row.serialNumbers ?? line.stockSerialNumbers);

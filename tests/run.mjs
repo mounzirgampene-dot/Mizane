@@ -1221,6 +1221,9 @@ test("stock cloud : interface reliée aux RPC et ne pousse plus le stock dans la
   assert.match(stockUiSource, /postCloudStockDocument\(/);
   assert.match(stockUiSource, /importLegacyStock/);
   assert.match(stockUiSource, /stableStockOperationUid/);
+  assert.match(stockCloudSource, /mizane:legacy-stock-loaded/);
+  const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+  assert.match(appSource, /mizane:legacy-stock-loaded/);
 });
 test("stock cloud : les soldes complets du serveur priment sur les 500 mouvements récents", () => {
   assert.match(stockCoreSource, /Array\.isArray\(stock\.cloudBalances\)/);

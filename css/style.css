@@ -407,3 +407,33 @@ main.workspace.has-work-sidebar {
 @media (max-width: 640px) {
   .account-nav-link { padding: 7px 10px; font-size: .84rem; }
 }
+
+
+/* Graphiques financiers — tableaux conservés en parallèle. */
+.chart-mode { margin: 0 0 12px; }
+.chart-mode button.active { background: var(--teal); color: #fff; }
+.financial-chart { min-width: 0; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 8px 0 14px; color: var(--muted); font-size: .82rem; }
+.chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.chart-rows { display: flex; flex-direction: column; gap: 13px; }
+.chart-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr); gap: 12px; align-items: center; }
+.chart-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .86rem; }
+.chart-row-bars { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.chart-bar-line { display: grid; grid-template-columns: minmax(40px, 1fr) auto; gap: 8px; align-items: center; }
+.chart-bar-track { height: 12px; border-radius: 20px; overflow: hidden; background: var(--bg); }
+.chart-bar-fill { height: 100%; min-width: 0; border-radius: inherit; }
+.chart-bar-value { min-width: 90px; text-align: right; color: var(--muted); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.chart-color-0 { background: #0f766e; }
+.chart-color-1 { background: #3b82f6; }
+.chart-color-2 { background: #d97706; }
+.chart-color-3 { background: #8b5cf6; }
+:root[data-theme="dark"] .chart-color-0 { background: #2dd4bf; }
+:root[data-theme="dark"] .chart-color-1 { background: #60a5fa; }
+:root[data-theme="dark"] .chart-color-2 { background: #fbbf24; }
+:root[data-theme="dark"] .chart-color-3 { background: #a78bfa; }
+@media (max-width: 640px) {
+  .chart-row { grid-template-columns: 1fr; gap: 4px; }
+  .chart-row-label { white-space: normal; }
+  .chart-bar-value { min-width: 76px; font-size: .74rem; }
+}

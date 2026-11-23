@@ -25,6 +25,17 @@ Aucune de ces migrations n'a été exécutée sur Production.
 
 ## Fonctionnalités désormais livrées
 
+### Module Achats
+
+- Navigation dédiée « Achats », réservée aux rôles administrateur et comptable.
+- Référentiel de fournisseurs : raison sociale, code, identifiant fiscal, téléphone, e-mail et adresse.
+- Commandes fournisseurs et factures fournisseurs distinctes, avec numérotation, devise, articles physiques, entrepôt, unité, quantité et coût.
+- Rapprochement commande/facture : même fournisseur, articles compatibles, quantités facturées plafonnées à la commande et prix contrôlés.
+- Réceptions partielles depuis les commandes, reliquats calculés par ligne et traçabilité des lots/numéros de série.
+- Le paramètre `purchase_trigger` pilote l'entrée : à la réception physique ou à la validation de facture fournisseur. Les mouvements sont inscrits dans le moteur de stock serveur, avec origine `supplier_receipt` ou `supplier_invoice`.
+- Les fournisseurs et documents sont conservés dans l'espace de facturation synchronisé par version ; les écritures de stock restent séparées dans le journal transactionnel dédié.
+- Les appels de réception conservent leur `operation_uid` avant envoi et peuvent être rejoués sans doublon après une erreur réseau.
+
 ### Traçabilité par lot
 
 - Un article configuré en suivi par lot exige un code de lot pour chaque entrée, sortie, transfert ou ajustement.

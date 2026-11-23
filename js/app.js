@@ -51,7 +51,7 @@ const NAV = [
 const VIEWS = {
   dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
-  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader()), calculator: viewCalculator,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork,
 };

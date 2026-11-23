@@ -285,8 +285,18 @@ async function openInvoiceDelivery(invoiceId) {
   modal.showModal();
 }
 
-function openEditor(type, source = null) {
+async function openEditor(type, source = null) {
   const billing = getBilling();
+  let stockState = null;
+  const stockEnabled = type === "invoice" && hasActiveStockCompany();
+  if (stockEnabled) {
+    try { stockState = await readCloudStock(); }
+    catch (error) { toast("Impossible de charger les articles du stock : " + error.message, 6000); return; }
+  }
+  if (source?.stockPendingOperation || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
+    toast("Cette facture possède déjà des mouvements de stock. Sa modification est bloquée pour préserver l’historique.");
+    return;
+  }
   const settings = billing.settings;
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
@@ -294,13 +304,16 @@ function openEditor(type, source = null) {
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", advanceRequested: 0, lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = source ? (type === "quote" ? "Modifier le devis" : "Modifier la facture") : (type === "quote" ? "Créer un devis" : "Créer une facture");
-  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
+  const stockProducts = (stockState?.products || []).filter(product => product.active !== false && product.product_type !== "service");
+  const stockWarehouses = (stockState?.warehouses || []).filter(warehouse => warehouse.active !== false);
+  const stockOptions = (selected, items, label) => `<option value="">— ${label} —</option>` + items.map(item => `<option value="${esc(item.id)}" ${String(selected||"")===String(item.id)?"selected":""}>${esc(item.sku ? item.sku+" — "+item.name : item.name)}</option>`).join("");
+  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td>${stockEnabled ? `<td><select data-line-field="stockProductId">${stockOptions(line.stockProductId,stockProducts,"Sans stock")}</select><select data-line-field="stockWarehouseId">${stockOptions(line.stockWarehouseId,stockWarehouses,"Entrepôt")}</select><select data-line-field="stockUnit"><option value="">Unité</option></select><input data-line-field="stockLotCode" value="${esc(line.stockLotCode||"")}" placeholder="Lot (si suivi)"><input data-line-field="stockSerialNumbers" value="${esc(line.stockSerialNumbers||"")}" placeholder="Séries : SN1, SN2"></td>` : ""}<td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>
     <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><input id="bill-country-search" type="search" placeholder="Rechercher un pays ou une devise"><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
     <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].sort().map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
-    <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
+    <h3>Articles et prestations</h3>${stockEnabled ? '<p class="muted">Liez chaque ligne physique à un article et à un entrepôt. Les lignes non liées restent des prestations ou des lignes sans mouvement de stock.</p>' : ""}<div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th>${stockEnabled ? "<th>Liaison stock / traçabilité</th>" : ""}<th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
     <div id="bill-totals" class="calculator-result"></div>
     <div><label>${type === "quote" ? "Avance demandée" : source ? "Avance déjà encaissée" : "Avance reçue à la création"} (${esc(doc.currency)})</label><input id="bill-advance" type="number" min="0" step="0.01" value="${type === "quote" ? number(doc.advanceRequested) : source ? number(doc.paidAmount) : 0}" ${source && type === "invoice" ? "readonly" : ""}><small class="muted">${type === "quote" ? "Montant d'avance à demander au client ; ce n'est pas un paiement encaissé." : source ? "Les paiements déjà enregistrés sont conservés dans leur historique." : "Cette avance sera enregistrée comme un premier paiement de la facture."}</small></div>
     ${type === "invoice" && !source ? '<div><label>Mode d’encaissement de l’avance</label><select id="bill-advance-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option><option value="mobile">Paiement mobile</option><option value="cheque">Chèque</option><option value="card">Carte bancaire</option><option value="other">Autre</option></select></div>' : ""}
@@ -318,6 +331,14 @@ function openEditor(type, source = null) {
     quantity: number(tr.querySelector('[data-line-field="quantity"]').value),
     unitPrice: number(tr.querySelector('[data-line-field="unitPrice"]').value),
     taxRate: number(tr.querySelector('[data-line-field="taxRate"]').value),
+    ...(stockEnabled ? {
+      stockProductId:tr.querySelector('[data-line-field="stockProductId"]').value || null,
+      stockWarehouseId:tr.querySelector('[data-line-field="stockWarehouseId"]').value || null,
+      stockUnit:tr.querySelector('[data-line-field="stockUnit"]').value || "",
+      stockLotCode:tr.querySelector('[data-line-field="stockLotCode"]').value.trim(),
+      stockSerialNumbers:tr.querySelector('[data-line-field="stockSerialNumbers"]').value.trim(),
+      stockFulfilledQuantity:number(doc.lines[Number(tr.dataset.billLine)]?.stockFulfilledQuantity),
+    } : {}),
   }));
   const refreshTotals = () => {
     const lines = readLines();

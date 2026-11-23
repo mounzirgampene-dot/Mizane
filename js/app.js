@@ -13,6 +13,7 @@ import { viewStock } from "./stock.js";
 import { viewPurchases } from "./purchases.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
+import { initNotifications, getUnreadNotificationCount, notifySyncFailure, viewNotifications } from "./notifications.js";
 
 let currentCompanyRole = null;
 
@@ -29,7 +30,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "notifications"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -47,6 +48,7 @@ const NAV = [
   ["tools", "Outils"],
   ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
+  ["notifications", "Notifications"],
   ["settings", "Paramètres"],
 ];
 
@@ -55,7 +57,7 @@ const VIEWS = {
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
   tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
-  history: viewActivityHistory, "my-work": viewMyWork,
+  history: viewActivityHistory, "my-work": viewMyWork, notifications: viewNotifications,
 };
 
 function renderWorkSidebar() {
@@ -74,7 +76,10 @@ function renderWorkSidebar() {
 
 function renderNav() {
   const visibleNav = NAV.filter(([id]) => !isReader() || !readerRestrictedRoutes.includes(id));
-  $nav.innerHTML = visibleNav.map(([id, label]) => `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}</button>`).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
+  $nav.innerHTML = visibleNav.map(([id, label]) => {
+    const count = id === "notifications" ? getUnreadNotificationCount() : 0;
+    return `<button data-route="${id}" class="${id === currentRoute ? "active" : ""}">${label}${count ? ` <span class="nav-notification-count">${count > 99 ? "99+" : count}</span>` : ""}</button>`;
+  }).join("") + '<a class="account-nav-link" href="espace.html" aria-label="Ouvrir le compte utilisateur">Compte</a>';
 }
 
 function render() {
@@ -102,6 +107,14 @@ function go(route) {
 
 router.go = go;
 router.render = render;
+
+async function handleSyncError(error, label) {
+  try { await notifySyncFailure(error); }
+  catch (notificationError) { console.warn("Création de la notification impossible :", notificationError?.message || notificationError); }
+  toast(label + (error?.message || "erreur inconnue"), 5500);
+}
+
+window.addEventListener("mizane:notifications-changed", renderNav);
 
 function applyTheme(t) {
   document.documentElement.dataset.theme = t;
@@ -149,6 +162,7 @@ async function start() {
   renderNav();
   render();
   const historyAccess = await initWorkHistory();
+  await initNotifications();
   if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);
   else if (!historyAccess && ["history", "my-work"].includes(hash)) setRoute("dashboard");
   renderNav();
@@ -159,7 +173,7 @@ async function start() {
   try {
     await syncCloudIfReady();
   } catch (error) {
-    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+    await handleSyncError(error, "Synchronisation cloud automatique impossible : ");
   }
 }
 
@@ -194,7 +208,7 @@ window.addEventListener("storage", async (event) => {
 
 window.addEventListener("mizane:billing-changed", () => {
   void syncCloudIfReady().catch(error => {
-    toast("Synchronisation de la facturation impossible : " + (error?.message || "erreur inconnue"), 5500);
+    void handleSyncError(error, "Synchronisation de la facturation impossible : ");
   });
 });
 
@@ -219,7 +233,7 @@ async function syncWhenActive() {
   try {
     await syncCloudIfReady();
   } catch (error) {
-    toast("Synchronisation cloud automatique impossible : " + (error?.message || "erreur inconnue"), 5000);
+    await handleSyncError(error, "Synchronisation cloud automatique impossible : ");
   }
 }
 window.addEventListener("focus", syncWhenActive);

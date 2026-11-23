@@ -27,7 +27,7 @@ export function stockBalance(stock, productId, warehouseId) {
   return round(stock.movements.reduce((sum, m) => {
     if (m.productId !== productId) return sum;
     if (m.warehouseId === warehouseId) return sum + Number(m.quantityDelta);
-    if (m.destinationWarehouseId === warehouseId) return sum + Number(m.quantityDelta);
+    if (m.destinationWarehouseId === warehouseId) return sum + Number(m.quantity);
     return sum;
   }, 0));
 }
@@ -85,6 +85,8 @@ export function postStockMovement(store, input) {
     if (!destination || destination.id === warehouse.id) return { ok: false, error: "Entrepôt de destination invalide." };
   }
   const before = stockBalance(stock, product.id, warehouse.id);
+  if (kind === "transfer" && before < quantity) return { ok: false, error: "Un transfert ne peut pas créer un stock négatif dans l'entrepôt source." };
+  if (kind === "issue" && stock.settings.valuationMethod === "fifo" && before < quantity) return { ok: false, error: "La méthode FIFO exige des couches de stock disponibles pour valoriser cette sortie." };
   if (kind !== "receipt" && !stock.settings.allowNegative && before < quantity) {
     return { ok: false, error: `Stock insuffisant : ${before} ${product.unit} disponible(s).` };
   }

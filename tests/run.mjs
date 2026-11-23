@@ -16,6 +16,9 @@ let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_server_engine.sql", import.meta.url), "utf8");
+const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
+const stockCoreSource = readFileSync(new URL("../js/stock-core.js", import.meta.url), "utf8");
 
 const invitationFunction = readFileSync(new URL("../supabase/functions/manage-company-members/index.ts", import.meta.url), "utf8");
 test("invitations : création atomique protégée par verrou et vérification admin", () => {
@@ -1196,6 +1199,35 @@ test("stock cloud : contrepassation documentée et paramètres de valorisation v
   assert.match(stockServerMigration, /stock_reverse_document\(/);
   assert.match(stockServerMigration, /La méthode de valorisation ne peut plus être changée après le premier mouvement/);
   assert.doesNotMatch(stockServerMigration, /insert into public\.accounting_entry_lines/);
+});
+
+
+test("stock cloud : RPC publiques invoker et logique privilégiée dans le schéma privé", () => {
+  assert.match(stockServerMigration, /create or replace function public\.stock_read_state\(p_company_id uuid\)[\s\S]*?security invoker/i);
+  assert.match(stockServerMigration, /create or replace function private\.stock_read_state_impl\(p_company_id uuid\)[\s\S]*?security definer/i);
+  assert.doesNotMatch(stockServerMigration, /create or replace function public\.stock_[\s\S]*?security definer/i);
+  assert.match(stockServerMigration, /revoke all on function public\.stock_read_state\(uuid\) from public,anon,authenticated/);
+});
+test("stock cloud : interface reliée aux RPC et ne pousse plus le stock dans la facturation", () => {
+  assert.match(stockCloudSource, /supabase\.rpc\(functionName/);
+  assert.match(stockCloudSource, /export function readCloudStock\(\)/);
+  assert.match(stockCloudSource, /export function postCloudStockDocument/);
+  assert.match(stockCloudSource, /delete billingPayload\.stock/);
+  assert.match(stockUiSource, /readCloudStock\(\)/);
+  assert.match(stockUiSource, /postCloudStockDocument\(/);
+  assert.match(stockUiSource, /importLegacyStock/);
+  assert.match(stockUiSource, /stableStockOperationUid/);
+});
+test("stock cloud : les soldes complets du serveur priment sur les 500 mouvements récents", () => {
+  assert.match(stockCoreSource, /Array\.isArray\(stock\.cloudBalances\)/);
+  assert.match(stockUiSource, /cloudBalances:data\?\.balances/);
+});
+test("stock cloud : import historique non destructif et réservation/libération", () => {
+  assert.match(stockUiSource, /Importer l’ancien stock local/);
+  assert.match(stockUiSource, /reserveCloudStock\(/);
+  assert.match(stockUiSource, /releaseCloudStockReservation\(/);
+  assert.match(stockServerMigration, /status='released'/);
+  assert.match(stockServerMigration, /duplicate',true,'reservation_id'/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

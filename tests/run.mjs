@@ -1492,6 +1492,20 @@ test("achats : fournisseurs, commandes, factures et rapprochement commande/factu
   assert.match(purchasesUiSource,/supplier_receipt/);
   assert.match(purchasesUiSource,/supplier_invoice/);
 });
+test("achats : factures multiples rapprochées cumulativement par article et entrepôt", () => {
+  assert.match(purchasesUiSource,/function purchaseLineKey\(line\)/);
+  assert.match(purchasesUiSource,/function orderLinesFor\(order, line\)/);
+  assert.match(purchasesUiSource,/function invoicedQuantity\(orderId, line, exceptInvoiceId = null\)/);
+  assert.match(purchasesUiSource,/cumul des factures dépasse la quantité commandée/);
+  assert.match(purchasesUiSource,/matches\.some\(item => Math\.abs\(num\(item\.unitCost\) - num\(line\.unitCost\)\) > 0\.0001\)/);
+  assert.match(purchasesUiSource,/requireReceived:stockState\?\.settings\?\.purchase_trigger === "receipt"/);
+});
+test("achats : une facture ultérieure ne perd pas son entrée de stock à cause des réceptions précédentes", () => {
+  assert.match(purchasesUiSource,/const already=num\(line\.stockPostedBase\)/);
+  assert.match(purchasesUiSource,/Chaque facture possède son propre cumul d'entrée/);
+  assert.match(purchasesUiSource,/stockState\?\.settings\?\.purchase_trigger === "supplier_invoice" \? num\(line\.stockPostedBase\)/);
+});
+
 test("achats : réception partielle idempotente et traçabilité des lots/séries", () => {
   assert.match(purchasesUiSource,/operationUid:uuid\(\)/);
   assert.match(purchasesUiSource,/activeReceiptOperations/);

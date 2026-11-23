@@ -1390,6 +1390,8 @@ test("achats : données fournisseurs synchronisées dans la facturation cloud sa
   assert.match(purchasesUiSource,/store\.billing\.purchases/);
   assert.match(purchasesUiSource,/mizane:billing-changed/);
   assert.match(billingSyncSource,/!local\.documents\.length && !local\.purchases\?\.documents\?\.length && !local\.purchases\?\.suppliers\?\.length/);
+  assert.match(billingSyncSource,/Conflit lors de la première synchronisation des Achats/);
+  assert.match(billingSyncSource,/Aucune version n\x27a été écrasée/);
   const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
   assert.match(appSource,/viewPurchases/);
   assert.match(appSource,/readerRestrictedRoutes[\s\S]*purchases/);

@@ -14,6 +14,9 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
+
+const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_server_engine.sql", import.meta.url), "utf8");
+
 const invitationFunction = readFileSync(new URL("../supabase/functions/manage-company-members/index.ts", import.meta.url), "utf8");
 test("invitations : création atomique protégée par verrou et vérification admin", () => {
   assert.match(invitationMigration, /pg_advisory_xact_lock/);
@@ -1157,6 +1160,42 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   assert.match(app, /"stock"\]\s*;/);
   assert.match(cloud, /stock: localStore\.stock \|\| null/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
+});
+
+
+console.log("— Moteur serveur de stock —");
+test("stock cloud : tables dédiées et cloisonnement company_id", () => {
+  for (const table of ["stock_settings","stock_warehouses","stock_products","stock_documents","stock_document_lines","stock_movements","stock_balances","stock_valuation_layers","stock_valuation_allocations","stock_reservations","stock_audit_logs"]) {
+    assert.match(stockServerMigration, new RegExp("create table public\\."+table+"\\b"));
+    assert.match(stockServerMigration, new RegExp("alter table public.%I enable row level security"));
+  }
+  assert.match(stockServerMigration, /private\.is_active_company_member\(company_id\)/);
+  assert.match(stockServerMigration, /unique\(company_id,operation_uid\)/);
+});
+test("stock cloud : écritures serveur réservées aux rôles admin et accountant", () => {
+  assert.match(stockServerMigration, /m\.role in \('admin','accountant'\)/);
+  assert.match(stockServerMigration, /Seul un administrateur peut modifier l’autorisation de stock négatif/);
+  assert.match(stockServerMigration, /grant execute on function public\.stock_post_document[\s\S]*to authenticated/);
+  assert.match(stockServerMigration, /revoke all on public\.%I from public, anon, authenticated/);
+});
+test("stock cloud : journal append-only, idempotence et verrou transactionnel", () => {
+  assert.match(stockServerMigration, /pg_advisory_xact_lock/);
+  assert.match(stockServerMigration, /operation_uid/);
+  assert.match(stockServerMigration, /stock_movements_immutable/);
+  assert.match(stockServerMigration, /stock_allocations_immutable/);
+  assert.match(stockServerMigration, /stock_audit_immutable/);
+});
+test("stock cloud : valorisation FIFO avec allocations explicites et réservations", () => {
+  assert.match(stockServerMigration, /stock_valuation_allocations/);
+  assert.match(stockServerMigration, /remaining_quantity=remaining_quantity-v_take/);
+  assert.match(stockServerMigration, /stock_reserve\(/);
+  assert.match(stockServerMigration, /Cette sortie empiéterait sur des quantités réservées/);
+  assert.match(stockServerMigration, /La méthode FIFO interdit le stock négatif/);
+});
+test("stock cloud : contrepassation documentée et paramètres de valorisation verrouillés", () => {
+  assert.match(stockServerMigration, /stock_reverse_document\(/);
+  assert.match(stockServerMigration, /La méthode de valorisation ne peut plus être changée après le premier mouvement/);
+  assert.doesNotMatch(stockServerMigration, /insert into public\.accounting_entry_lines/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

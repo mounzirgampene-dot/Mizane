@@ -52,7 +52,8 @@ test("inventaire physique : gel intégral, comptage, soumission et ajustement at
   assert.match(stockPhysicalInventoryMigration, /stock_count_finalize_impl/);
   assert.match(stockPhysicalInventoryMigration, /stock\.count_approved_and_posted/);
   assert.match(stockPhysicalInventoryMigration, /v_role<>'admin'/);
-  assert.match(stockInventoryGuardMigration, /mizane\.stock_count_finalize_session/);\n  assert.match(stockInventoryNullFixMigration, /is not distinct from s\.id::text/);
+  assert.match(stockInventoryGuardMigration, /mizane\.stock_count_finalize_session/);
+  assert.match(stockInventoryNullFixMigration, /is not distinct from s\.id::text/);
   assert.match(stockUiSource, /readCloudStockCounts/);
   assert.match(stockUiSource, /data-count-open/);
   assert.match(stockCloudSource, /stock_count_finalize/);

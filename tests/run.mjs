@@ -35,6 +35,7 @@ const stockReservationLockOrderMigration = readFileSync(new URL("../supabase/mig
 const stockReservationIdempotencyMigration = readFileSync(new URL("../supabase/migrations/20261123173000_fix_stock_reservation_idempotency.sql", import.meta.url), "utf8");
 const stockProductCatalogMigration = readFileSync(new URL("../supabase/migrations/20261123164851_stock_product_catalog_and_prices.sql", import.meta.url), "utf8");
 const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123164907_stock_catalog_indexes_and_read_policy.sql", import.meta.url), "utf8");
+const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165000_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -1424,6 +1425,9 @@ test("stock : catalogue extensible par entreprise et prix d’achat/vente HT", (
   assert.match(stockProductCatalogMigration,/nature in \('physical','service'\)/i);
   assert.match(stockCatalogIndexesMigration,/stock_products_company_family_idx/i);
   assert.match(stockCatalogIndexesMigration,/stock_product_types_member_read/i);
+  assert.match(stockCatalogGuardsMigration,/pg_advisory_xact_lock/);
+  assert.match(stockCatalogGuardsMigration,/stock_unit_conversions/);
+  assert.match(stockCatalogGuardsMigration,/Le mode de traçabilité ne peut pas être changé après le premier mouvement/);
   assert.match(stockCloudSource,/stock_read_catalog/);
   assert.match(stockCloudSource,/saveCloudStockFamily/);
   assert.match(stockCloudSource,/saveCloudStockType/);

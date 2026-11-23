@@ -29,6 +29,7 @@ const stockExactReversalMigration = readFileSync(new URL("../supabase/migrations
 const stockReversalLinkFixMigration = readFileSync(new URL("../supabase/migrations/20261123131500_fix_reversal_document_link.sql", import.meta.url), "utf8");
 const stockCumpReversalCleanupMigration = readFileSync(new URL("../supabase/migrations/20261123133000_stock_cump_reversal_allocation_cleanup.sql", import.meta.url), "utf8");
 const stockTrackedReversalMigration = readFileSync(new URL("../supabase/migrations/20261123150000_stock_tracked_valuation_reversals.sql", import.meta.url), "utf8");
+const stockCatalogWriteSerializationMigration = readFileSync(new URL("../supabase/migrations/20261123160000_stock_catalog_write_serialization.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -64,6 +65,14 @@ test("contrepassation stock : restauration exacte CUMP/FIFO et garde-fous", () =
   assert.match(stockCloudSource, /stock_reverse_document/);
 });
  
+test("stock : écritures du catalogue sérialisées avec les mouvements", () => {
+  for (const fn of ["stock_save_product_impl","stock_save_warehouse_impl","stock_update_settings_impl"]) {
+    assert.match(stockCatalogWriteSerializationMigration,new RegExp(fn));
+  }
+  assert.match(stockCatalogWriteSerializationMigration,/pg_advisory_xact_lock/);
+  assert.match(stockCatalogWriteSerializationMigration,/:stock/);
+});
+
 test("contrepassation stock : lots et numéros de série restaurés sans altérer la traçabilité", () => {
   assert.match(stockTrackedReversalMigration, /private\.stock_reverse_document_impl/);
   assert.match(stockTrackedReversalMigration, /stock_serials/);

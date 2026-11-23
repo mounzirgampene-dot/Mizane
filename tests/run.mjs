@@ -1284,7 +1284,7 @@ test("stock cloud : lots, séries et conversions sont protégés côté serveur"
   assert.match(stockTraceabilityMigration,/v_cost:=round\(v_cost\/v_factor,6\)/);
   assert.match(stockTraceabilityMigration,/Le mode de traçabilité ne peut pas être changé après le premier mouvement/);
   assert.match(stockLotFixMigration,/update public\.stock_lot_balances set quantity=quantity\+new\.quantity_delta/);
-  assert.match(stockSerialGuardsMigration,/Les articles suivis par numéro de série ne peuvent pas utiliser des conversions/);
+  assert.match(stockSerialGuardsMigration,/Les articles suivis par numéro de série ne peuvent pas utiliser de conversions/);
   assert.match(stockSerialGuardsMigration,/stock_serials_company_last_movement_idx/);
   assert.match(stockSerialGuardsMigration,/stock_serials_company_warehouse_idx/);
   assert.match(stockSerialNormalizeMigration,/jsonb_agg\(trim\(value\)/);

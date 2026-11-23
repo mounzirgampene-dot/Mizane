@@ -33,7 +33,7 @@ L'import de l'ancien stock local vers le nouveau moteur cloud est explicite, non
 ## État de validation
 
 - PR : [#68 — Gestion de stock](https://github.com/mounzirgampene-dot/Mizane/pull/68), maintenue en brouillon.
-- ESLint et tests Node : réussis sur la dernière révision contrôlée.
+- ESLint et tests Node : réussis sur la dernière révision contrôlée (93 tests, aucun échec).
 - Migrations du moteur et de la traçabilité appliquées à Supabase DEV ; tests fictifs exécutés dans des transactions annulées.
-- La branche possède un aperçu Cloudflare Preview ; aucun déploiement Production n'a été effectué.
+- L'aperçu Cloudflare Preview de la branche a été déployé avec succès ; aucun déploiement Production n'a été effectué.
 - Aucune donnée métier DEV ou Production n'a été conservée ou modifiée par les tests.

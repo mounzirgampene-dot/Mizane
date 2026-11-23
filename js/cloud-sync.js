@@ -182,8 +182,18 @@ async function stockRpc(functionName, args = {}) {
 export function hasActiveStockCompany() {
   return Boolean(localStorage.getItem(ACTIVE_COMPANY_KEY));
 }
-export function readCloudStock() {
-  return stockRpc("stock_read_state");
+export async function readCloudStock() {
+  const [state, catalog] = await Promise.all([
+    stockRpc("stock_read_state"),
+    stockRpc("stock_read_catalog"),
+  ]);
+  return { ...state, ...catalog };
+}
+export function saveCloudStockFamily(family) {
+  return stockRpc("stock_save_family", { p_family: family });
+}
+export function saveCloudStockType(type) {
+  return stockRpc("stock_save_type", { p_type: type });
 }
 export function saveCloudStockProduct(product) {
   return stockRpc("stock_save_product", { p_product: product });

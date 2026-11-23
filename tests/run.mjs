@@ -33,6 +33,8 @@ const stockCatalogWriteSerializationMigration = readFileSync(new URL("../supabas
 const stockReservationInvoiceLinkMigration = readFileSync(new URL("../supabase/migrations/20261123170000_stock_reservation_invoice_link.sql", import.meta.url), "utf8");
 const stockReservationLockOrderMigration = readFileSync(new URL("../supabase/migrations/20261123171500_stock_reservation_lock_order.sql", import.meta.url), "utf8");
 const stockReservationIdempotencyMigration = readFileSync(new URL("../supabase/migrations/20261123173000_fix_stock_reservation_idempotency.sql", import.meta.url), "utf8");
+const stockProductCatalogMigration = readFileSync(new URL("../supabase/migrations/20261123164851_stock_product_catalog_and_prices.sql", import.meta.url), "utf8");
+const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123164907_stock_catalog_indexes_and_read_policy.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
@@ -1410,6 +1412,24 @@ test("stock cloud : interface reliée aux RPC et ne pousse plus le stock dans la
   assert.match(stockCloudSource, /mizane:legacy-stock-loaded/);
   const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
   assert.match(appSource, /mizane:legacy-stock-loaded/);
+});
+test("stock : catalogue extensible par entreprise et prix d’achat/vente HT", () => {
+  assert.match(stockProductCatalogMigration,/create table if not exists public\.stock_product_families/i);
+  assert.match(stockProductCatalogMigration,/create table if not exists public\.stock_product_types/i);
+  assert.match(stockProductCatalogMigration,/purchase_price_ht numeric/i);
+  assert.match(stockProductCatalogMigration,/sale_price_ht numeric/i);
+  assert.match(stockProductCatalogMigration,/stock_save_family_impl/i);
+  assert.match(stockProductCatalogMigration,/stock_save_type_impl/i);
+  assert.match(stockProductCatalogMigration,/stock_save_product_catalog_impl/i);
+  assert.match(stockProductCatalogMigration,/nature in \('physical','service'\)/i);
+  assert.match(stockCatalogIndexesMigration,/stock_products_company_family_idx/i);
+  assert.match(stockCatalogIndexesMigration,/stock_product_types_member_read/i);
+  assert.match(stockCloudSource,/stock_read_catalog/);
+  assert.match(stockCloudSource,/saveCloudStockFamily/);
+  assert.match(stockCloudSource,/saveCloudStockType/);
+  assert.match(stockUiSource,/Prix d’achat HT/);
+  assert.match(stockUiSource,/Prix de vente HT/);
+  assert.match(stockUiSource,/saveCloudStockProduct/);
 });
 test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {
   assert.match(billingUiSource,/stockProductId/);

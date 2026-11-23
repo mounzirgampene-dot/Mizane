@@ -3,6 +3,7 @@ import { store, $app, saveNow, esc, money, toast } from "./state.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
 import {
   hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
+  saveCloudStockFamily, saveCloudStockType,
   updateCloudStockSettings, postCloudStockDocument,
   reserveCloudStock, releaseCloudStockReservation,
   readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
@@ -21,10 +22,19 @@ function mapCloudStock(data) {
   const warehouses = (data?.warehouses || []).map(w => ({ id:w.id, code:w.code, name:w.name, active:w.active !== false }));
   const conversionsByProduct = new Map();
   for (const c of data?.unit_conversions || []) { if (!conversionsByProduct.has(c.product_id)) conversionsByProduct.set(c.product_id,[]); conversionsByProduct.get(c.product_id).push({unit:c.unit_code,factorToBase:Number(c.factor_to_base)}); }
-  const products = (data?.products || []).map(p => ({
-    id:p.id, sku:p.sku, name:p.name, type:p.product_type, unit:p.base_unit || "unité",
-    tracking:p.tracking || "none", unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
-  }));
+  const typeById = new Map((data?.types || []).map(t => [t.id,t]));
+  const familyById = new Map((data?.families || []).map(f => [f.id,f]));
+  const products = (data?.products || []).map(p => {
+    const catalogType = typeById.get(p.product_type_id);
+    return {
+      id:p.id, sku:p.sku, name:p.name, type:catalogType?.nature === "service" ? "service" : p.product_type,
+      typeName:catalogType?.name || kinds[p.product_type] || p.product_type,
+      familyName:familyById.get(p.family_id)?.name || "",
+      purchasePriceHT:Number(p.purchase_price_ht || 0), salePriceHT:Number(p.sale_price_ht || 0),
+      unit:p.base_unit || "unité", tracking:p.tracking || "none",
+      unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
+    };
+  });
   const documents = new Map((data?.documents || []).map(d => [d.id,d]));
   const grouped = new Map();
   for (const m of data?.movements || []) {
@@ -69,6 +79,7 @@ function mapCloudStock(data) {
       accountingMode:settings.accounting_mode || "perpetual",
     },
     warehouses, products, movements, layers,
+    families:data?.families || [], types:data?.types || [],
     cloudBalances:data?.balances || [],
     reservations:data?.reservations || [], documents:data?.documents || [],
     lots:data?.lots || [], serials:data?.serials || [],
@@ -215,8 +226,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     ${showLegacyImport ? '<section class="card"><h2>Reprise de l’ancien stock</h2><p class="muted">Ancien stock local détecté : '+legacyStock.products.length+' article(s) et '+(legacyStock.movements||[]).length+' mouvement(s). Import explicite, chronologique et idempotent.</p><button id="stock-import-legacy">'+(migrationProgress?.started ? 'Reprendre l’import' : 'Importer l’ancien stock local')+'</button><p class="muted">'+(migrationProgress?.started ? 'Progression : '+(migrationProgress.completed||0)+' mouvement(s).' : 'Aucune donnée locale ne sera supprimée.')+'</p></section>' : ""}
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
-      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${kinds[p.type] || p.type}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td></tr>`).join("") || '<tr><td colspan="7" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Achat HT</th><th class="num">Vente HT</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
+      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)}</td><td class="num">${money(p.salePriceHT||0)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td></tr>`).join("") || '<tr><td colspan="9" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card">
       <h2>Stocks par entrepôt</h2>
@@ -282,27 +293,73 @@ async function changeSettings(changes, cloudMode, companyRole) {
 }
 
 function productDialog(cloudMode = false, companyRole = null) {
+  if (cloudMode) {
+    readCloudStock().then(data => openProductDialog(data, true, companyRole))
+      .catch(error => toast(error?.message || "Lecture du catalogue impossible.",5000));
+    return;
+  }
+  openProductDialog(null, false, companyRole);
+}
+
+function openProductDialog(catalogData, cloudMode, companyRole) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  const families=catalogData?.families || [];
+  const types=catalogData?.types || [];
+  const defaultType=types.find(t=>t.code==="goods") || types[0];
+  const familyOptions=families.map(f=>`<option value="${esc(f.id)}" ${f.id===defaultType?.family_id?"selected":""}>${esc(f.name)}</option>`).join("");
+  const typeOptions=(familyId)=>types.filter(t=>t.family_id===familyId).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
   box.innerHTML=`<h2>Créer un article</h2><div class="grid cols-2">
     <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
-    <div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>
+    ${cloudMode ? `<div><label>Famille</label><div class="row"><select id="sp-family">${familyOptions}</select><button type="button" class="secondary" id="sp-add-family">+</button></div></div>
+    <div><label>Type d’article</label><div class="row"><select id="sp-type">${defaultType?typeOptions(defaultType.family_id):""}</select><button type="button" class="secondary" id="sp-add-type">+</button></div></div>` : `<div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>`}
+    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" value="0"></div>
+    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" value="0"></div>
     <div><label>Unité de base</label><input id="sp-unit" value="unité" maxlength="24"></div>
     <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
     <div><label>Conversions (format : carton=12 ; palette=120)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"></div>
-  </div><p class="muted">Le facteur indique le nombre d’unités de base contenues dans une unité alternative. Les conversions sont verrouillées après le premier mouvement. Les articles suivis par série utilisent leur unité de base.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  </div><p class="muted">Les prix sont saisis hors taxes. La TVA sera déterminée séparément selon le paramétrage fiscal. Les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
   modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
+  const familySelect=box.querySelector("#sp-family"), typeSelect=box.querySelector("#sp-type");
+  if (cloudMode) {
+    const refreshTypes=(preferredId=null)=>{
+      const available=types.filter(t=>t.family_id===familySelect.value&&t.active!==false);
+      typeSelect.innerHTML=available.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+      if(preferredId && available.some(t=>t.id===preferredId)) typeSelect.value=preferredId;
+    };
+    familySelect.onchange=()=>refreshTypes();
+    box.querySelector("#sp-add-family").onclick=async()=>{
+      const name=prompt("Nom de la nouvelle famille :"); if(name===null)return;
+      try { const family=await saveCloudStockFamily({name:name.trim()}); families.push(family);
+        familySelect.insertAdjacentHTML("beforeend",`<option value="${esc(family.id)}">${esc(family.name)}</option>`);
+        familySelect.value=family.id;refreshTypes();toast("Famille créée.");
+      } catch(e){box.querySelector("#sp-error").textContent=e.message||"Création de la famille impossible.";}
+    };
+    box.querySelector("#sp-add-type").onclick=async()=>{
+      if(!familySelect.value){box.querySelector("#sp-error").textContent="Créez ou sélectionnez d’abord une famille.";return;}
+      const name=prompt("Nom du nouveau type d’article :"); if(name===null)return;
+      const natureAnswer=prompt("Nature : saisissez « physique » ou « service ».","physique");
+      if(natureAnswer===null)return;
+      const nature=natureAnswer.trim().toLowerCase()==="service"?"service":"physical";
+      if(!["service","physique","physical"].includes(natureAnswer.trim().toLowerCase())){box.querySelector("#sp-error").textContent="Nature invalide. Saisissez physique ou service.";return;}
+      try { const type=await saveCloudStockType({name:name.trim(),family_id:familySelect.value,nature});types.push(type);refreshTypes(type.id);toast("Type d’article créé.");}
+      catch(e){box.querySelector("#sp-error").textContent=e.message||"Création du type impossible.";}
+    };
+  }
   box.querySelector("#sp-save").onclick=async()=>{
     const rawConversions=box.querySelector("#sp-conversions").value;
     const unitConversions=rawConversions.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{const [unit,factor]=part.split("=");return {unit:String(unit||"").trim(),factorToBase:Number(factor)};});
-    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions};
+    const purchasePrice=Number(box.querySelector("#sp-purchase").value||0), salePrice=Number(box.querySelector("#sp-sale").value||0);
+    if(!Number.isFinite(purchasePrice)||purchasePrice<0||!Number.isFinite(salePrice)||salePrice<0){box.querySelector("#sp-error").textContent="Les prix HT doivent être des nombres positifs ou nuls.";return;}
+    const selectedType=cloudMode?types.find(t=>t.id===typeSelect.value):null;
+    if(cloudMode&&!selectedType){box.querySelector("#sp-error").textContent="Sélectionnez un type d’article.";return;}
+    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:cloudMode?(selectedType.nature==="service"?"service":selectedType.legacy_kind):box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions,purchasePriceHT:purchasePrice,salePriceHT:salePrice};
     try {
-      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),category:""});
+      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,product_type_id:selectedType.id,family_id:familySelect.value,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),purchase_price_ht:purchasePrice,sale_price_ht:salePrice,category:families.find(f=>f.id===familySelect.value)?.name||""});
       else { const result=addProduct(store,input); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist(); }
       modal.close();viewStock(false,companyRole);toast("Article créé.");
     } catch(error) { box.querySelector("#sp-error").textContent=error?.message || "Création impossible."; }
   };
 }
-
 function warehouseCode(name) {
   const base=String(name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,32) || "MAGASIN";
   return base + "-" + (globalThis.crypto?.randomUUID?.().slice(0,6).toUpperCase() || String(Date.now()).slice(-6));

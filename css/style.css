@@ -453,3 +453,50 @@ main.workspace.has-work-sidebar {
   .report-period-controls .period-compare { grid-column: 1 / -1; }
   .report-period-controls .nogrow { grid-column: 1 / -1; }
 }
+
+
+/* Notifications comptables */
+.nav-notification-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+.notification-heading { align-items: center; justify-content: space-between; gap: 12px; }
+.notification-heading p { margin: -6px 0 10px; }
+.notification-card {
+  padding: 14px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.notification-card:last-child { border-bottom: 0; }
+.notification-card.is-unread { border-left: 3px solid var(--teal); padding-left: 12px; }
+.notification-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.notification-card p { margin: 8px 0; line-height: 1.5; }
+.notification-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: .75rem;
+}
+.notification-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+@media (max-width: 560px) {
+  .notification-card-head { flex-direction: column; gap: 6px; }
+  .notification-status { align-self: flex-start; }
+  .notification-heading { align-items: flex-start; }
+}

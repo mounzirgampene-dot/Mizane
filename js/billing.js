@@ -308,6 +308,35 @@ async function retryInvoiceStock(invoice) {
   return submitInvoiceStockOperation(invoice,invoice.stockPendingOperation);
 }
 
+let pendingStockRetryPromise = null;
+async function retryPendingInvoiceStockOperations() {
+  if (pendingStockRetryPromise) return pendingStockRetryPromise;
+  const billing = getBilling();
+  const mapping = billing.settings.accountingAccounts || {};
+  const accounts = [...planAccounts, ...(store.settings.customAccounts || [])];
+  const hasInventoryAccount = accounts.some(account => String(account.code) === String(mapping.inventory || "") && account.type === "asset");
+  const hasCogsAccount = accounts.some(account => String(account.code) === String(mapping.cogs || "") && account.type === "expense");
+  const pending = billing.documents.filter(invoice => invoice.type === "invoice" && invoice.stockPendingOperation);
+  if (!pending.length || !hasInventoryAccount || !hasCogsAccount) return {attempted:0,succeeded:0,skipped:true};
+  pendingStockRetryPromise = (async () => {
+    let succeeded = 0;
+    const failures = [];
+    for (const invoice of pending) {
+      const result = await retryInvoiceStock(invoice);
+      if (result.ok) succeeded += 1;
+      else failures.push(invoice.number + " : " + (result.error?.message || "erreur inconnue"));
+    }
+    if (succeeded) {
+      renderList();
+      toast(succeeded + " opération(s) de stock en attente reprise(s) automatiquement.");
+    }
+    if (failures.length) toast("Certaines opérations de stock restent en attente : " + failures.join(" ; "), 7000);
+    return {attempted:pending.length,succeeded,failures};
+  })();
+  try { return await pendingStockRetryPromise; }
+  finally { pendingStockRetryPromise = null; }
+}
+
 const nextNumber = (kind, settings) => {
   const key = kind === "quote" ? "nextQuote" : "nextInvoice";
   const value = settings[key]++;
@@ -1076,13 +1105,14 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveBilling();
     document.getElementById("modal").close();
     renderList();
     toast("Paramètres de facturation enregistrés.");
+    void retryPendingInvoiceStockOperations();
   });
   document.getElementById("modal").showModal();
 }
@@ -1090,4 +1120,5 @@ function openSettings() {
 export function viewBilling() {
   getBilling();
   renderList();
+  void retryPendingInvoiceStockOperations();
 }

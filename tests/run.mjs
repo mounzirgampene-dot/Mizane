@@ -12,6 +12,7 @@ import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
+import { postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 
@@ -1696,3 +1697,38 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);
+
+test("facturation : publication atomique des écritures vente et règlements", () => {
+  const store = newStore();
+  store.settings.customAccounts = [
+    {code:"411",label:"Clients",type:"asset"},
+    {code:"701",label:"Ventes",type:"income"},
+    {code:"512",label:"Banque",type:"asset"},
+  ];
+  store.settings.closedPeriods = [{start:"2026-11-01",end:"2026-11-30"}];
+  const makeEntry = (date, reference) => ({
+    date, journal:"VTE", reference,
+    lines:[
+      {account:"411",label:"Client",debit:100,credit:0},
+      {account:"701",label:"Vente",debit:0,credit:100},
+    ],
+  });
+  const initialNextId = store.nextId;
+  const failed = postBillingJournalEntriesAtomically(store, [
+    makeEntry("2026-10-31","FACTURE TEST"),
+    makeEntry("2026-11-15","REGLEMENT TEST #1"),
+  ]);
+  assert.equal(failed.ok,false);
+  assert.equal(failed.created,0);
+  assert.equal(store.entries.length,0);
+  assert.equal(store.nextId,initialNextId);
+  store.settings.closedPeriods = [];
+  const success = postBillingJournalEntriesAtomically(store, [
+    makeEntry("2026-10-31","FACTURE TEST"),
+    makeEntry("2026-11-15","REGLEMENT TEST #1"),
+  ]);
+  assert.equal(success.ok,true);
+  assert.equal(success.created,2);
+  assert.equal(store.entries.length,2);
+  assert.equal(store.nextId,initialNextId+2);
+});

@@ -3,7 +3,7 @@
 // des écritures comptables selon les comptes configurés par l'entreprise.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
-import { postEntry, reverseEntry } from "./accounting.js";
+import { reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";

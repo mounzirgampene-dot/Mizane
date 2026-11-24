@@ -1797,7 +1797,7 @@ test("facturation : avoir partiel réduit le solde client et le remboursement es
   const refundProposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping);
   assert.equal(refundProposal.ok,true,refundProposal.errors?.join(" "));
   assert.deepEqual(refundProposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["411",80,0],["512",0,80]]);
-  assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,{...refund,id:2,amount:121},mapping).ok,true,"la limite cumulée de remboursement est contrôlée par le workflow métier");
+  assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,{...refund,id:2,amount:121},mapping).ok,false,"un remboursement supérieur à la valeur de l’avoir est refusé");
   assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping).ok,true);
   assert.match(billingUiSource,/function openPartialCreditNote/);
   assert.match(billingUiSource,/function openCreditNoteRefund/);

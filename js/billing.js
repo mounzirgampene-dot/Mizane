@@ -89,6 +89,7 @@ function issueFullCreditNote(invoiceId) {
   const billing = getBilling();
   const invoice = billing.documents.find(doc => doc.type === "invoice" && Number(doc.id) === Number(invoiceId));
   if (!canIssueFullCreditNote(invoice)) return toast("Avoir impossible : vérifiez les règlements, les mouvements de stock et la comptabilisation de la facture.", 6000);
+  if (!window.confirm("Confirmer l’émission d’un avoir TOTAL de " + fmt(invoice.totals?.ttc || totals(invoice.lines || []).ttc, invoice.currency, store.settings.locale) + " pour la facture " + invoice.number + " ? Cette opération comptabilisera l’avoir et clôturera la facture d’origine.")) return;
   const date = today();
   const numberValue = Number(billing.settings.nextCreditNote) || 1;
   billing.settings.nextCreditNote = numberValue + 1;

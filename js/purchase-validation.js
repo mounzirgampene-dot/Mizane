@@ -15,7 +15,7 @@ export function findDuplicateSupplierInvoice(documents, supplierId, supplierRefe
 export function validateSupplierInvoiceMetadata(input = {}) {
   const errors = [];
   if (!String(input.reference || "").trim()) errors.push("La référence de la facture fournisseur est obligatoire.");
-  const match = String(input.date || "").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const match = String(input.date || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) errors.push("La date de la facture fournisseur est invalide.");
   else {
     const parsed = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));

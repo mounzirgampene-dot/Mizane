@@ -13,6 +13,7 @@ import { periodControls, previousYearRange, comparisonTable } from "../js/report
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
+import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1571,6 +1572,40 @@ test("stock cloud : les sorties de vente consomment les réservations automatiqu
   assert.match(stockReservationFulfillmentMigration,/stock\.reservation_fulfilled/);
   assert.match(stockReservationFulfillmentMigration,/consumed_quantity/);
   assert.match(stockReservationFulfillmentMigration,/remaining_quantity/);
+});
+
+test("achats : affectation de réception validée avant tout mouvement serveur", () => {
+  const order = {
+    type:"order", supplierId:7,
+    lines:[
+      {productId:"P1",warehouseId:"W1",baseQuantity:5,receivedBase:3},
+      {productId:"P1",warehouseId:"W1",baseQuantity:4,receivedBase:1},
+    ],
+  };
+  const invoice = {
+    orderId:12,supplierId:7,
+    lines:[{productId:"P1",warehouseId:"W1",baseQuantity:4}],
+  };
+  const valid = planSupplierInvoiceReceiptAllocation(order,invoice,[{line_index:0,quantity:4}]);
+  assert.equal(valid.ok,true);
+  assert.equal(valid.allocations.reduce((sum,item)=>sum+item.quantity,0),4);
+  assert.equal(order.lines[0].receivedBase,3);
+  assert.equal(order.lines[1].receivedBase,1);
+  const invalid = planSupplierInvoiceReceiptAllocation(order,invoice,[{line_index:0,quantity:6}]);
+  assert.equal(invalid.ok,false);
+  assert.match(invalid.error,/Aucun mouvement de stock n'a été envoyé/);
+  assert.equal(invalid.allocations.length,0);
+  assert.equal(order.lines[0].receivedBase,3);
+  assert.equal(order.lines[1].receivedBase,1);
+  const multiLine = planSupplierInvoiceReceiptAllocation(order,{
+    orderId:12,supplierId:7,
+    lines:[
+      {productId:"P1",warehouseId:"W1",baseQuantity:2},
+      {productId:"P1",warehouseId:"W1",baseQuantity:3},
+    ],
+  },[{line_index:0,quantity:2},{line_index:1,quantity:3}]);
+  assert.equal(multiLine.ok,true);
+  assert.equal(multiLine.allocations.reduce((sum,item)=>sum+item.quantity,0),5);
 });
 
 test("achats : fournisseurs, commandes, factures et rapprochement commande/facture", () => {

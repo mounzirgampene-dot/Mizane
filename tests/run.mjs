@@ -1696,7 +1696,6 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
   assert.match(appSource, /notifySyncFailure/);
 });
 
-console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 
 test("facturation : publication atomique des écritures vente et règlements", () => {
   const store = newStore();
@@ -1758,4 +1757,5 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
+console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

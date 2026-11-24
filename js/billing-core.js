@@ -41,9 +41,17 @@ export function validateBillingDocument(document) {
 }
 
 export function calculateOutstandingBase(documents = []) {
+  const creditedByInvoice = new Map();
+  for (const note of documents) {
+    if (note.type !== "credit_note" || note.sourceInvoiceId == null) continue;
+    const id = Number(note.sourceInvoiceId);
+    creditedByInvoice.set(id, billingRound((creditedByInvoice.get(id) || 0) + Number(note.totals?.ttc || 0)));
+  }
   return billingRound(documents.reduce((sum, document) => {
     if (document.type !== "invoice" || ["cancelled","credited"].includes(document.status)) return sum;
-    const outstanding = Math.max(0, Number(document.totals?.ttc || 0) - Number(document.paidAmount || 0));
+    const credited = creditedByInvoice.get(Number(document.id)) || 0;
+    const netReceivable = Math.max(0, billingRound(Number(document.totals?.ttc || 0) - credited));
+    const outstanding = Math.max(0, billingRound(netReceivable - Number(document.paidAmount || 0)));
     const rate = Number(document.exchangeRate);
     return sum + (Number.isFinite(rate) && rate > 0 ? outstanding * rate : 0);
   }, 0));

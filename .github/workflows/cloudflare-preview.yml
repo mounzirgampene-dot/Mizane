@@ -3,7 +3,8 @@ name: Déployer la prévisualisation MIZANE sur Cloudflare Pages
 on:
   push:
     branches:
-      - feat/stock-integrated-dev\n      - feat/lot3-stock-operations-accounting
+      - feat/stock-integrated-dev
+      - feat/lot3-stock-operations-accounting
   workflow_dispatch:
 
 permissions:

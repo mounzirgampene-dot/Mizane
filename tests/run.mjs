@@ -1756,9 +1756,12 @@ test("facturation : avoir total non remboursé produit une écriture de régular
     ["701",100,0],["4457",20,0],["411",0,120]
   ]);
   store.settings.closedPeriods=[{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
-  const closed = buildFullCreditNoteJournalEntry(store,invoice,creditNote,mapping);
+  const closedProposal = buildFullCreditNoteJournalEntry(store,invoice,creditNote,mapping);
+  assert.equal(closedProposal.ok,true);
+  const closed = postBillingJournalEntriesAtomically(store,closedProposal.entries);
   assert.equal(closed.ok,false);
   assert.match(closed.errors.join(" "),/clôturée/i);
+  assert.equal(store.entries.length,0);
   assert.match(billingUiSource,/function canIssueFullCreditNote\(invoice\)/);
   assert.match(billingUiSource,/function issueFullCreditNote\(invoiceId\)/);
   assert.match(billingUiSource,/data-bill-credit-note/);

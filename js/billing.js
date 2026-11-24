@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
@@ -35,6 +35,7 @@ const getBilling = () => {
   if (!Array.isArray(store.billing.documents)) store.billing.documents = [];
   if (!store.billing.settings) store.billing.settings = {};
   store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
+  store.billing.nextRefundId = Math.max(1, Number(store.billing.nextRefundId) || 1);
   for (const doc of store.billing.documents) {
     if (doc.type !== "invoice") continue;
     const migrated = migrateLegacyInvoicePayment(doc, store.billing.nextPaymentId);
@@ -138,6 +139,50 @@ function issueFullCreditNote(invoiceId) {
   toast("Avoir total émis et comptabilisé. La facture d'origine reste conservée dans l'historique.");
 }
 
+function creditNoteTotals(note) {
+  const amount=number(note?.totals?.ttc || totals(note?.lines || []).ttc);
+  const refunded=round((note?.refunds || []).reduce((sum,item)=>sum+number(item.amount),0));
+  return {amount,refunded,refundable:Math.max(0,round(amount-refunded))};
+}
+function creditedQuantity(invoice,index) {
+  return round(getBilling().documents.filter(doc=>doc.type==='credit_note' && Number(doc.sourceInvoiceId)===Number(invoice.id)).reduce((sum,note)=>sum+(note.lines||[]).reduce((subtotal,line,i)=>{const sourceIndex=Number.isInteger(Number(line.sourceLineIndex))?Number(line.sourceLineIndex):i;return subtotal+(sourceIndex===index?number(line.quantity):0);},0),0));
+}
+function canIssuePartialCreditNote(invoice) {
+  if(!invoice || invoice.type!=='invoice' || ['cancelled','credited'].includes(invoice.status)) return false;
+  if(invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending || (invoice.stockDocuments||[]).length || (invoice.stockReservationOperations||[]).some(op=>['pending','done'].includes(op.status)) || (invoice.lines||[]).some(line=>number(line.stockFulfilledQuantity)>0)) return false;
+  const source=(store.entries||[]).find(entry=>entry.reference==='FACTURE '+String(invoice.number||invoice.id));
+  return Boolean(source && !source.reversed && (invoice.lines||[]).some((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)>0.000001));
+}
+function openPartialCreditNote(invoiceId) {
+  const billing=getBilling(),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(invoiceId));
+  if(!canIssuePartialCreditNote(invoice)) return toast('Avoir partiel impossible : vérifiez la comptabilisation et les mouvements de stock.',6000);
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  const rows=(invoice.lines||[]).map((line,index)=>({line,index,remaining:Math.max(0,round(number(line.quantity)-creditedQuantity(invoice,index)))})).filter(row=>row.remaining>0.000001);
+  content.innerHTML='<h2>Avoir partiel — '+esc(invoice.number)+'</h2><p class="muted">Saisissez les quantités à créditer. Les prix et taxes sont repris de la facture. Les quantités déjà créditées sont déduites.</p><div class="table-wrap"><table><thead><tr><th>Désignation</th><th>Facturée</th><th>Déjà créditée</th><th>Reste</th><th>À créditer</th></tr></thead><tbody>'+rows.map(row=>'<tr data-credit-line="'+row.index+'"><td>'+esc(row.line.description)+'</td><td>'+number(row.line.quantity)+'</td><td>'+creditedQuantity(invoice,row.index)+'</td><td>'+row.remaining+'</td><td><input data-credit-quantity type="number" min="0" max="'+row.remaining+'" step="0.0001" value="0"></td></tr>').join('')+'</tbody></table></div><p id="bill-credit-total">Total de l’avoir : '+fmt(0,invoice.currency,store.settings.locale)+'</p><div id="bill-credit-error" class="errors"></div><div class="actions"><button id="bill-credit-submit">Émettre et comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  const calculate=()=>{const lines=[];for(const tr of content.querySelectorAll('[data-credit-line]')){const index=Number(tr.dataset.creditLine),quantity=number(tr.querySelector('[data-credit-quantity]').value);if(quantity>0)lines.push({...invoice.lines[index],sourceLineIndex:index,quantity});}const value=totals(lines).ttc;content.querySelector('#bill-credit-total').textContent='Total de l’avoir : '+fmt(value,invoice.currency,store.settings.locale);return {lines,value};};
+  content.querySelectorAll('[data-credit-quantity]').forEach(input=>input.addEventListener('input',calculate));
+  content.querySelector('#bill-credit-submit').addEventListener('click',()=>{
+    const selection=calculate();if(!selection.lines.length || !(selection.value>0)){content.querySelector('#bill-credit-error').textContent='Sélectionnez au moins une quantité.';return;}
+    for(const line of selection.lines){if(line.quantity>number(invoice.lines[line.sourceLineIndex].quantity)-creditedQuantity(invoice,line.sourceLineIndex)+0.000001){content.querySelector('#bill-credit-error').textContent='Une quantité dépasse le reliquat créditable.';return;}}
+    if(!window.confirm('Confirmer l’avoir de '+fmt(selection.value,invoice.currency,store.settings.locale)+' ?'))return;
+    const sequence=Number(billing.settings.nextCreditNote)||1;
+    const note={id:billing.nextId++,type:'credit_note',number:(billing.settings.prefixCreditNote||'AVO')+'-'+new Date().getFullYear()+'-'+String(sequence).padStart(4,'0'),date:today(),dueDate:'',customerName:invoice.customerName,customerAddress:invoice.customerAddress,customerCountry:invoice.customerCountry,currency:invoice.currency,baseCurrency:invoice.baseCurrency,exchangeRate:invoice.exchangeRate,taxLabel:invoice.taxLabel,paymentTerms:'',notes:'Avoir partiel de la facture '+invoice.number+'.',lines:selection.lines,totals:totals(selection.lines),paidAmount:0,payments:[],refunds:[],sourceInvoiceId:invoice.id,sourceInvoiceNumber:invoice.number,status:'issued',createdAt:new Date().toISOString()};
+    const proposal=buildCreditNoteJournalEntry(store,invoice,note,billing.settings.accountingAccounts||{});if(!proposal.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=proposal.errors[0];return;}
+    const posted=postBillingJournalEntriesAtomically(store,proposal.entries);if(!posted.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=posted.errors[0];return;}
+    billing.settings.nextCreditNote=sequence+1;billing.documents.push(note);
+    const allCredited=(invoice.lines||[]).every((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)<=0.000001);invoice.status=allCredited?'credited':'partially_credited';invoice.creditedAt=new Date().toISOString();
+    saveBilling();modal.close();renderList();toast('Avoir partiel émis et comptabilisé.');
+  });modal.showModal();
+}
+function openCreditNoteRefund(noteId) {
+  const billing=getBilling(),note=billing.documents.find(doc=>doc.type==='credit_note' && Number(doc.id)===Number(noteId)),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!note || !invoice)return;const balance=creditNoteTotals(note).refundable;if(balance<=0.000001)return toast('Cet avoir a déjà été intégralement remboursé.');
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  content.innerHTML='<h2>Remboursement — '+esc(note.number)+'</h2><p>Solde remboursable : <strong>'+fmt(balance,note.currency,store.settings.locale)+'</strong></p><div class="grid cols-2"><div><label>Date</label><input id="bill-refund-date" type="date" value="'+today()+'"></div><div><label>Montant</label><input id="bill-refund-amount" type="number" min="0.01" max="'+balance+'" step="0.01" value="'+balance+'"></div><div><label>Mode</label><select id="bill-refund-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option></select></div><div><label>Taux de change</label><input id="bill-refund-rate" type="number" min="0.00000001" step="0.00000001" value="'+number(invoice.exchangeRate)+'"></div></div><div id="bill-refund-error" class="errors"></div><div class="actions"><button id="bill-refund-submit">Comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  content.querySelector('#bill-refund-submit').addEventListener('click',()=>{const refund={id:billing.nextRefundId++,date:content.querySelector('#bill-refund-date').value,amount:number(content.querySelector('#bill-refund-amount').value),method:content.querySelector('#bill-refund-method').value,exchangeRate:number(content.querySelector('#bill-refund-rate').value),currency:note.currency};if(refund.amount>balance+0.001){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent='Le remboursement dépasse le solde de l’avoir.';return;}const proposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,billing.settings.accountingAccounts||{});if(!proposal.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=proposal.errors[0];return;}const posted=postBillingJournalEntriesAtomically(store,proposal.entries);if(!posted.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=posted.errors[0];return;}note.refunds||=[];note.refunds.push({...refund,createdAt:new Date().toISOString()});saveBilling();modal.close();renderList();toast('Remboursement comptabilisé dans le journal de trésorerie.');});modal.showModal();
+}
 function invoiceHasAccountingEntries(invoice) {
   const number = String(invoice?.number || invoice?.id || "");
   const invoiceReference = "FACTURE " + number;

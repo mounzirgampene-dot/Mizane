@@ -49,6 +49,7 @@ const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const purchaseReceiptSource = readFileSync(new URL("../js/purchase-receipts.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
 const billingUiSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
 const stockCloudSource = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
@@ -1626,12 +1627,13 @@ test("achats : factures multiples rapprochées cumulativement par article et ent
   assert.match(purchasesUiSource,/matches\.some\(item => Math\.abs\(num\(item\.unitCost\) - num\(line\.unitCost\)\) > 0\.0001\)/);
   assert.match(purchasesUiSource,/requireReceived:stockState\?\.settings\?\.purchase_trigger === "receipt"/);
 });
-test("achats : réception d'une facture répartie sur toutes les lignes de commande correspondantes", () => {
-  assert.match(purchasesUiSource,/const orderLines = orderLinesFor\(linked, match\)/);
-  assert.match(purchasesUiSource,/let remainingToAllocate = baseQty/);
-  assert.match(purchasesUiSource,/const capacity = Math\.max\(0, num\(orderLine\.baseQuantity\) - num\(orderLine\.receivedBase\)\)/);
-  assert.match(purchasesUiSource,/remainingToAllocate = round\(remainingToAllocate - allocated\)/);
-  assert.match(purchasesUiSource,/La quantité reçue dépasse le reliquat de la commande liée/);
+test("achats : réception d'une facture répartie avant le mouvement serveur", () => {
+  assert.match(purchasesUiSource,/planSupplierInvoiceReceiptAllocation\(linkedOrder, doc, pending\.lines\)/);
+  assert.match(purchasesUiSource,/allocationPlan\.ok/);
+  assert.match(purchasesUiSource,/allocation\.orderLine\.receivedBase = round/);
+  assert.match(purchasesUiSource,/pending\.attempted = true/);
+  assert.match(purchaseReceiptSource,/const capacity = Math\.max\(0, quantity\(orderLine\.baseQuantity\) - quantity\(orderLine\.receivedBase\) - alreadyPlanned\)/);
+  assert.match(purchaseReceiptSource,/Aucun mouvement de stock n'a été envoyé/);
 });
 
 test("achats : une facture ultérieure ne perd pas son entrée de stock à cause des réceptions précédentes", () => {

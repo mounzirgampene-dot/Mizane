@@ -274,6 +274,28 @@ function openDocument(type) {
     box.closest("dialog").close(); persist(type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée."); renderList();
   });
 }
+function configureSupplierAccounting(doc) {
+  const current = doc.accounting || {};
+  const accounts = current.accounts || {};
+  const { box } = modal('<h2>Imputation comptable — ' + esc(doc.number) + '</h2>' +
+    '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pac-rate" type="number" min="0.000001" step="0.000001" value="' + esc(current.exchangeRate ?? (doc.currency === store.settings.currency ? 1 : "")) + '"></div>' +
+    '<div><label>Taux de taxe fournisseur (%)</label><input id="pac-tax" type="number" min="0" max="100" step="0.01" value="' + esc(current.taxRate ?? 0) + '"></div></div>' +
+    '<label><input id="pac-recoverable" type="checkbox" ' + (current.taxRecoverable !== false ? "checked" : "") + '> Taxe récupérable</label>' +
+    '<label>Compte fournisseur (passif)</label><select id="pac-supplier">' + accountOptions("liability", accounts.supplier) + '</select>' +
+    '<label>Compte de stock (actif, inventaire permanent)</label><select id="pac-stock">' + accountOptions("asset", accounts.stock) + '</select>' +
+    '<label>Compte d’achats (charge, inventaire périodique)</label><select id="pac-purchases">' + accountOptions("expense", accounts.purchases) + '</select>' +
+    '<label>TVA récupérable (actif)</label><select id="pac-vat">' + accountOptions("asset", accounts.inputVat) + '</select>' +
+    '<div id="pac-error" class="errors"></div><div class="actions"><button id="pac-save">Enregistrer l’imputation</button><button class="secondary" data-close>Annuler</button></div>');
+  box.querySelector("#pac-save").addEventListener("click", () => {
+    const exchangeRate = Number(box.querySelector("#pac-rate").value), taxRate = Number(box.querySelector("#pac-tax").value);
+    if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pac-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
+    if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) { box.querySelector("#pac-error").textContent = "Le taux de taxe doit être compris entre 0 et 100 %."; return; }
+    doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pac-recoverable").checked, accounts:{ supplier:box.querySelector("#pac-supplier").value, stock:box.querySelector("#pac-stock").value, purchases:box.querySelector("#pac-purchases").value, inputVat:box.querySelector("#pac-vat").value } };
+    persist("Imputation comptable fournisseur enregistrée.");
+    box.closest("dialog").close();
+    openDetail(doc.id);
+  });
+}
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);
   if (!doc) return;
@@ -299,6 +321,7 @@ function openDetail(id) {
     <div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
   const actions = box.querySelector("#pd-detail-actions");
   const addAction = (label, fn) => { const button = document.createElement("button"); button.textContent = label; button.addEventListener("click", fn); actions.append(button); };
+  if (doc.status === "draft" && doc.type === "invoice") addAction("Configurer l’imputation comptable", () => configureSupplierAccounting(doc));
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));

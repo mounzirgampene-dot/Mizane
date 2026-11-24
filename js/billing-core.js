@@ -42,7 +42,7 @@ export function validateBillingDocument(document) {
 
 export function calculateOutstandingBase(documents = []) {
   return billingRound(documents.reduce((sum, document) => {
-    if (document.type !== "invoice" || document.status === "cancelled") return sum;
+    if (document.type !== "invoice" || ["cancelled","credited"].includes(document.status)) return sum;
     const outstanding = Math.max(0, Number(document.totals?.ttc || 0) - Number(document.paidAmount || 0));
     const rate = Number(document.exchangeRate);
     return sum + (Number.isFinite(rate) && rate > 0 ? outstanding * rate : 0);

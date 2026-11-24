@@ -12,7 +12,7 @@ import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
-import { postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
+import { buildFullCreditNoteJournalEntry, postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
@@ -1733,6 +1733,39 @@ test("facturation : publication atomique des écritures vente et règlements", (
 });
 
 
+test("facturation : avoir total non remboursé produit une écriture de régularisation équilibrée", () => {
+  const store = newStore();
+  store.settings.customAccounts = [
+    {code:"411",label:"Clients",type:"asset"},
+    {code:"701",label:"Ventes",type:"income"},
+    {code:"4457",label:"TVA collectée",type:"liability"},
+  ];
+  store.__accountCache = {};
+  const invoice = {
+    id:10,type:"invoice",number:"FAC-2026-001",date:"2026-11-20",
+    customerName:"Client test",exchangeRate:1,
+    lines:[{description:"Prestation",quantity:1,unitPrice:100,taxRate:20}],
+  };
+  const creditNote = {id:11,type:"credit_note",number:"AVO-2026-0001",date:"2026-11-24"};
+  const mapping = {customer:"411",revenue:"701",tax:"4457"};
+  const proposal = buildFullCreditNoteJournalEntry(store,invoice,creditNote,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.entries.length,1);
+  assert.equal(proposal.entries[0].reference,"AVOIR AVO-2026-0001");
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["701",100,0],["4457",20,0],["411",0,120]
+  ]);
+  store.settings.closedPeriods=[{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
+  const closed = buildFullCreditNoteJournalEntry(store,invoice,creditNote,mapping);
+  assert.equal(closed.ok,false);
+  assert.match(closed.errors.join(" "),/clôturée/i);
+  assert.match(billingUiSource,/function canIssueFullCreditNote\(invoice\)/);
+  assert.match(billingUiSource,/function issueFullCreditNote\(invoiceId\)/);
+  assert.match(billingUiSource,/data-bill-credit-note/);
+  assert.match(billingUiSource,/invoice\.status = "credited"/);
+  assert.match(billingUiSource,/doc\.type === "credit_note" \? "AVOIR"/);
+});
+ 
 test("achats : une même référence de facture fournisseur ne peut pas être saisie deux fois", () => {
   const docs = [
     {id:1,type:"invoice",supplierId:7,reference:"FAC-2026-001",number:"FAF-2026-0001",status:"validated"},

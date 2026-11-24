@@ -1785,6 +1785,8 @@ test("achats : facture fournisseur comptabilisée selon le mode de stock, la tax
   };
   const missingMapping = buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:null},"perpetual");
   assert.equal(missingMapping.ok,false,"une imputation explicite est obligatoire");
+  const wrongCategory = buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,stock:"521"}}},"perpetual");
+  assert.equal(wrongCategory.ok,false,"un compte bancaire ne peut pas servir de compte de stock");
   const perpetual = buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
   assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
   assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[

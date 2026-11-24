@@ -37,6 +37,10 @@ const getBilling = () => {
   store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
   store.billing.nextRefundId = Math.max(1, Number(store.billing.nextRefundId) || 1);
   for (const doc of store.billing.documents) {
+    if (doc.type === "credit_note") {
+      for (const refund of doc.refunds || []) store.billing.nextRefundId = Math.max(store.billing.nextRefundId, number(refund.id) + 1);
+      continue;
+    }
     if (doc.type !== "invoice") continue;
     const migrated = migrateLegacyInvoicePayment(doc, store.billing.nextPaymentId);
     doc.payments = migrated.payments;

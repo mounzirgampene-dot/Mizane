@@ -1739,6 +1739,16 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 });
 
 
+test("facturation : comptes de stock persistés et reprises automatiques idempotentes", () => {
+  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"\]/);
+  assert.match(billingUiSource, /async function retryPendingInvoiceStockOperations\(\)/);
+  assert.match(billingUiSource, /hasInventoryAccount/);
+  assert.match(billingUiSource, /hasCogsAccount/);
+  assert.match(billingUiSource, /void retryPendingInvoiceStockOperations\(\)/);
+  assert.match(billingUiSource, /pendingStockRetryPromise/);
+  assert.match(billingUiSource, /operationUid:operation\.operationUid/);
+});
+
 test("facturation : publication atomique des écritures vente et règlements", () => {
   const store = newStore();
   store.settings.customAccounts = [

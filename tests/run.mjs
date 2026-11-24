@@ -1797,10 +1797,20 @@ test("facturation : avoir partiel réduit le solde client et le remboursement es
   const refundProposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping);
   assert.equal(refundProposal.ok,true,refundProposal.errors?.join(" "));
   assert.deepEqual(refundProposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["411",80,0],["512",0,80]]);
+  const refundPosted=postBillingJournalEntriesAtomically(store,refundProposal.entries);
+  assert.equal(refundPosted.ok,true);
+  assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping).ok,false,"un remboursement déjà comptabilisé ne doit pas être dupliqué");
+  const unpaidInvoice={id:31,type:"invoice",totals:{ttc:240},paidAmount:50,exchangeRate:1};
+  const partialNote={id:32,type:"credit_note",sourceInvoiceId:31,totals:{ttc:40}};
+  assert.equal(calculateOutstandingBase([unpaidInvoice,partialNote]),150,"le solde client diminue du montant de l'avoir");
+
   assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,{...refund,id:2,amount:121},mapping).ok,false,"un remboursement supérieur à la valeur de l’avoir est refusé");
   assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping).ok,true);
   assert.match(billingUiSource,/function openPartialCreditNote/);
   assert.match(billingUiSource,/function openCreditNoteRefund/);
+  assert.match(billingUiSource,/function netInvoiceReceivable/);
+  assert.match(billingUiSource,/alreadyPosted/);
+  assert.match(billingUiSource,/nextRefundId = Math.max/);
   assert.match(billingUiSource,/data-bill-partial-credit/);
   assert.match(billingUiSource,/data-bill-refund-credit/);
 });

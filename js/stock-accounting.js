@@ -18,7 +18,7 @@ function existingReference(targetStore, reference) {
   return (targetStore.entries || []).find(entry => entry.reference === reference);
 }
 
-function requireAccount(accounts, code, type, label) {
+function requireAccount(accounts, code, type, _label) {
   const selected = String(code || "").trim();
   return selected && accounts.some(account => String(account.code) === selected && account.type === type)
     ? selected

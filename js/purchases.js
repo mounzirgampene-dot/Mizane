@@ -5,6 +5,7 @@ import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
+import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "./purchase-accounting.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -128,6 +129,11 @@ function readLines(box) {
     return { productId: item?.id, warehouseId: row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity: round(quantity * factor), baseUnitCost: factor > 0 ? round(unitCost / factor) : 0 };
   });
 }
+function accountOptions(type, selected = "") {
+  const accounts = [...(store.__accountCache ? Object.entries(store.__accountCache).map(([code, account]) => ({ code, ...account })) : []), ...(store.settings.customAccounts || [])];
+  const unique = [...new Map(accounts.filter(account => account.type === type).map(account => [String(account.code), account])).values()];
+  return '<option value="">— Choisir un compte —</option>' + unique.map(account => '<option value="' + esc(account.code) + '" ' + (String(account.code) === String(selected) ? "selected" : "") + '>' + esc(account.code) + " — " + esc(account.label) + '</option>').join("");
+}
 function validateLines(lines) {
   if (!lines.length) return "Ajoutez au moins une ligne d'achat.";
   if (lines.some(line => !line.productId || !line.warehouseId || !(line.quantity > 0) || !(line.factor > 0) || line.unitCost < 0 || !Number.isFinite(line.baseQuantity))) return "Une ligne comporte un article, un entrepôt, une quantité ou un coût invalide.";
@@ -206,6 +212,7 @@ function openDocument(type) {
     ${type === "invoice" ? `<label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select>` : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
+    ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable obligatoire</h3><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset") + '</select></div></div><p class="muted">Le compte de stock ou d’achats sera utilisé selon le mode d’inventaire configuré. Aucun compte n’est choisi automatiquement.</p>' : ""}
     <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
     <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne</button>
     <p id="pd-total" class="calculator-result">Total : 0,00</p><div id="pd-error" class="errors"></div>
@@ -250,7 +257,13 @@ function openDocument(type) {
       const matchingError = validateInvoiceAgainstOrder(order, candidate);
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
+    if (type === "invoice") {
+      const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
+      if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
+      if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) { box.querySelector("#pd-error").textContent = "Le taux de taxe doit être compris entre 0 et 100 %."; return; }
+      doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pd-tax-recoverable").checked, accounts:{ supplier:box.querySelector("#pd-account-supplier").value, stock:box.querySelector("#pd-account-stock").value, purchases:box.querySelector("#pd-account-purchases").value, inputVat:box.querySelector("#pd-account-vat").value } };
+    }
     p.documents.push(doc);
     box.closest("dialog").close(); persist(type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée."); renderList();
   });
@@ -281,9 +294,10 @@ function openDetail(id) {
   const actions = box.querySelector("#pd-detail-actions");
   const addAction = (label, fn) => { const button = document.createElement("button"); button.textContent = label; button.addEventListener("click", fn); actions.append(button); };
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
+  if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
-  if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(() => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); } }));
+  if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
 async function postReceipt(doc, requestedLines, box, sourceType) {
@@ -373,7 +387,21 @@ function openReceipt(doc) {
     postReceipt(doc, lines, box, "supplier_receipt");
   });
 }
+async function postSupplierAccounting(doc, box) {
+  if (doc.accountingPostedAt) return true;
+  const mode = stockState?.settings?.accountingMode || "perpetual";
+  const proposal = buildSupplierInvoiceJournalEntry(store, doc, mode);
+  if (!proposal.ok) { box.querySelector("#pd-detail-error").textContent = proposal.errors.join(" "); return false; }
+  const result = postSupplierInvoiceJournalEntry(store, doc, mode);
+  if (!result.ok) { box.querySelector("#pd-detail-error").textContent = (result.errors || ["Comptabilisation impossible."]).join(" "); return false; }
+  doc.accountingPostedAt = new Date().toISOString();
+  doc.accountingEntryId = (store.entries || []).find(entry => entry.reference === "ACHAT FOURNISSEUR " + String(doc.number || doc.id))?.id || null;
+  persist("Facture fournisseur comptabilisée dans le journal des achats.");
+  box.closest("dialog")?.close(); renderList(); return true;
+}
 async function validateInvoice(doc, box) {
+  const proposal = buildSupplierInvoiceJournalEntry(store, doc, stockState?.settings?.accountingMode || "perpetual");
+  if (!proposal.ok) { box.querySelector("#pd-detail-error").textContent = proposal.errors.join(" "); return; }
   if (doc.orderId) {
     const order=data().documents.find(item=>item.id===doc.orderId);
     const matchingError=validateInvoiceAgainstOrder(order,doc,{requireReceived:stockState?.settings?.purchase_trigger === "receipt"});
@@ -400,7 +428,7 @@ async function validateInvoice(doc, box) {
       if (doc.pendingInvoiceReceipt) return;
     }
   }
-  doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); box.closest("dialog").close(); renderList();
+  doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box);
 }
 
 export async function viewPurchases(readOnly = false, role = null) {

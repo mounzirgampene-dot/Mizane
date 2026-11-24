@@ -4,7 +4,7 @@
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
-import { findDuplicateSupplierInvoice } from "./purchase-validation.js";
+import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -236,6 +236,8 @@ function openDocument(type) {
     if (error) { box.querySelector("#pd-error").textContent = error; return; }
     const supplierReference = box.querySelector("#pd-reference").value.trim();
     if (type === "invoice") {
+      const metadata = validateSupplierInvoiceMetadata({ reference:supplierReference, date:box.querySelector("#pd-date").value || today(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD" });
+      if (!metadata.ok) { box.querySelector("#pd-error").textContent = metadata.errors[0]; return; }
       const duplicate = findDuplicateSupplierInvoice(p.documents, supplierId, supplierReference);
       if (duplicate) {
         box.querySelector("#pd-error").textContent = "Cette référence de facture fournisseur existe déjà pour ce fournisseur (" + duplicate.number + "). Vérifiez qu'il ne s'agit pas d'une double saisie.";

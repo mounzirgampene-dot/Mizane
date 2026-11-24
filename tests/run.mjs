@@ -1947,5 +1947,57 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
+
+test("stock : sorties manuelles et écarts d’inventaire sont comptabilisés selon les comptes configurés", () => {
+  const store=newStore();
+  store.settings.customAccounts=[
+    {code:"31",label:"Stock",type:"asset"},
+    {code:"65",label:"Consommation interne",type:"expense"},
+    {code:"658",label:"Pertes de stock",type:"expense"},
+    {code:"759",label:"Gains d’inventaire",type:"income"},
+    {code:"659",label:"Pertes d’inventaire",type:"expense"},
+  ];
+  const mapping={inventory:"31",stockConsumption:"65",stockLoss:"658",stockAdjustmentGain:"759",stockAdjustmentLoss:"659"};
+  const issue={id:"doc-issue",operation_uid:"uid-issue",document_type:"issue",source_type:"manual_stock",document_date:"2026-11-24",reference:"SORTIE-001"};
+  const issueMoves=[{document_id:"doc-issue",quantity_delta:-2,value_delta:-150,movement_date:"2026-11-24"}];
+  const consumption=buildStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(consumption.ok,true,consumption.errors?.join(" "));
+  assert.deepEqual(consumption.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["65",150,0],["31",0,150]]);
+  const loss=buildStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","damage");
+  assert.equal(loss.ok,true);
+  assert.equal(loss.entries[0].lines[0].account,"658");
+  assert.equal(buildStockOperationJournalEntry(store,issue,issueMoves,{...mapping,stockLoss:"31"},"perpetual","damage").ok,false);
+  const count={id:"doc-count",operation_uid:"uid-count",document_type:"adjustment",source_type:"inventory_count",document_date:"2026-11-24",reference:"INV-001"};
+  const countMoves=[
+    {document_id:"doc-count",quantity_delta:-1,value_delta:-50,movement_date:"2026-11-24"},
+    {document_id:"doc-count",quantity_delta:2,value_delta:20,movement_date:"2026-11-24"},
+  ];
+  const variance=buildStockOperationJournalEntry(store,count,countMoves,mapping,"perpetual");
+  assert.equal(variance.ok,true,variance.errors?.join(" "));
+  assert.deepEqual(variance.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["659",50,0],["31",0,50],["31",20,0],["759",0,20],
+  ]);
+  assert.equal(buildStockOperationJournalEntry(store,count,countMoves,mapping,"periodic").skipped,true);
+  const posted=postStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  const duplicate=postStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(duplicate.ok,true);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(store.entries.length,1);
+});
+
+test("stock : file d’attente comptable synchronisée, motif obligatoire et reprise automatique", () => {
+  assert.match(billingSyncSource,/pendingStockAccountingOperations/);
+  assert.match(billingSyncSource,/stockOperations\.set/);
+  assert.match(stockUiSource,/sm-reason/);
+  assert.match(stockUiSource,/Sélectionnez le motif de la sortie/);
+  assert.match(stockUiSource,/queueStockAccountingOperation/);
+  assert.match(stockUiSource,/retryPendingStockAccountingOperations/);
+  assert.match(billingUiSource,/stockAdjustmentGain/);
+  assert.match(billingUiSource,/stockAdjustmentLoss/);
+  assert.match(billingUiSource,/retryPendingStockAccountingOperations/);
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

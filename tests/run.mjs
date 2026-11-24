@@ -1597,7 +1597,7 @@ test("facturation : réservations explicites liées à la facture, converties et
 
 test("stock : les réceptions conservent la référence et l'origine fournisseur", () => {
   assert.match(stockUiSource,/sm-supplier/);
-  assert.match(stockUiSource,/sourceType:input.kind==="receipt"\?"supplier_receipt"/);
+  assert.match(stockUiSource,/const sourceType=input.kind==="receipt"\?"supplier_receipt"/);
   assert.match(stockUiSource,/Fournisseur : /);
   assert.match(stockUiSource,/Réception fournisseur/);
 });
@@ -1740,7 +1740,7 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 
 
 test("facturation : comptes de stock persistés et reprises automatiques idempotentes", () => {
-  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"\]/);
+  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss"\]/);
   assert.match(billingUiSource, /async function retryPendingInvoiceStockOperations\(\)/);
   assert.match(billingUiSource, /hasInventoryAccount/);
   assert.match(billingUiSource, /hasCogsAccount/);

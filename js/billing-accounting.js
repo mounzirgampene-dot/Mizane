@@ -1,6 +1,6 @@
 // MIZANE — Génération des écritures comptables de facturation.
 // Les propositions sont validées par le moteur comptable avant leur enregistrement.
-import { validateEntry, round2 } from "./accounting.js";
+import { validateEntry, postEntry, round2 } from "./accounting.js";
 import { calculateBillingTotals } from "./billing-core.js";
 
 const DEFAULT_CODES = {
@@ -132,4 +132,32 @@ export function buildBillingJournalEntries(store, invoice, mapping = {}) {
   }
   if (errors.length) return { ok: false, errors: [...new Set(errors)], entries: [] };
   return { ok: true, errors: [], entries };
+}
+
+
+/**
+ * Publie un lot d'écritures de facturation de manière atomique.
+ * Une facture peut produire plusieurs écritures (vente et règlements) ;
+ * aucune ne doit rester enregistrée si l'une d'elles échoue.
+ */
+export function postBillingJournalEntriesAtomically(store, entries) {
+  if (!store || !Array.isArray(entries)) {
+    return { ok: false, errors: ["Lot d'écritures de facturation invalide."], created: 0 };
+  }
+  const staged = {
+    ...store,
+    entries: [...(Array.isArray(store.entries) ? store.entries : [])],
+    nextId: Number(store.nextId) || 1,
+  };
+  let created = 0;
+  for (const entry of entries) {
+    const result = postEntry(staged, entry);
+    if (!result.ok) {
+      return { ok: false, errors: result.errors || ["Écriture comptable refusée."], created: 0 };
+    }
+    created++;
+  }
+  store.entries = staged.entries;
+  store.nextId = staged.nextId;
+  return { ok: true, errors: [], created };
 }

@@ -161,3 +161,54 @@ export function postBillingJournalEntriesAtomically(store, entries) {
   store.nextId = staged.nextId;
   return { ok: true, errors: [], created };
 }
+
+
+/**
+ * Génère l'écriture d'un avoir total non remboursé.
+ * L'avoir est une nouvelle pièce comptable datée dans une période ouverte :
+ * on ne modifie ni ne contre-passe l'écriture d'origine.
+ */
+export function buildFullCreditNoteJournalEntry(store, invoice, creditNote, mapping = {}) {
+  const errors = [];
+  if (!invoice || invoice.type !== "invoice" || !creditNote || creditNote.type !== "credit_note") {
+    return { ok: false, errors: ["Facture ou avoir invalide."], entries: [] };
+  }
+  const accounts = [
+    ...(store.__accountCache ? Object.entries(store.__accountCache).map(([code, value]) => ({ code, ...value })) : []),
+    ...((store.settings && store.settings.customAccounts) || []),
+  ];
+  const uniqueAccounts = [...new Map(accounts.map(account => [String(account.code), account])).values()];
+  const requireAccount = (key, type, label) => {
+    const code = String(mapping[key] || "").trim();
+    if (!code || !accountExists(uniqueAccounts, code, type)) {
+      errors.push("Compte comptable " + label + " non configuré ou incompatible avec le plan.");
+      return "";
+    }
+    return code;
+  };
+  const customer = requireAccount("customer", "asset", "client");
+  const revenue = requireAccount("revenue", "income", "de produits");
+  const total = calculateBillingTotals(invoice.lines || []);
+  const rate = Number(invoice.exchangeRate);
+  if (!(rate > 0) || !Number.isFinite(rate)) errors.push("Taux de conversion de la facture invalide.");
+  const baseTotal = round2(total.ttc * rate);
+  const baseTax = round2(total.tax * rate);
+  const baseRevenue = round2(baseTotal - baseTax);
+  let tax = "";
+  if (baseTax > 0) tax = requireAccount("tax", "liability", "de taxe collectée");
+  if (!(baseTotal > 0)) errors.push("Le total de l'avoir doit être positif.");
+  if (errors.length) return { ok: false, errors: [...new Set(errors)], entries: [] };
+  const reference = "AVOIR " + String(creditNote.number || creditNote.id);
+  if ((store.entries || []).some(entry => entry.reference === reference)) {
+    return { ok: false, errors: ["L'écriture de cet avoir existe déjà."], entries: [] };
+  }
+  const lines = [
+    { account: revenue, label: "Annulation des produits — avoir " + creditNote.number, third: "", debit: baseRevenue, credit: 0 },
+  ];
+  if (baseTax > 0) lines.push({ account: tax, label: "Annulation de la taxe — avoir " + creditNote.number, third: "", debit: baseTax, credit: 0 });
+  lines.push({ account: customer, label: "Avoir client — " + creditNote.number, third: thirdName(store, invoice.customerName), debit: 0, credit: baseTotal });
+  const entry = { date: creditNote.date, journal: "VTE", reference, lines };
+  const validation = validateEntry(store, entry);
+  if (!validation.ok) return { ok: false, errors: validation.errors, entries: [] };
+  return { ok: true, errors: [], entries: [entry] };
+}

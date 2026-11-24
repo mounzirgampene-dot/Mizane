@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feat/resilience-load-hardening
+      - feat/stock-integrated-dev
   pull_request:
     branches:
       - main

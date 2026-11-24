@@ -1792,7 +1792,7 @@ test("facturation : avoir partiel réduit le solde client et le remboursement es
   assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["701",100,0],["4457",20,0],["411",0,120]]);
   const posted=postBillingJournalEntriesAtomically(store,proposal.entries);
   assert.equal(posted.ok,true);
-  assert.equal(calculateOutstandingBase([invoice,note]),120);
+  assert.equal(calculateOutstandingBase([invoice,note]),0,"une facture intégralement payée ne laisse plus de créance après avoir, mais peut créer un crédit client remboursable");
   const refund={id:1,date:"2026-11-24",amount:80,method:"bank",exchangeRate:1};
   const refundProposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping);
   assert.equal(refundProposal.ok,true,refundProposal.errors?.join(" "));

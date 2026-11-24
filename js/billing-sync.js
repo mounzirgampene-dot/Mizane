@@ -20,7 +20,8 @@ const hash = value => {
 };
 function normalizeBilling(value) {
   const billing = value && typeof value === "object" && !Array.isArray(value) ? clone(value) : {};
-  if (!Array.isArray(billing.documents)) billing.documents = [];\n  if (!Array.isArray(billing.pendingStockAccountingOperations)) billing.pendingStockAccountingOperations = [];
+  if (!Array.isArray(billing.documents)) billing.documents = [];
+  if (!Array.isArray(billing.pendingStockAccountingOperations)) billing.pendingStockAccountingOperations = [];
   if (!billing.settings || typeof billing.settings !== "object" || Array.isArray(billing.settings)) billing.settings = {};
   billing.nextId = Math.max(1, Number(billing.nextId) || 1);
   billing.nextPaymentId = Math.max(1, Number(billing.nextPaymentId) || 1);
@@ -121,7 +122,13 @@ function mergeInitialBilling(localValue, remoteValue) {
   if (localHasPurchases && remoteHasPurchases && signature(local.purchases) !== signature(remote.purchases)) {
     throw new Error("Conflit lors de la première synchronisation des Achats : les données locales et cloud diffèrent. Aucune version n'a été écrasée.");
   }
-  const purchases = localHasPurchases ? clone(local.purchases) : clone(remote.purchases);\n  const stockOperations = new Map();\n  for (const operation of [...(remote.pendingStockAccountingOperations || []), ...(local.pendingStockAccountingOperations || [])]) {\n    if (!operation?.operationUid) continue;\n    const previous = stockOperations.get(String(operation.operationUid));\n    if (!previous || operation.status === "posted" || operation.status === "skipped" || (!["posted","skipped"].includes(previous.status) && new Date(operation.updatedAt || operation.createdAt || 0) >= new Date(previous.updatedAt || previous.createdAt || 0))) stockOperations.set(String(operation.operationUid), clone(operation));\n  }
+  const purchases = localHasPurchases ? clone(local.purchases) : clone(remote.purchases);
+  const stockOperations = new Map();
+  for (const operation of [...(remote.pendingStockAccountingOperations || []), ...(local.pendingStockAccountingOperations || [])]) {
+    if (!operation?.operationUid) continue;
+    const previous = stockOperations.get(String(operation.operationUid));
+    if (!previous || operation.status === "posted" || operation.status === "skipped" || (!["posted","skipped"].includes(previous.status) && new Date(operation.updatedAt || operation.createdAt || 0) >= new Date(previous.updatedAt || previous.createdAt || 0))) stockOperations.set(String(operation.operationUid), clone(operation));
+  }
   const settings = { ...clone(remote.settings), ...clone(local.settings) };
   const records = [];
   const byIdentity = new Map();

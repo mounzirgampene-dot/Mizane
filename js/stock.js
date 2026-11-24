@@ -3,7 +3,7 @@ import { store, $app, saveNow, esc, money, toast } from "./state.js";
 import { reverseEntry } from "./accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
 import {
-  hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
+  hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, saveCloudStockProduct, saveCloudStockWarehouse,
   saveCloudStockFamily, saveCloudStockType,
   updateCloudStockSettings, postCloudStockDocument,
   reserveCloudStock, releaseCloudStockReservation,
@@ -190,7 +190,7 @@ export function viewStock(readOnly = false, companyRole = null) {
       if (sequence !== renderSequence) return;
       data.countSessions=countData?.sessions || [];
       renderStock(mapCloudStock(data), readOnly, companyRole, true);
-      void retryPendingStockAccountingOperations(companyRole);
+      void retryPendingStockAccountingOperations(store,{companyRole,readStock:readCloudStock,getRole:getCurrentCompanyRole,save:persist,notify:toast});
     }).catch(error => {
       if (sequence !== renderSequence) return;
       $app.innerHTML = '<section class="card"><h2>Stock cloud indisponible</h2><p class="errors"></p><p class="muted">Aucune modification locale ne sera utilisée comme substitut aux données de l’entreprise.</p><button id="stock-retry">Réessayer</button></section>';
@@ -561,7 +561,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
         const sourceType=input.kind==="receipt"?"supplier_receipt":"manual_stock";
         const result=await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType,sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
-        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});await retryPendingStockAccountingOperations(companyRole);}
+        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation(store,{documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});persist();await retryPendingStockAccountingOperations(companyRole);}
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }
@@ -586,6 +586,6 @@ function inventoryOpenDialog(session,stock,companyRole) {
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   box.querySelector("#sic-save")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-save");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}toast("Comptages enregistrés.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Enregistrement impossible.";btn.disabled=false;}});
   box.querySelector("#sic-submit")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-submit");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}await submitCloudStockCount(session.id);toast("Inventaire soumis pour approbation.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Soumission impossible.";btn.disabled=false;}});
-  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{const operationUid=globalThis.crypto.randomUUID();const result=await finalizeCloudStockCount({sessionId:session.id,operationUid,documentDate:new Date().toISOString().slice(0,10)});if(result?.document_id)queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType:"inventory_count",documentType:"adjustment",reasonCode:"other"});await retryPendingStockAccountingOperations(companyRole);toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
+  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{const operationUid=globalThis.crypto.randomUUID();const result=await finalizeCloudStockCount({sessionId:session.id,operationUid,documentDate:new Date().toISOString().slice(0,10)});if(result?.document_id)queueStockAccountingOperation(store,{documentId:result.document_id,operationUid,sourceType:"inventory_count",documentType:"adjustment",reasonCode:"other"});persist();await retryPendingStockAccountingOperations(companyRole);toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
   box.querySelector("#sic-cancel")?.addEventListener("click",async()=>{if(!confirm("Annuler l’inventaire et libérer l’entrepôt ?"))return;try{await cancelCloudStockCount(session.id);toast("Inventaire annulé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Annulation impossible."; }});
 }

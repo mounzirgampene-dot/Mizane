@@ -26,7 +26,7 @@ export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode 
     if (key === "supplier") return code.startsWith("4") && /fournisseur/.test(label);
     if (key === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
     if (key === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
-    if (key === "inputVat") return /(tva|taxe.*récupérable|impôt.*récupérable)/.test(label);
+    if (key === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
     return true;
   };
   const requireAccount = (key, type, label) => {

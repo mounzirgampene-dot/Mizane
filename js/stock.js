@@ -9,7 +9,8 @@ import {
   reserveCloudStock, releaseCloudStockReservation,
   readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
   submitCloudStockCount, finalizeCloudStockCount, cancelCloudStockCount, reverseCloudStockDocument,
-} from "./cloud-sync.js";\nimport { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
+} from "./cloud-sync.js";
+import { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
@@ -188,7 +189,8 @@ export function viewStock(readOnly = false, companyRole = null) {
     Promise.all([readCloudStock(),readCloudStockCounts()]).then(([data,countData]) => {
       if (sequence !== renderSequence) return;
       data.countSessions=countData?.sessions || [];
-      renderStock(mapCloudStock(data), readOnly, companyRole, true);\n      void retryPendingStockAccountingOperations(companyRole);
+      renderStock(mapCloudStock(data), readOnly, companyRole, true);
+      void retryPendingStockAccountingOperations(companyRole);
     }).catch(error => {
       if (sequence !== renderSequence) return;
       $app.innerHTML = '<section class="card"><h2>Stock cloud indisponible</h2><p class="errors"></p><p class="muted">Aucune modification locale ne sera utilisée comme substitut aux données de l’entreprise.</p><button id="stock-retry">Réessayer</button></section>';
@@ -237,7 +239,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       ${physical.map(p => `<tr><td>${esc(p.sku)} — ${esc(p.name)}</td>${stock.warehouses.map(w => `<td class="num">${fmtQty(stockBalance(stock,p.id,w.id))}</td>`).join("")}</tr>`).join("") || '<tr><td class="muted">Aucun article physique.</td></tr>'}
       </tbody></table></div>
     </section>
-    ${traceabilityHtml}\n    ${cloudMode && !readOnly ? `<section class="card"><h2>Inventaire physique</h2><p class="muted">Le comptage intégral gèle les mouvements de l’entrepôt jusqu’à validation ou annulation.</p><button id="stock-count-start">Démarrer un inventaire</button>${(stock.countSessions||[]).filter(s=>["counting","submitted"].includes(s.status)).map(s=>`<p><strong>${esc(s.reference)}</strong> — ${esc(s.warehouse_name)} — ${s.status==="counting"?"Comptage en cours":"En attente d’approbation"}</p><button class="secondary" data-count-open="${esc(s.id)}">Ouvrir le comptage</button>`).join("")}</section>` : ""}
+    ${traceabilityHtml}
+    ${cloudMode && !readOnly ? `<section class="card"><h2>Inventaire physique</h2><p class="muted">Le comptage intégral gèle les mouvements de l’entrepôt jusqu’à validation ou annulation.</p><button id="stock-count-start">Démarrer un inventaire</button>${(stock.countSessions||[]).filter(s=>["counting","submitted"].includes(s.status)).map(s=>`<p><strong>${esc(s.reference)}</strong> — ${esc(s.warehouse_name)} — ${s.status==="counting"?"Comptage en cours":"En attente d’approbation"}</p><button class="secondary" data-count-open="${esc(s.id)}">Ouvrir le comptage</button>`).join("")}</section>` : ""}
     <section class="card">
       <h2>Derniers mouvements</h2>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th><th>Origine</th>${cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) ? "<th>Action</th>" : ""}</tr></thead><tbody>
@@ -524,7 +527,8 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     <div><label>Opération</label><select id="sm-kind"><option value="receipt">Entrée</option><option value="issue">Sortie</option><option value="transfer">Transfert</option><option value="adjustment" ${cloudMode ? "" : "disabled"}>Ajustement</option></select></div>
     <div><label>Article</label><select id="sm-product">${physical.map(p=>`<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select></div>
     <div><label>Entrepôt source</label><select id="sm-warehouse">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
-    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>\n    <div id="sm-reason-wrap" hidden><label>Motif de la sortie</label><select id="sm-reason"><option value="">— Choisir un motif —</option><option value="internal_consumption">Consommation interne</option><option value="damage">Casse / détérioration</option><option value="loss">Perte</option><option value="theft">Vol</option><option value="expiry">Péremption</option><option value="other">Autre motif</option></select></div>
+    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>
+    <div id="sm-reason-wrap" hidden><label>Motif de la sortie</label><select id="sm-reason"><option value="">— Choisir un motif —</option><option value="internal_consumption">Consommation interne</option><option value="damage">Casse / détérioration</option><option value="loss">Perte</option><option value="theft">Vol</option><option value="expiry">Péremption</option><option value="other">Autre motif</option></select></div>
     <div id="sm-dest-wrap" hidden><label>Entrepôt destination</label><select id="sm-dest">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
     <div><label>Quantité</label><input id="sm-qty" type="number" min="0.0001" step="0.0001"></div>
     <div><label>Unité de saisie</label><select id="sm-unit"></select></div>
@@ -543,7 +547,9 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
   };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
     const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
-    const reasonCode=box.querySelector("#sm-reason").value;\n    if(kind.value==="issue"&&!reasonCode){box.querySelector("#sm-error").textContent="Sélectionnez le motif de la sortie.";return;}\n    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),direction:box.querySelector("#sm-direction")?.value};
+    const reasonCode=box.querySelector("#sm-reason").value;
+    if(kind.value==="issue"&&!reasonCode){box.querySelector("#sm-error").textContent="Sélectionnez le motif de la sortie.";return;}
+    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {
         const operationUid=globalThis.crypto?.randomUUID?.();
@@ -553,7 +559,9 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
-        const sourceType=input.kind==="receipt"?"supplier_receipt":"manual_stock";\n        const result=await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType,sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});\n        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});await retryPendingStockAccountingOperations(companyRole);}
+        const sourceType=input.kind==="receipt"?"supplier_receipt":"manual_stock";
+        const result=await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType,sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
+        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});await retryPendingStockAccountingOperations(companyRole);}
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }

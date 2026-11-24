@@ -124,7 +124,8 @@ export function queueStockAccountingOperation(targetStore,{documentId,operationU
   const queue=targetStore.billing.pendingStockAccountingOperations ||= [];
   const existing=queue.find(item=>item.operationUid===operationUid);
   if(existing)return existing;
-  const now=new Date().toISOString();\n  const operation={documentId:String(documentId),operationUid:String(operationUid),sourceType,documentType,reasonCode,status:"pending",createdAt:now,updatedAt:now,lastError:""};
+  const now=new Date().toISOString();
+  const operation={documentId:String(documentId),operationUid:String(operationUid),sourceType,documentType,reasonCode,status:"pending",createdAt:now,updatedAt:now,lastError:""};
   queue.push(operation);
   return operation;
 }
@@ -152,7 +153,8 @@ export async function retryPendingStockAccountingOperations(targetStore,{company
       }
       const result=postStockOperationJournalEntry(targetStore,document,stock.movements||[],mapping,stock.settings?.accounting_mode||"perpetual",operation.reasonCode);
       if(result.ok){
-        operation.status=result.skipped?"skipped":"posted";\n        operation.updatedAt=new Date().toISOString();
+        operation.status=result.skipped?"skipped":"posted";
+        operation.updatedAt=new Date().toISOString();
         operation.postedAt=new Date().toISOString();
         operation.reference=result.reference||"";
         operation.lastError="";

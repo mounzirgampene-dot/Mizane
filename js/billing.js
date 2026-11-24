@@ -1055,7 +1055,11 @@ function openSettings() {
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
       ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent)")}
-      ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }\n      ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}\n      ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}\n      ${accountSelect("stockAdjustmentGain", "income", "Compte de gains d’inventaire (produit)")}\n      ${accountSelect("stockAdjustmentLoss", "expense", "Compte de pertes d’inventaire (charge)") }
+      ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
+      ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
+      ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}
+      ${accountSelect("stockAdjustmentGain", "income", "Compte de gains d’inventaire (produit)")}
+      ${accountSelect("stockAdjustmentLoss", "expense", "Compte de pertes d’inventaire (charge)") }
     </div>
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
@@ -1112,7 +1116,8 @@ function openSettings() {
     document.getElementById("modal").close();
     renderList();
     toast("Paramètres de facturation enregistrés.");
-    void retryPendingInvoiceStockOperations();\n  void retryPendingStockAccountingOperations();\n    void retryPendingStockAccountingOperations();
+    void retryPendingInvoiceStockOperations();
+    void retryPendingStockAccountingOperations();
   });
   document.getElementById("modal").showModal();
 }
@@ -1121,4 +1126,5 @@ export function viewBilling() {
   getBilling();
   renderList();
   void retryPendingInvoiceStockOperations();
+  void retryPendingStockAccountingOperations();
 }

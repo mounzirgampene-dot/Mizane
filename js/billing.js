@@ -7,7 +7,7 @@ import { reverseEntry } from "./accounting.js";
 import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
-import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
 import { postSalesStockCostJournalEntry, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const CURRENCIES = [...new Set([
@@ -1117,7 +1117,7 @@ function openSettings() {
     renderList();
     toast("Paramètres de facturation enregistrés.");
     void retryPendingInvoiceStockOperations();
-    void retryPendingStockAccountingOperations();
+    void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
   });
   document.getElementById("modal").showModal();
 }
@@ -1126,5 +1126,5 @@ export function viewBilling() {
   getBilling();
   renderList();
   void retryPendingInvoiceStockOperations();
-  void retryPendingStockAccountingOperations();
+  void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
 }

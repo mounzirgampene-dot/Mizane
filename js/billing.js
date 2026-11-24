@@ -317,7 +317,7 @@ function renderList() {
   const row = (doc) => {
     const paid = number(doc.paidAmount);
     const balance = Math.max(0, number(doc.totals?.ttc) - paid);
-    const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis"
+    const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis" : doc.type === "invoice" && doc.status === "partially_credited" ? "Partiellement créditée"
       : doc.type === "invoice" && doc.status !== "cancelled"
         ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
         : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
@@ -325,7 +325,7 @@ function renderList() {
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
       (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
-      (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") : "") +
+      (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") + (canIssuePartialCreditNote(doc) ? '<button class="secondary small" data-bill-partial-credit="' + doc.id + '">Avoir partiel</button>' : "") : "") + (doc.type === "credit_note" && creditNoteTotals(doc).refundable > 0.000001 ? '<button class="secondary small" data-bill-refund-credit="' + doc.id + '">Rembourser</button>' : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockReservationsCreated && !doc.stockPendingOperation && (doc.lines || []).some(line => line.stockProductId && number(line.quantity) - number(line.stockFulfilledQuantity) > 0.000001) ? '<button class="secondary small" data-bill-reserve-stock="' + doc.id + '">Réserver le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
@@ -350,6 +350,8 @@ function renderList() {
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
   $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
   $app.querySelectorAll("[data-bill-credit-note]").forEach(button => button.addEventListener("click", () => issueFullCreditNote(Number(button.dataset.billCreditNote))));
+  $app.querySelectorAll("[data-bill-partial-credit]").forEach(button => button.addEventListener("click", () => openPartialCreditNote(Number(button.dataset.billPartialCredit))));
+  $app.querySelectorAll("[data-bill-refund-credit]").forEach(button => button.addEventListener("click", () => openCreditNoteRefund(Number(button.dataset.billRefundCredit))));
   $app.querySelectorAll("[data-bill-post]").forEach((button) => button.addEventListener("click", () => {
     const invoice = billing.documents.find(item => item.id === Number(button.dataset.billPost) && item.type === "invoice");
     if (!invoice) return;

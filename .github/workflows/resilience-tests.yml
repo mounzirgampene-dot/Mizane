@@ -6,11 +6,13 @@ on:
       - feat/resilience-load-hardening
       - feat/stock-integrated-dev
       - fix/lot2-billing-integrity
+      - feat/lot3-stock-operations-accounting
   pull_request:
     branches:
       - main
       - feat/stock-integrated-dev
       - fix/lot1-security-hardening
+      - fix/lot2-billing-integrity
 
 permissions:
   contents: read

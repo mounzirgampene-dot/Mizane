@@ -4,6 +4,7 @@
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
+import { findDuplicateSupplierInvoice } from "./purchase-validation.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -233,6 +234,14 @@ function openDocument(type) {
     const supplierId = Number(box.querySelector("#pd-supplier").value);
     const orderId = type === "invoice" ? Number(box.querySelector("#pd-order")?.value || 0) || null : null;
     if (error) { box.querySelector("#pd-error").textContent = error; return; }
+    const supplierReference = box.querySelector("#pd-reference").value.trim();
+    if (type === "invoice") {
+      const duplicate = findDuplicateSupplierInvoice(p.documents, supplierId, supplierReference);
+      if (duplicate) {
+        box.querySelector("#pd-error").textContent = "Cette référence de facture fournisseur existe déjà pour ce fournisseur (" + duplicate.number + "). Vérifiez qu'il ne s'agit pas d'une double saisie.";
+        return;
+      }
+    }
     if (type === "invoice" && orderId) {
       const order = p.documents.find(doc => doc.id === orderId);
       const candidate = { id:null, supplierId, lines };

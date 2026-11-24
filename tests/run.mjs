@@ -1385,7 +1385,7 @@ test("stock : coût des sorties commerciales comptabilisé selon la valorisation
   assert.equal(store.entries.length,1);
   assert.equal(postSalesStockCostJournalEntry(store,document,movements,mapping,"perpetual").duplicate,true);
   assert.equal(store.entries.length,1,"une nouvelle tentative ne doit pas doubler le coût des ventes");
-  assert.equal(buildSalesStockCostJournalEntry(store,document,movements,{},"perpetual").ok,false,"les comptes doivent être configurés explicitement");
+  assert.equal(buildSalesStockCostJournalEntry(store,{...document,operation_uid:"op-missing"},movements,{},"perpetual").ok,false,"les comptes doivent être configurés explicitement");
   assert.equal(buildSalesStockCostJournalEntry(store,document,movements,mapping,"periodic").skipped,true,"l'inventaire intermittent ne génère pas de coût des ventes à chaque sortie");
   assert.equal(buildSalesStockCostJournalEntry(store,document,[{...movements[0],value_delta:0}],mapping,"perpetual").ok,false,"un coût nul ne doit pas être comptabilisé");
   store.settings.closedPeriods=[{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
@@ -1906,7 +1906,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v36/);
+  assert.match(serviceWorkerSource,/mizane-v37/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 

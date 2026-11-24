@@ -334,7 +334,7 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
-  if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt) { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
+  if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
 async function postReceipt(doc, requestedLines, box, sourceType) {
@@ -470,7 +470,7 @@ async function validateInvoice(doc, box) {
     if (lines.length) {
       doc.status="validating"; persist();
       await postReceipt(doc,lines,box,"supplier_invoice");
-      if (doc.pendingInvoiceReceipt) return;
+      if (doc.pendingInvoiceReceipt || doc.status !== "validating") return;
     }
   }
   doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box);

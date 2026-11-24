@@ -267,7 +267,6 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
-  const creditNotes = docs.filter((doc) => doc.type === "credit_note");
   const openAmount = calculateOutstandingBase(invoices);
   const row = (doc) => {
     const paid = number(doc.paidAmount);

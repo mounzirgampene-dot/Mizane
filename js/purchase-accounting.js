@@ -20,9 +20,18 @@ export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode 
   const config = invoice.accounting || {};
   const mapping = config.accounts || {};
   const accounts = accountsFor(store);
+  const accountMatchesPurpose = (account, key) => {
+    const code = String(account.code || "");
+    const label = String(account.label || "").toLocaleLowerCase();
+    if (key === "supplier") return code.startsWith("4") && /fournisseur/.test(label);
+    if (key === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
+    if (key === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
+    if (key === "inputVat") return /(tva|taxe.*récupérable|impôt.*récupérable)/.test(label);
+    return true;
+  };
   const requireAccount = (key, type, label) => {
     const code = String(mapping[key] || "").trim();
-    if (!code || !accounts.some(account => String(account.code) === code && account.type === type)) {
+    if (!code || !accounts.some(account => String(account.code) === code && account.type === type && accountMatchesPurpose(account, key))) {
       errors.push("Compte " + label + " absent ou incompatible avec le plan comptable.");
       return "";
     }

@@ -8,6 +8,7 @@ import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCredi
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { postSalesStockCostJournalEntry } from "./stock-accounting.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -52,10 +53,10 @@ const getBilling = () => {
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
   if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"]) {
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" ? "expense" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" || key === "cogs" ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = ["inventory","cogs"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -276,6 +277,18 @@ async function submitInvoiceStockOperation(invoice, operation) {
       reference:invoice.number, note:operation.note, lines:operation.lines,
       sourceType:operation.sourceType, sourceId:operation.sourceId,
     });
+    const stockState=await readCloudStock();
+    const accountingMode=stockState?.settings?.accounting_mode || "perpetual";
+    if(accountingMode==="perpetual"){
+      const accountingResult=postSalesStockCostJournalEntry(
+        store,
+        {document_id:result?.document_id,operation_uid:operation.operationUid,document_date:operation.documentDate,reference:invoice.number},
+        stockState.movements || [],
+        getBilling().settings.accountingAccounts || {},
+        accountingMode
+      );
+      if(!accountingResult.ok) throw new Error("Sortie de stock enregistrée, mais coût des ventes non comptabilisé : "+(accountingResult.errors||["erreur inconnue"]).join(" "));
+    }
     for (const item of operation.fulfilled) {
       const line=invoice.lines[item.lineIndex];
       if (line) { line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity); if(operation.kind==="delivery") line.stockSerialNumbers=""; }
@@ -1003,7 +1016,7 @@ function openSettings() {
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
     <h3>Comptabilisation automatique</h3>
-    <p class="muted">Choisissez les comptes de votre plan comptable. Une facture génère une écriture de vente ; chaque règlement génère une écriture de trésorerie. Le compte de taxe n'est exigé que si la facture comporte une taxe.</p>
+    <p class="muted">Choisissez les comptes de votre plan comptable. Les ventes et règlements sont comptabilisés automatiquement. En inventaire permanent, chaque sortie commerciale génère aussi une écriture du coût réel des marchandises sorties ; en inventaire intermittent, cette écriture périodique n’est pas générée.</p>
     <div class="grid cols-2">
       ${accountSelect("customer", "asset", "Compte client (créance)")}
       ${accountSelect("revenue", "income", "Compte de ventes / produits")}
@@ -1012,6 +1025,8 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent)")}
+      ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
     </div>
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>

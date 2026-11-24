@@ -142,7 +142,15 @@ function issueFullCreditNote(invoiceId) {
 function creditNoteTotals(note) {
   const amount=number(note?.totals?.ttc || totals(note?.lines || []).ttc);
   const refunded=round((note?.refunds || []).reduce((sum,item)=>sum+number(item.amount),0));
-  return {amount,refunded,refundable:Math.max(0,round(amount-refunded))};
+  const invoice=getBilling().documents.find(doc=>doc.type==="invoice" && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!invoice) return {amount,refunded,refundable:0};
+  const related=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice.id));
+  const issued=round(related.reduce((sum,item)=>sum+number(item.totals?.ttc || totals(item.lines||[]).ttc),0));
+  const refundedAll=round(related.reduce((sum,item)=>sum+(item.refunds||[]).reduce((subtotal,refund)=>subtotal+number(refund.amount),0),0));
+  const paid=round((invoice.payments||[]).reduce((sum,item)=>sum+number(item.amount),0) || number(invoice.paidAmount));
+  const customerCredit= Math.max(0,round(paid-Math.max(0,round(number(invoice.totals?.ttc)-issued))));
+  const availableForThisNote=Math.max(0,round(customerCredit-(refundedAll-refunded)));
+  return {amount,refunded,refundable:Math.min(Math.max(0,round(amount-refunded)),availableForThisNote)};
 }
 function creditedQuantity(invoice,index) {
   return round(getBilling().documents.filter(doc=>doc.type==='credit_note' && Number(doc.sourceInvoiceId)===Number(invoice.id)).reduce((sum,note)=>sum+(note.lines||[]).reduce((subtotal,line,i)=>{const sourceIndex=Number.isInteger(Number(line.sourceLineIndex))?Number(line.sourceLineIndex):i;return subtotal+(sourceIndex===index?number(line.quantity):0);},0),0));

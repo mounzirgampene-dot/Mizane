@@ -1,5 +1,6 @@
 // MIZANE — Interface Gestion de stock, locale hors SaaS et transactionnelle en entreprise.
 import { store, $app, saveNow, esc, money, toast } from "./state.js";
+import { reverseEntry } from "./accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
 import {
   hasActiveStockCompany, readCloudStock, saveCloudStockProduct, saveCloudStockWarehouse,
@@ -461,10 +462,21 @@ async function reverseStockDocument(documentId, companyRole) {
     return;
   }
   try {
+    const stockState=await readCloudStock();
+    const originalDocument=(stockState.documents||[]).find(item=>String(item.id)===String(documentId));
+    if(originalDocument && ["sales_invoice","sales_delivery"].includes(originalDocument.source_type)){
+      const costReference="COUT STOCK VENTE "+String(originalDocument.operation_uid);
+      const costEntry=(store.entries||[]).find(entry=>entry.reference===costReference);
+      if(costEntry && !costEntry.reversed){
+        const accountingReversal=reverseEntry(store,costEntry.id,new Date().toISOString().slice(0,10));
+        if(!accountingReversal.ok) throw new Error("La contrepassation comptable du coût des ventes a échoué ; le mouvement de stock n'a pas été contrepassé : "+accountingReversal.errors.join(" "));
+        saveNow();
+      }
+    }
     const operationUid=globalThis.crypto?.randomUUID?.();
     if (!operationUid) throw new Error("Génération sécurisée de l'identifiant d'opération indisponible.");
     await reverseCloudStockDocument(documentId,operationUid,reason.trim());
-    toast("Contrepassation enregistrée. Les quantités, valeurs, lots et numéros de série ont été restaurés.");
+    toast("Contrepassation enregistrée. Le coût des ventes correspondant a également été contrepassé lorsqu'il existait ; les quantités, valeurs, lots et numéros de série ont été restaurés.");
     viewStock(false,companyRole);
   } catch(error) {
     toast(error?.message||"Contrepassation impossible.",6000);

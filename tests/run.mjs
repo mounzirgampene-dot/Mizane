@@ -1392,6 +1392,9 @@ test("stock : coût des sorties commerciales comptabilisé selon la valorisation
   const blocked=postSalesStockCostJournalEntry(store,{...document,operation_uid:"op-2"},movements,mapping,"perpetual");
   assert.equal(blocked.ok,false,"une période clôturée bloque l'écriture");
   assert.equal(store.entries.length,1,"aucune écriture partielle en période clôturée");
+  assert.match(stockUiSource,/COUT STOCK VENTE/);
+  assert.match(stockUiSource,/reverseEntry\(store,costEntry\.id/);
+  assert.match(stockUiSource,/accountingReversal\.ok/);
 });
 
 console.log("— Moteur serveur de stock —");

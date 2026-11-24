@@ -1503,6 +1503,14 @@ test("facturation : date et heure d’enregistrement automatiques visibles sur l
   assert.match(billingUiSource,/createdAt: new Date\(\)\.toISOString\(\),[\s\S]*sourceQuoteId: quote\.id/);
 });
 
+test("facturation : une facture ayant des écritures de règlement ne peut pas être modifiée", () => {
+  assert.match(billingUiSource,/function invoiceHasAccountingEntries\(invoice\)/);
+  assert.match(billingUiSource,/entry\.reference === invoiceReference \|\| String\(entry\.reference \|\| ""\)\.startsWith\(paymentPrefix\)/);
+  assert.match(billingUiSource,/source && type === "invoice" && invoiceHasAccountingEntries\(source\)/);
+  assert.match(billingUiSource,/Le règlement corrigé est conservé, mais sa nouvelle écriture reste à générer/);
+  assert.match(billingUiSource,/ancienne écriture contrepassée ; nouvelle écriture en attente de comptabilisation/i);
+});
+
 test("facturation : les lignes de facture peuvent être liées à un article et à un entrepôt", () => {
   assert.match(billingUiSource,/stockProductId/);
   assert.match(billingUiSource,/stockWarehouseId/);

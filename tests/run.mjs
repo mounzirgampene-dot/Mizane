@@ -1797,6 +1797,14 @@ test("achats : facture fournisseur comptabilisée selon le mode de stock, la tax
   assert.equal(store.entries.length,1);
   assert.equal(store.entries[0].journal,"ACH");
   assert.equal(postSupplierInvoiceJournalEntry(store,invoice,"perpetual").ok,false,"une facture ne peut pas être comptabilisée deux fois");
+  const pcgStore = newStore();
+  buildAccountCache(pcgStore, allAccounts("pcg"));
+  const pcgInvoice = {...invoice,accounting:{...invoice.accounting,accounts:{supplier:"401",stock:"37",purchases:"607",inputVat:"4452"}}};
+  assert.equal(buildSupplierInvoiceJournalEntry(pcgStore,pcgInvoice,"perpetual").ok,true,"le compte 4452 du PCG doit être reconnu comme TVA sur acquisitions");
+  const cgncStore = newStore();
+  buildAccountCache(cgncStore, allAccounts("cgnc"));
+  const cgncInvoice = {...invoice,accounting:{...invoice.accounting,accounts:{supplier:"4411",stock:"314",purchases:"611",inputVat:"4456"}}};
+  assert.equal(buildSupplierInvoiceJournalEntry(cgncStore,cgncInvoice,"perpetual").ok,true,"les comptes CGNC fournisseurs, stocks et TVA récupérable doivent être reconnus");
   const periodic = buildSupplierInvoiceJournalEntry(store,{...invoice,number:"FAF-2026-0045",accounting:{...invoice.accounting,taxRecoverable:false}},"periodic");
   assert.equal(periodic.ok,true,periodic.errors?.join(" "));
   assert.deepEqual(periodic.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[

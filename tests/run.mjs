@@ -1783,6 +1783,8 @@ test("achats : facture fournisseur comptabilisée selon le mode de stock, la tax
     id:44,type:"invoice",number:"FAF-2026-0044",date:"2026-11-24",supplierName:"Fournisseur test",total:100,
     accounting:{exchangeRate:2,taxRate:20,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"601",inputVat:"4453"}},
   };
+  const missingMapping = buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:null},"perpetual");
+  assert.equal(missingMapping.ok,false,"une imputation explicite est obligatoire");
   const perpetual = buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
   assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
   assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
@@ -1808,6 +1810,8 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/pd-account-stock/);
   assert.match(purchasesUiSource,/pd-account-purchases/);
   assert.match(purchasesUiSource,/pd-account-vat/);
+  assert.match(purchasesUiSource,/configureSupplierAccounting/);
+  assert.match(purchasesUiSource,/pac-rate/);
   assert.match(purchasesUiSource,/buildSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);

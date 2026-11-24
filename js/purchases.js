@@ -228,7 +228,13 @@ function openDocument(type) {
   const updateTotal = () => { const lines = readLines(box); box.querySelector("#pd-total").textContent = "Total : " + money(totals(lines)) + " " + box.querySelector("#pd-currency").value; };
   bindRows(); updateTotal();
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
-  box.querySelector("#pd-currency").addEventListener("input", updateTotal);
+  box.querySelector("#pd-currency").addEventListener("input", () => {
+    if (type === "invoice") {
+      const currency = box.querySelector("#pd-currency").value.trim().toUpperCase();
+      box.querySelector("#pd-exchange-rate").value = currency === String(store.settings.currency || "").toUpperCase() ? "1" : "";
+    }
+    updateTotal();
+  });
   if (type === "invoice") box.querySelector("#pd-order").addEventListener("change", event => {
     const order = p.documents.find(doc => String(doc.id) === event.target.value);
     if (!order) return;
@@ -389,6 +395,14 @@ function openReceipt(doc) {
 }
 async function postSupplierAccounting(doc, box) {
   if (doc.accountingPostedAt) return true;
+  const reference = "ACHAT FOURNISSEUR " + String(doc.number || doc.id);
+  const alreadyPosted = (store.entries || []).find(entry => entry.reference === reference);
+  if (alreadyPosted) {
+    doc.accountingPostedAt = alreadyPosted.date ? new Date().toISOString() : new Date().toISOString();
+    doc.accountingEntryId = alreadyPosted.id || null;
+    persist("Écriture fournisseur déjà présente : état de comptabilisation réconcilié.");
+    box.closest("dialog")?.close(); renderList(); return true;
+  }
   const mode = stockState?.settings?.accountingMode || "perpetual";
   const proposal = buildSupplierInvoiceJournalEntry(store, doc, mode);
   if (!proposal.ok) { box.querySelector("#pd-detail-error").textContent = proposal.errors.join(" "); return false; }

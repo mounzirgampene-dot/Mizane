@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
@@ -74,6 +74,69 @@ function postInvoiceAccounting(invoice) {
   if (!proposal.ok) return proposal;
   return postBillingJournalEntriesAtomically(store, proposal.entries);
 }
+
+function canIssueFullCreditNote(invoice) {
+  if (!invoice || invoice.type !== "invoice" || ["cancelled","credited"].includes(invoice.status)) return false;
+  if (number(invoice.paidAmount) > 0 || (invoice.payments || []).some(payment => number(payment.amount) > 0)) return false;
+  if (invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending) return false;
+  if ((invoice.stockDocuments || []).length || (invoice.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status))) return false;
+  if ((invoice.lines || []).some(line => number(line.stockFulfilledQuantity) > 0)) return false;
+  if (getBilling().documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(invoice.id))) return false;
+  const source = (store.entries || []).find(entry => entry.reference === "FACTURE " + String(invoice.number || invoice.id));
+  return Boolean(source && !source.reversed);
+}
+function issueFullCreditNote(invoiceId) {
+  const billing = getBilling();
+  const invoice = billing.documents.find(doc => doc.type === "invoice" && Number(doc.id) === Number(invoiceId));
+  if (!canIssueFullCreditNote(invoice)) return toast("Avoir impossible : vérifiez les règlements, les mouvements de stock et la comptabilisation de la facture.", 6000);
+  const date = today();
+  const numberValue = Number(billing.settings.nextCreditNote) || 1;
+  billing.settings.nextCreditNote = numberValue + 1;
+  const creditNote = {
+    id: billing.nextId++,
+    type: "credit_note",
+    number: (billing.settings.prefixCreditNote || "AVO") + "-" + new Date().getFullYear() + "-" + String(numberValue).padStart(4,"0"),
+    date,
+    dueDate: "",
+    customerName: invoice.customerName,
+    customerAddress: invoice.customerAddress,
+    customerCountry: invoice.customerCountry,
+    currency: invoice.currency,
+    baseCurrency: invoice.baseCurrency,
+    exchangeRate: invoice.exchangeRate,
+    taxLabel: invoice.taxLabel,
+    paymentTerms: "",
+    notes: "Avoir total de la facture " + invoice.number + ".",
+    lines: structuredClone(invoice.lines || []),
+    totals: structuredClone(invoice.totals || totals(invoice.lines || [])),
+    paidAmount: 0,
+    payments: [],
+    sourceInvoiceId: invoice.id,
+    sourceInvoiceNumber: invoice.number,
+    status: "issued",
+    createdAt: new Date().toISOString(),
+  };
+  const proposal = buildFullCreditNoteJournalEntry(store, invoice, creditNote, billing.settings.accountingAccounts || {});
+  if (!proposal.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + proposal.errors[0], 6000);
+  }
+  const posted = postBillingJournalEntriesAtomically(store, proposal.entries);
+  if (!posted.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + posted.errors[0], 6000);
+  }
+  billing.documents.push(creditNote);
+  invoice.status = "credited";
+  invoice.creditedBy = creditNote.id;
+  invoice.creditedAt = new Date().toISOString();
+  saveBilling();
+  renderList();
+  toast("Avoir total émis et comptabilisé. La facture d'origine reste conservée dans l'historique.");
+}
+
 function invoiceHasAccountingEntries(invoice) {
   const number = String(invoice?.number || invoice?.id || "");
   const invoiceReference = "FACTURE " + number;
@@ -191,8 +254,8 @@ function documentHTML(doc) {
     const lineTax = round(lineHT * number(line.taxRate) / 100);
     return `<tr><td>${esc(line.description)}</td><td class="num">${number(line.quantity)}</td><td class="num">${fmt(line.unitPrice,currency,locale)}</td><td class="num">${number(line.taxRate)} %</td><td class="num">${fmt(lineHT+lineTax,currency,locale)}</td></tr>`;
   }).join("");
-  const title = doc.type === "quote" ? "DEVIS" : "FACTURE";
-  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
+  const title = doc.type === "quote" ? "DEVIS" : doc.type === "credit_note" ? "AVOIR" : "FACTURE";
+  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "credit_note" ? `<p>Avoir relatif à la facture : ${esc(doc.sourceInvoiceNumber || "—")}</p>` : ""}${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
   ${paymentSummary}
@@ -204,18 +267,20 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
+  const creditNotes = docs.filter((doc) => doc.type === "credit_note");
   const openAmount = calculateOutstandingBase(invoices);
   const row = (doc) => {
     const paid = number(doc.paidAmount);
     const balance = Math.max(0, number(doc.totals?.ttc) - paid);
-    const status = doc.type === "invoice" && doc.status !== "cancelled"
-      ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
-      : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
-    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+    const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis"
+      : doc.type === "invoice" && doc.status !== "cancelled"
+        ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
+        : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : doc.type === "credit_note" ? "Avoir" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
-      (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
+      (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
-      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockReservationsCreated && !doc.stockPendingOperation && (doc.lines || []).some(line => line.stockProductId && number(line.quantity) - number(line.stockFulfilledQuantity) > 0.000001) ? '<button class="secondary small" data-bill-reserve-stock="' + doc.id + '">Réserver le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
@@ -239,6 +304,7 @@ function renderList() {
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
   $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
+  $app.querySelectorAll("[data-bill-credit-note]").forEach(button => button.addEventListener("click", () => issueFullCreditNote(Number(button.dataset.billCreditNote))));
   $app.querySelectorAll("[data-bill-post]").forEach((button) => button.addEventListener("click", () => {
     const invoice = billing.documents.find(item => item.id === Number(button.dataset.billPost) && item.type === "invoice");
     if (!invoice) return;

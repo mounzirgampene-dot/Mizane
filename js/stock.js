@@ -9,7 +9,7 @@ import {
   reserveCloudStock, releaseCloudStockReservation,
   readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
   submitCloudStockCount, finalizeCloudStockCount, cancelCloudStockCount, reverseCloudStockDocument,
-} from "./cloud-sync.js";
+} from "./cloud-sync.js";\nimport { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
@@ -188,7 +188,7 @@ export function viewStock(readOnly = false, companyRole = null) {
     Promise.all([readCloudStock(),readCloudStockCounts()]).then(([data,countData]) => {
       if (sequence !== renderSequence) return;
       data.countSessions=countData?.sessions || [];
-      renderStock(mapCloudStock(data), readOnly, companyRole, true);
+      renderStock(mapCloudStock(data), readOnly, companyRole, true);\n      void retryPendingStockAccountingOperations(companyRole);
     }).catch(error => {
       if (sequence !== renderSequence) return;
       $app.innerHTML = '<section class="card"><h2>Stock cloud indisponible</h2><p class="errors"></p><p class="muted">Aucune modification locale ne sera utilisée comme substitut aux données de l’entreprise.</p><button id="stock-retry">Réessayer</button></section>';
@@ -524,7 +524,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
     <div><label>Opération</label><select id="sm-kind"><option value="receipt">Entrée</option><option value="issue">Sortie</option><option value="transfer">Transfert</option><option value="adjustment" ${cloudMode ? "" : "disabled"}>Ajustement</option></select></div>
     <div><label>Article</label><select id="sm-product">${physical.map(p=>`<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select></div>
     <div><label>Entrepôt source</label><select id="sm-warehouse">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
-    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>
+    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>\n    <div id="sm-reason-wrap" hidden><label>Motif de la sortie</label><select id="sm-reason"><option value="">— Choisir un motif —</option><option value="internal_consumption">Consommation interne</option><option value="damage">Casse / détérioration</option><option value="loss">Perte</option><option value="theft">Vol</option><option value="expiry">Péremption</option><option value="other">Autre motif</option></select></div>
     <div id="sm-dest-wrap" hidden><label>Entrepôt destination</label><select id="sm-dest">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
     <div><label>Quantité</label><input id="sm-qty" type="number" min="0.0001" step="0.0001"></div>
     <div><label>Unité de saisie</label><select id="sm-unit"></select></div>
@@ -537,13 +537,13 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
   <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Les entrées peuvent être référencées par un bon de livraison ou une pièce fournisseur ; le journal conserve leur origine.</p>`;
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   const kind=box.querySelector("#sm-kind"), productSelect=box.querySelector("#sm-product"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
-  const supplierWrap=box.querySelector("#sm-supplier-wrap");const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";supplierWrap.hidden=kind.value!=="receipt";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
+  const supplierWrap=box.querySelector("#sm-supplier-wrap");const reasonWrap=box.querySelector("#sm-reason-wrap");const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";reasonWrap.hidden=kind.value!=="issue";supplierWrap.hidden=kind.value!=="receipt";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
     const units=[product?.unit||"unité",...(product?.unitConversions||[]).map(c=>c.unit)];box.querySelector("#sm-unit").innerHTML=units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("");
     box.querySelector("#sm-lot-wrap").hidden=product?.tracking!=="lot";box.querySelector("#sm-serial-wrap").hidden=product?.tracking!=="serial";
   };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
   box.querySelector("#sm-save").onclick=async()=>{
     const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
-    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),direction:box.querySelector("#sm-direction")?.value};
+    const reasonCode=box.querySelector("#sm-reason").value;\n    if(kind.value==="issue"&&!reasonCode){box.querySelector("#sm-error").textContent="Sélectionnez le motif de la sortie.";return;}\n    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),direction:box.querySelector("#sm-direction")?.value};
     try {
       if (cloudMode) {
         const operationUid=globalThis.crypto?.randomUUID?.();
@@ -553,7 +553,7 @@ function openMovementDialog(stock, cloudMode, companyRole = null) {
         if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
         if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
         if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
-        await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType:input.kind==="receipt"?"supplier_receipt":"manual_stock",sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
+        const sourceType=input.kind==="receipt"?"supplier_receipt":"manual_stock";\n        const result=await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType,sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});\n        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});await retryPendingStockAccountingOperations(companyRole);}
       } else {
         const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
       }
@@ -578,6 +578,6 @@ function inventoryOpenDialog(session,stock,companyRole) {
   modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
   box.querySelector("#sic-save")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-save");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}toast("Comptages enregistrés.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Enregistrement impossible.";btn.disabled=false;}});
   box.querySelector("#sic-submit")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-submit");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}await submitCloudStockCount(session.id);toast("Inventaire soumis pour approbation.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Soumission impossible.";btn.disabled=false;}});
-  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{await finalizeCloudStockCount({sessionId:session.id,operationUid:globalThis.crypto.randomUUID(),documentDate:new Date().toISOString().slice(0,10)});toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
+  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{const operationUid=globalThis.crypto.randomUUID();const result=await finalizeCloudStockCount({sessionId:session.id,operationUid,documentDate:new Date().toISOString().slice(0,10)});if(result?.document_id)queueStockAccountingOperation({documentId:result.document_id,operationUid,sourceType:"inventory_count",documentType:"adjustment",reasonCode:"other"});await retryPendingStockAccountingOperations(companyRole);toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
   box.querySelector("#sic-cancel")?.addEventListener("click",async()=>{if(!confirm("Annuler l’inventaire et libérer l’entrepôt ?"))return;try{await cancelCloudStockCount(session.id);toast("Inventaire annulé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Annulation impossible."; }});
 }

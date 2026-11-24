@@ -227,6 +227,9 @@ export function buildCreditNoteRefundJournalEntry(store, invoice, creditNote, re
   const customer=requireAccount("customer","asset","client");
   const treasury=requireAccount(refund.method==="cash"?"cash":"bank","asset",refund.method==="cash"?"de caisse":"bancaire");
   const amount=Number(refund.amount), rate=Number(refund.exchangeRate);
+  const alreadyRefunded=round2((creditNote.refunds||[]).reduce((sum,item)=>sum+Number(item.amount||0),0));
+  const creditAmount=round2(calculateBillingTotals(creditNote.lines||[]).ttc);
+  if(Number.isFinite(amount) && amount>round2(creditAmount-alreadyRefunded)+0.001) errors.push("Le remboursement dépasse le solde non remboursé de cet avoir.");
   const match=String(refund.date||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(!match) errors.push("Date de remboursement invalide.");
   else {const date=new Date(Date.UTC(+match[1],+match[2]-1,+match[3]));if(date.getUTCFullYear()!==+match[1]||date.getUTCMonth()!==+match[2]-1||date.getUTCDate()!==+match[3])errors.push("Date de remboursement invalide.");}

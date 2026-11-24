@@ -277,7 +277,7 @@ function openDetail(id) {
 }
 async function postReceipt(doc, requestedLines, box, sourceType) {
   const pendingKey = sourceType === "supplier_invoice" ? "pendingInvoiceReceipt" : "pendingReceipt";
-  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id) }; persist(); }
+  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id), attempted:false }; persist(); }
   const pending = doc[pendingKey];
   const requestKey = String(doc.id) + ":" + pendingKey;
   if (activeReceiptOperations.has(requestKey)) return;
@@ -291,7 +291,18 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
     const allocationPlan = sourceType === "supplier_invoice" && doc.orderId
       ? planSupplierInvoiceReceiptAllocation(linkedOrder, doc, pending.lines)
       : { ok: true, allocations: [] };
-    if (!allocationPlan.ok) throw new Error(allocationPlan.error);
+    if (!allocationPlan.ok) {
+      if (!pending.attempted) {
+        delete doc[pendingKey];
+        if (sourceType === "supplier_invoice") doc.status = "draft";
+        persist();
+      }
+      throw new Error(allocationPlan.error);
+    }
+    // Marquer l'envoi avant l'appel reseau : apres une reponse incertaine, conserver
+    // le meme identifiant idempotent et ne jamais fabriquer une nouvelle reception.
+    pending.attempted = true;
+    persist();
     const result = await postCloudStockDocument({
       operationUid:pending.operationUid, documentType:"receipt", documentDate:doc.date,
       reference:doc.reference || doc.number, note:"Réception fournisseur — " + supplierName(doc.supplierId),

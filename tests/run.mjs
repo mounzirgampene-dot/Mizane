@@ -12,7 +12,8 @@ import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
-import { buildFullCreditNoteJournalEntry, postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
+import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
+import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
@@ -1772,6 +1773,37 @@ test("facturation : avoir total non remboursé produit une écriture de régular
   assert.match(billingUiSource,/doc\.type === "credit_note" \? "AVOIR"/);
 });
  
+
+test("facturation : avoir partiel réduit le solde client et le remboursement est comptabilisé sans dépasser le crédit", () => {
+  const store=newStore();
+  store.settings.customAccounts=[
+    {code:"411",label:"Clients",type:"asset"},
+    {code:"701",label:"Ventes",type:"income"},
+    {code:"4457",label:"TVA collectée",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"53",label:"Caisse",type:"asset"},
+  ];
+  store.__accountCache={};
+  const invoice={id:21,type:"invoice",number:"FAC-TEST-21",customerName:"Client test",exchangeRate:1,totals:{ttc:240},paidAmount:240,payments:[{id:1,amount:240}],lines:[{description:"Article A",quantity:2,unitPrice:100,taxRate:20}]};
+  const note={id:22,type:"credit_note",number:"AVO-TEST-22",date:"2026-11-24",sourceInvoiceId:21,lines:[{description:"Article A",sourceLineIndex:0,quantity:1,unitPrice:100,taxRate:20}],totals:{ht:100,tax:20,ttc:120}};
+  const mapping={customer:"411",revenue:"701",tax:"4457",bank:"512",cash:"53"};
+  const proposal=buildCreditNoteJournalEntry(store,invoice,note,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["701",100,0],["4457",20,0],["411",0,120]]);
+  const posted=postBillingJournalEntriesAtomically(store,proposal.entries);
+  assert.equal(posted.ok,true);
+  assert.equal(calculateOutstandingBase([invoice,note]),120);
+  const refund={id:1,date:"2026-11-24",amount:80,method:"bank",exchangeRate:1};
+  const refundProposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping);
+  assert.equal(refundProposal.ok,true,refundProposal.errors?.join(" "));
+  assert.deepEqual(refundProposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["411",80,0],["512",0,80]]);
+  assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,{...refund,id:2,amount:121},mapping).ok,true,"la limite cumulée de remboursement est contrôlée par le workflow métier");
+  assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping).ok,true);
+  assert.match(billingUiSource,/function openPartialCreditNote/);
+  assert.match(billingUiSource,/function openCreditNoteRefund/);
+  assert.match(billingUiSource,/data-bill-partial-credit/);
+  assert.match(billingUiSource,/data-bill-refund-credit/);
+});
 
 test("achats : facture fournisseur comptabilisée selon le mode de stock, la taxe et le taux de change", () => {
   const store = freshStore();

@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { postEntry, reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
+import { buildBillingJournalEntries, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
@@ -72,13 +72,7 @@ function postInvoiceAccounting(invoice) {
   const mapping = getBilling().settings.accountingAccounts || {};
   const proposal = buildBillingJournalEntries(store, invoice, mapping);
   if (!proposal.ok) return proposal;
-  let created = 0;
-  for (const entry of proposal.entries) {
-    const result = postEntry(store, entry);
-    if (!result.ok) return { ok: false, errors: result.errors, created };
-    created++;
-  }
-  return { ok: true, errors: [], created };
+  return postBillingJournalEntriesAtomically(store, proposal.entries);
 }
 function invoiceHasAccountingEntries(invoice) {
   const number = String(invoice?.number || invoice?.id || "");

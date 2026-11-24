@@ -1791,14 +1791,14 @@ test("facturation : avoir partiel réduit le solde client et le remboursement es
   assert.equal(proposal.ok,true,proposal.errors?.join(" "));
   assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["701",100,0],["4457",20,0],["411",0,120]]);
   const posted=postBillingJournalEntriesAtomically(store,proposal.entries);
-  assert.equal(posted.ok,true);
+  assert.equal(posted.ok,true,"écriture de l’avoir partiel refusée : "+posted.errors?.join(" "));
   assert.equal(calculateOutstandingBase([invoice,note]),0,"une facture intégralement payée ne laisse plus de créance après avoir, mais peut créer un crédit client remboursable");
   const refund={id:1,date:"2026-11-24",amount:80,method:"bank",exchangeRate:1};
   const refundProposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping);
   assert.equal(refundProposal.ok,true,refundProposal.errors?.join(" "));
   assert.deepEqual(refundProposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["411",80,0],["512",0,80]]);
   const refundPosted=postBillingJournalEntriesAtomically(store,refundProposal.entries);
-  assert.equal(refundPosted.ok,true);
+  assert.equal(refundPosted.ok,true,"écriture du remboursement refusée : "+refundPosted.errors?.join(" "));
   assert.equal(buildCreditNoteRefundJournalEntry(store,invoice,note,refund,mapping).ok,false,"un remboursement déjà comptabilisé ne doit pas être dupliqué");
   const unpaidInvoice={id:31,type:"invoice",totals:{ttc:240},paidAmount:50,exchangeRate:1};
   const partialNote={id:32,type:"credit_note",sourceInvoiceId:31,totals:{ttc:40}};

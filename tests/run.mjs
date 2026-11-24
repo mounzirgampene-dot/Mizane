@@ -16,6 +16,7 @@ import { buildFullCreditNoteJournalEntry, postBillingJournalEntriesAtomically } 
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
+import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1769,6 +1770,49 @@ test("facturation : avoir total non remboursé produit une écriture de régular
   assert.match(billingUiSource,/doc\.type === "credit_note" \? "AVOIR"/);
 });
  
+
+test("achats : facture fournisseur comptabilisée selon le mode de stock, la taxe et le taux de change", () => {
+  const store = freshStore();
+  store.settings.customAccounts = [
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock",type:"asset"},
+    {code:"601",label:"Achats",type:"expense"},
+    {code:"4453",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice = {
+    id:44,type:"invoice",number:"FAF-2026-0044",date:"2026-11-24",supplierName:"Fournisseur test",total:100,
+    accounting:{exchangeRate:2,taxRate:20,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"601",inputVat:"4453"}},
+  };
+  const perpetual = buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
+  assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["31",200,0],["4453",40,0],["401",0,240]
+  ]);
+  const posted = postSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(store.entries[0].journal,"ACH");
+  assert.equal(postSupplierInvoiceJournalEntry(store,invoice,"perpetual").ok,false,"une facture ne peut pas être comptabilisée deux fois");
+  const periodic = buildSupplierInvoiceJournalEntry(store,{...invoice,number:"FAF-2026-0045",accounting:{...invoice.accounting,taxRecoverable:false}},"periodic");
+  assert.equal(periodic.ok,true,periodic.errors?.join(" "));
+  assert.deepEqual(periodic.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["601",240,0],["401",0,240]
+  ]);
+  store.settings.closedPeriods=[{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
+  const blocked=postSupplierInvoiceJournalEntry(store,{...invoice,number:"FAF-2026-0046"},"perpetual");
+  assert.equal(blocked.ok,false);
+  assert.equal(store.entries.length,1,"une période clôturée ne doit laisser aucune écriture partielle");
+});
+test("achats : validation fournisseur exige les imputations et prépare la comptabilisation avant réception", () => {
+  assert.match(purchasesUiSource,/pd-account-supplier/);
+  assert.match(purchasesUiSource,/pd-account-stock/);
+  assert.match(purchasesUiSource,/pd-account-purchases/);
+  assert.match(purchasesUiSource,/pd-account-vat/);
+  assert.match(purchasesUiSource,/buildSupplierInvoiceJournalEntry/);
+  assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
+  assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
+});
+
 test("achats : une même référence de facture fournisseur ne peut pas être saisie deux fois", () => {
   const docs = [
     {id:1,type:"invoice",supplierId:7,reference:"FAC-2026-001",number:"FAF-2026-0001",status:"validated"},

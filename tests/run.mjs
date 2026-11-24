@@ -1755,7 +1755,7 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"FAC-2",date:"2026-11-24",currency:"M"}).ok,false);
   assert.equal(validateSupplierInvoiceMetadata({reference:"FAC-2",date:"2026-11-24",currency:"eur"}).ok,true);
   assert.match(purchasesUiSource,/validateSupplierInvoiceMetadata/);
-  assert.match(purchasesUiSource,/La référence de la facture fournisseur est obligatoire/);
+  assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
 process.exit(failed ? 1 : 0);

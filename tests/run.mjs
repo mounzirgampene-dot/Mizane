@@ -15,6 +15,7 @@ import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js
 import { postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
+import { findDuplicateSupplierInvoice } from "../js/purchase-validation.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1731,4 +1732,18 @@ test("facturation : publication atomique des écritures vente et règlements", (
   assert.equal(success.created,2);
   assert.equal(store.entries.length,2);
   assert.equal(store.nextId,initialNextId+2);
+});
+
+
+test("achats : une même référence de facture fournisseur ne peut pas être saisie deux fois", () => {
+  const docs = [
+    {id:1,type:"invoice",supplierId:7,reference:"FAC-2026-001",number:"FAF-2026-0001",status:"validated"},
+    {id:2,type:"invoice",supplierId:8,reference:"FAC-2026-001",number:"FAF-2026-0002",status:"draft"},
+    {id:3,type:"invoice",supplierId:7,reference:"FAC-ANNULEE",status:"cancelled"},
+  ];
+  assert.equal(findDuplicateSupplierInvoice(docs,7," fac-2026-001 ")?.id,1);
+  assert.equal(findDuplicateSupplierInvoice(docs,8,"FAC-2026-001")?.id,2);
+  assert.equal(findDuplicateSupplierInvoice(docs,7,"FAC-2026-001",1),null);
+  assert.equal(findDuplicateSupplierInvoice(docs,7,"FAC-ANNULEE"),null);
+  assert.equal(findDuplicateSupplierInvoice(docs,7,""),null);
 });

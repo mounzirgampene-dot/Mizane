@@ -1919,7 +1919,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v38/);
+  assert.match(serviceWorkerSource,/mizane-v39/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 

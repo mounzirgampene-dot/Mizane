@@ -143,7 +143,7 @@ export async function retryPendingStockAccountingOperations(companyRole=null){
   retryPromise=(async()=>{
     const role=companyRole||await getCurrentCompanyRole();
     if(!["admin","accountant"].includes(role))return {attempted:0,succeeded:0,skipped:true};
-    const stock=await readCloudStock();
+    let stock; try { stock=await readCloudStock(); } catch(error) { toast(error?.message||"Lecture du stock impossible pour la reprise comptable.",6000); return {attempted:pending.length,succeeded:0,error:error?.message||"read-failed"}; }
     const mapping=store.billing?.settings?.accountingAccounts||{};
     let succeeded=0;
     for(const operation of pending){

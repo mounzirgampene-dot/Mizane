@@ -321,17 +321,17 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
-  const openAmount = calculateOutstandingBase(invoices);
+  const openAmount = calculateOutstandingBase(billing.documents);
   const row = (doc) => {
     const paid = number(doc.paidAmount);
-    const balance = Math.max(0, number(doc.totals?.ttc) - paid);
+    const balance = Math.max(0, netInvoiceReceivable(doc) - paid);
     const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis" : doc.type === "invoice" && doc.status === "partially_credited" ? "Partiellement créditée"
       : doc.type === "invoice" && doc.status !== "cancelled"
         ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
         : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
     return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : doc.type === "credit_note" ? "Avoir" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
-      (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
+      (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && doc.status !== "partially_credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
       (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") + (canIssuePartialCreditNote(doc) ? '<button class="secondary small" data-bill-partial-credit="' + doc.id + '">Avoir partiel</button>' : "") : "") + (doc.type === "credit_note" && creditNoteTotals(doc).refundable > 0.000001 ? '<button class="secondary small" data-bill-refund-credit="' + doc.id + '">Rembourser</button>' : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
@@ -510,6 +510,7 @@ async function openEditor(type, source = null) {
     try { stockState = await readCloudStock(); }
     catch (error) { toast("Impossible de charger les articles du stock : " + error.message, 6000); return; }
   }
+  if (source && type === "invoice" && billing.documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(source.id))) { toast("Cette facture possède déjà un avoir. Sa modification est bloquée pour préserver les écritures et les reliquats crédités."); return; }
   if (source?.stockPendingOperation || source?.stockReservationsCreated || source?.stockReservationPending || (source?.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status)) || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
     toast("Cette facture possède déjà des mouvements de stock. Sa modification est bloquée pour préserver l’historique.");
     return;
@@ -838,7 +839,7 @@ function openPaymentManager(invoiceId) {
           createdAt: new Date().toISOString(),
         });
         invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
-        invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+        invoice.status = calculatePaymentBalance(netTotal, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
         content.querySelector("#bill-edit-payment-error").textContent = "Le règlement corrigé est conservé, mais sa nouvelle écriture reste à générer : " + accountingResult.errors[0] + ". Fermez cette fenêtre puis utilisez « Comptabiliser » sur la facture après correction du problème.";
         saveBilling();
         return;

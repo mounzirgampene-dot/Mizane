@@ -1705,7 +1705,7 @@ test("facturation : publication atomique des écritures vente et règlements", (
     {code:"701",label:"Ventes",type:"income"},
     {code:"512",label:"Banque",type:"asset"},
   ];
-  store.settings.closedPeriods = [{start:"2026-11-01",end:"2026-11-30"}];
+  store.settings.closedPeriods = [{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
   const makeEntry = (date, reference) => ({
     date, journal:"VTE", reference,
     lines:[

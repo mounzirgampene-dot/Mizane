@@ -153,7 +153,10 @@ function creditNoteTotals(note) {
   const refundedAll=round(related.reduce((sum,item)=>sum+(item.refunds||[]).reduce((subtotal,refund)=>subtotal+number(refund.amount),0),0));
   const paid=round((invoice.payments||[]).reduce((sum,item)=>sum+number(item.amount),0) || number(invoice.paidAmount));
   const customerCredit= Math.max(0,round(paid-Math.max(0,round(number(invoice.totals?.ttc)-issued))));
-  const availableForThisNote=Math.max(0,round(customerCredit-(refundedAll-refunded)));
+  const availableRefundTotal=Math.max(0,round(customerCredit-refundedAll));
+  const noteIndex=related.findIndex(item=>Number(item.id)===Number(note.id));
+  const priorCapacity=related.slice(0,Math.max(0,noteIndex)).reduce((sum,item)=>{const itemAmount=number(item.totals?.ttc || totals(item.lines||[]).ttc);const itemRefunded=round((item.refunds||[]).reduce((subtotal,refundItem)=>subtotal+number(refundItem.amount),0));return sum+Math.max(0,round(itemAmount-itemRefunded));},0);
+  const availableForThisNote=Math.max(0,round(availableRefundTotal-priorCapacity));
   return {amount,refunded,refundable:Math.min(Math.max(0,round(amount-refunded)),availableForThisNote)};
 }
 function creditedQuantity(invoice,index) {

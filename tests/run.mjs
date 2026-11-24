@@ -1823,6 +1823,8 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/configureSupplierAccounting/);
   assert.match(purchasesUiSource,/pac-rate/);
   assert.match(purchasesUiSource,/buildSupplierInvoiceJournalEntry/);
+  assert.match(purchasesUiSource,/doc\.pendingInvoiceReceipt \|\| doc\.status !== "validating"/);
+  assert.match(purchasesUiSource,/!doc\.pendingInvoiceReceipt && doc\.status === "validating"/);
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
 });

@@ -18,6 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
+import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1358,6 +1359,40 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
 });
 
+
+
+test("stock : coût des sorties commerciales comptabilisé selon la valorisation réelle et sans doublon", () => {
+  const store=newStore();
+  store.settings.customAccounts=[
+    {code:"31",label:"Stock",type:"asset"},
+    {code:"603",label:"Coût des ventes",type:"expense"},
+  ];
+  const document={document_id:"doc-1",operation_uid:"op-1",document_date:"2026-11-24",reference:"FAC-001"};
+  const movements=[
+    {document_id:"doc-1",quantity_delta:-2,value_delta:-35.5,movement_date:"2026-11-24"},
+    {document_id:"doc-1",quantity_delta:-1,value_delta:-20,movement_date:"2026-11-24"},
+    {document_id:"other",quantity_delta:-8,value_delta:-100,movement_date:"2026-11-24"},
+  ];
+  const mapping={inventory:"31",cogs:"603"};
+  const proposal=buildSalesStockCostJournalEntry(store,document,movements,mapping,"perpetual");
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.cost,55.5);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["603",55.5,0],["31",0,55.5]
+  ]);
+  const posted=postSalesStockCostJournalEntry(store,document,movements,mapping,"perpetual");
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(postSalesStockCostJournalEntry(store,document,movements,mapping,"perpetual").duplicate,true);
+  assert.equal(store.entries.length,1,"une nouvelle tentative ne doit pas doubler le coût des ventes");
+  assert.equal(buildSalesStockCostJournalEntry(store,document,movements,{},"perpetual").ok,false,"les comptes doivent être configurés explicitement");
+  assert.equal(buildSalesStockCostJournalEntry(store,document,movements,mapping,"periodic").skipped,true,"l'inventaire intermittent ne génère pas de coût des ventes à chaque sortie");
+  assert.equal(buildSalesStockCostJournalEntry(store,document,[{...movements[0],value_delta:0}],mapping,"perpetual").ok,false,"un coût nul ne doit pas être comptabilisé");
+  store.settings.closedPeriods=[{startDate:"2026-11-01",endDate:"2026-11-30",status:"closed"}];
+  const blocked=postSalesStockCostJournalEntry(store,{...document,operation_uid:"op-2"},movements,mapping,"perpetual");
+  assert.equal(blocked.ok,false,"une période clôturée bloque l'écriture");
+  assert.equal(store.entries.length,1,"aucune écriture partielle en période clôturée");
+});
 
 console.log("— Moteur serveur de stock —");
 test("stock cloud : tables dédiées et cloisonnement company_id", () => {

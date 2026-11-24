@@ -52,6 +52,8 @@ const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const purchaseAccountingSource = readFileSync(new URL("../js/purchase-accounting.js", import.meta.url), "utf8");
+const serviceWorkerSource = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 const purchaseReceiptSource = readFileSync(new URL("../js/purchase-receipts.js", import.meta.url), "utf8");
 const billingSyncSource = readFileSync(new URL("../js/billing-sync.js", import.meta.url), "utf8");
 const billingUiSource = readFileSync(new URL("../js/billing.js", import.meta.url), "utf8");
@@ -1827,6 +1829,9 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/!doc\.pendingInvoiceReceipt && doc\.status === "validating"/);
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
+  assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
+  assert.match(serviceWorkerSource,/mizane-v35/);
+  assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
 test("achats : une même référence de facture fournisseur ne peut pas être saisie deux fois", () => {

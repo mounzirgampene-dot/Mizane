@@ -737,6 +737,11 @@ async function openEditor(type, source = null) {
 }
 
 
+function netInvoiceReceivable(invoice) {
+  const credits=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice?.id)).reduce((sum,note)=>sum+number(note.totals?.ttc || totals(note.lines||[]).ttc),0);
+  return Math.max(0,round(number(invoice?.totals?.ttc)-credits));
+}
+
 function openPaymentManager(invoiceId) {
   const billing = getBilling();
   const invoice = billing.documents.find((doc) => doc.id === invoiceId && doc.type === "invoice");
@@ -746,7 +751,8 @@ function openPaymentManager(invoiceId) {
   const modal = document.getElementById("modal");
   const total = number(invoice.totals?.ttc);
   const paid = round(invoice.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
-  const balance = calculatePaymentBalance(total, invoice.payments);
+  const netTotal = netInvoiceReceivable(invoice);
+  const balance = calculatePaymentBalance(netTotal, invoice.payments);
   const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
   const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
   const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button> <button type=\"button\" class=\"danger small\" data-bill-payment-cancel=\"" + Number(payment.id) + "\">Annuler le règlement</button></td></tr>").join("");
@@ -790,7 +796,7 @@ function openPaymentManager(invoiceId) {
         currency: invoice.currency,
       };
       const otherPayments = invoice.payments.filter((item) => Number(item.id) !== paymentId);
-      const validation = validateBillingPayment(updated, invoice, otherPayments);
+      const validation = validateBillingPayment(updated, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, otherPayments);
       if (!(updated.exchangeRate > 0) || !Number.isFinite(updated.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
       if (!validation.ok) { content.querySelector("#bill-edit-payment-error").textContent = [...new Set(validation.errors)].join(" "); return; }
 
@@ -895,7 +901,7 @@ function openPaymentManager(invoiceId) {
       currency: invoice.currency,
       exchangeRate: number(content.querySelector("#bill-payment-rate").value),
     };
-    const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    const validation = validateBillingPayment(payment, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, invoice.payments);
     if (!(payment.exchangeRate > 0) || !Number.isFinite(payment.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
     if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
     invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });

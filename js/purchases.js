@@ -3,6 +3,7 @@
 // passent exclusivement par le moteur de stock serveur et ses identifiants idempotents.
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
+import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -282,6 +283,15 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
   if (activeReceiptOperations.has(requestKey)) return;
   activeReceiptOperations.add(requestKey);
   try {
+    // Vérifier toutes les allocations avant d'envoyer la réception au serveur :
+    // un refus local après confirmation distante laisserait un mouvement physique orphelin.
+    const linkedOrder = sourceType === "supplier_invoice" && doc.orderId
+      ? data().documents.find(item => item.id === doc.orderId)
+      : null;
+    const allocationPlan = sourceType === "supplier_invoice" && doc.orderId
+      ? planSupplierInvoiceReceiptAllocation(linkedOrder, doc, pending.lines)
+      : { ok: true, allocations: [] };
+    if (!allocationPlan.ok) throw new Error(allocationPlan.error);
     const result = await postCloudStockDocument({
       operationUid:pending.operationUid, documentType:"receipt", documentDate:doc.date,
       reference:doc.reference || doc.number, note:"Réception fournisseur — " + supplierName(doc.supplierId),
@@ -289,29 +299,21 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
       lines:pending.lines,
     });
     if (!result?.ok) throw new Error("Le serveur n'a pas confirmé la réception du stock.");
+    // L'affectation a déjà été validée intégralement ; son application ne peut plus échouer
+    // sur un dépassement de reliquat après que le serveur a inscrit le mouvement.
+    for (const allocation of allocationPlan.allocations) {
+      allocation.orderLine.receivedBase = round(num(allocation.orderLine.receivedBase) + allocation.quantity);
+    }
     for (const line of pending.lines) {
       const baseQty = num(line.quantity);
       const match = doc.lines[Number(line.line_index)];
       if (match) {
         if (sourceType === "supplier_invoice") {
           match.stockPostedBase = round(num(match.stockPostedBase) + baseQty);
-          if (doc.orderId) {
-            const linked = data().documents.find(item => item.id === doc.orderId);
-            const orderLines = orderLinesFor(linked, match);
-            let remainingToAllocate = baseQty;
-            for (const orderLine of orderLines) {
-              if (remainingToAllocate <= 0) break;
-              const capacity = Math.max(0, num(orderLine.baseQuantity) - num(orderLine.receivedBase));
-              const allocated = Math.min(capacity, remainingToAllocate);
-              orderLine.receivedBase = round(num(orderLine.receivedBase) + allocated);
-              remainingToAllocate = round(remainingToAllocate - allocated);
-            }
-            if (remainingToAllocate > 0.0001) throw new Error("La quantité reçue dépasse le reliquat de la commande liée.");
-            if (linked) linked.status = linked.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
-          }
         } else match.receivedBase = round(num(match.receivedBase) + baseQty);
       }
     }
+    if (linkedOrder) linkedOrder.status = linkedOrder.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
     delete doc[pendingKey];
     if (doc.type === "order") doc.status = doc.lines.every(line => num(line.receivedBase) >= line.baseQuantity) ? "received" : "partially_received";
     persist("Entrée de stock fournisseur confirmée.");

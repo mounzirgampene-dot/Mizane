@@ -80,6 +80,14 @@ function postInvoiceAccounting(invoice) {
   }
   return { ok: true, errors: [], created };
 }
+function invoiceHasAccountingEntries(invoice) {
+  const number = String(invoice?.number || invoice?.id || "");
+  const invoiceReference = "FACTURE " + number;
+  const paymentPrefix = "REGLEMENT " + number + " #";
+  return (store.entries || []).some(entry =>
+    entry.reference === invoiceReference || String(entry.reference || "").startsWith(paymentPrefix)
+  );
+}
 
 function invoiceHasStockLines(invoice) {
   return (invoice?.lines || []).some(line => line.stockProductId && line.stockWarehouseId);
@@ -507,8 +515,8 @@ async function openEditor(type, source = null) {
   content.querySelector("#bill-save").addEventListener("click", async () => {
     const lines = readLines();
     const errors = [];
-    if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
-      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Sa modification est bloquée pour préserver la cohérence entre le document et les journaux. Une procédure de rectification ou d'avoir sera nécessaire.";
+    if (source && type === "invoice" && invoiceHasAccountingEntries(source)) {
+      content.querySelector("#bill-error").textContent = "Cette facture possède déjà au moins une écriture comptable (vente ou règlement). Sa modification est bloquée pour préserver la cohérence des journaux. Utilisez une procédure de rectification ou un avoir.";
       return;
     }
     if (!content.querySelector("#bill-customer").value.trim()) errors.push("Le nom du client est obligatoire.");
@@ -695,8 +703,22 @@ function openPaymentManager(invoiceId) {
       }
       const accountingResult = postInvoiceAccounting(invoice);
       if (!accountingResult.ok) {
-        invoice.payments[index] = original;
-        content.querySelector("#bill-edit-payment-error").textContent = "L'écriture corrigée n'a pas pu être générée : " + accountingResult.errors[0] + ". L'ancienne écriture a été contrepassée ; demandez une vérification comptable avant toute nouvelle correction.";
+        // L'ancienne écriture est déjà contrepassée : conserver le règlement corrigé
+        // dans le document afin que le bouton « Comptabiliser » puisse reprendre la génération.
+        invoice.paymentHistory ||= [];
+        invoice.paymentHistory.push({
+          eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+          action: "modification",
+          date: today(),
+          paymentId,
+          previous: { ...original },
+          updated: { ...replacement },
+          note: "Ancienne écriture contrepassée ; nouvelle écriture en attente de comptabilisation.",
+          createdAt: new Date().toISOString(),
+        });
+        invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+        invoice.status = calculatePaymentBalance(total, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+        content.querySelector("#bill-edit-payment-error").textContent = "Le règlement corrigé est conservé, mais sa nouvelle écriture reste à générer : " + accountingResult.errors[0] + ". Fermez cette fenêtre puis utilisez « Comptabiliser » sur la facture après correction du problème.";
         saveBilling();
         return;
       }

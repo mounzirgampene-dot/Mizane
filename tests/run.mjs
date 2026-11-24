@@ -15,7 +15,7 @@ import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js
 import { postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
-import { findDuplicateSupplierInvoice } from "../js/purchase-validation.js";
+import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1697,7 +1697,6 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
-process.exit(failed ? 1 : 0);
 
 test("facturation : publication atomique des écritures vente et règlements", () => {
   const store = newStore();
@@ -1747,3 +1746,16 @@ test("achats : une même référence de facture fournisseur ne peut pas être sa
   assert.equal(findDuplicateSupplierInvoice(docs,7,"FAC-ANNULEE"),null);
   assert.equal(findDuplicateSupplierInvoice(docs,7,""),null);
 });
+
+
+test("achats : métadonnées obligatoires et valides pour une facture fournisseur", () => {
+  assert.deepEqual(validateSupplierInvoiceMetadata({reference:"FAC-2026-001",date:"2026-11-24",currency:"MAD"}),{ok:true,errors:[]});
+  assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).ok,false);
+  assert.equal(validateSupplierInvoiceMetadata({reference:"FAC-2",date:"2026-02-30",currency:"MAD"}).ok,false);
+  assert.equal(validateSupplierInvoiceMetadata({reference:"FAC-2",date:"2026-11-24",currency:"M"}).ok,false);
+  assert.equal(validateSupplierInvoiceMetadata({reference:"FAC-2",date:"2026-11-24",currency:"eur"}).ok,true);
+  assert.match(purchasesUiSource,/validateSupplierInvoiceMetadata/);
+  assert.match(purchasesUiSource,/La référence de la facture fournisseur est obligatoire/);
+});
+
+process.exit(failed ? 1 : 0);

@@ -1,8 +1,6 @@
 // MIZANE — Comptabilisation des mouvements de stock et du coût des ventes.
 import { validateEntry } from "./accounting.js";
 import { postBillingJournalEntriesAtomically } from "./billing-accounting.js";
-import { store, saveNow, toast } from "./state.js";
-import { readCloudStock, getCurrentCompanyRole } from "./cloud-sync.js";
 
 const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 
@@ -120,31 +118,31 @@ export function postStockOperationJournalEntry(targetStore,document,movements,ma
   return {...posted,reference:proposal.reference,negative:proposal.negative,positive:proposal.positive};
 }
 
-export function queueStockAccountingOperation({documentId,operationUid,sourceType,documentType,reasonCode="other"}){
-  if(!store)return null;
-  store.billing ||= {};
-  const queue=store.billing.pendingStockAccountingOperations ||= [];
+export function queueStockAccountingOperation(targetStore,{documentId,operationUid,sourceType,documentType,reasonCode="other"}){
+  if(!targetStore)return null;
+  targetStore.billing ||= {};
+  const queue=targetStore.billing.pendingStockAccountingOperations ||= [];
   const existing=queue.find(item=>item.operationUid===operationUid);
   if(existing)return existing;
   const operation={documentId:String(documentId),operationUid:String(operationUid),sourceType,documentType,reasonCode,status:"pending",createdAt:new Date().toISOString(),lastError:""};
   queue.push(operation);
-  saveNow();
-  window.dispatchEvent(new Event("mizane:billing-changed"));
   return operation;
 }
 
 let retryPromise=null;
-export async function retryPendingStockAccountingOperations(companyRole=null){
+export async function retryPendingStockAccountingOperations(targetStore,{companyRole=null,readStock,getRole,save=()=>{},notify=()=>{}}={}){
   if(retryPromise)return retryPromise;
-  if(!store)return {attempted:0,succeeded:0};
-  const queue=store.billing?.pendingStockAccountingOperations||[];
+  if(!targetStore)return {attempted:0,succeeded:0};
+  const queue=targetStore.billing?.pendingStockAccountingOperations||[];
   const pending=queue.filter(item=>item.status==="pending");
   if(!pending.length)return {attempted:0,succeeded:0};
   retryPromise=(async()=>{
-    const role=companyRole||await getCurrentCompanyRole();
+    const role=companyRole||(typeof getRole==="function"?await getRole():null);
     if(!["admin","accountant"].includes(role))return {attempted:0,succeeded:0,skipped:true};
-    let stock; try { stock=await readCloudStock(); } catch(error) { toast(error?.message||"Lecture du stock impossible pour la reprise comptable.",6000); return {attempted:pending.length,succeeded:0,error:error?.message||"read-failed"}; }
-    const mapping=store.billing?.settings?.accountingAccounts||{};
+    if(typeof readStock!=="function")return {attempted:pending.length,succeeded:0,error:"Stock reader unavailable"};
+    let stock;
+    try { stock=await readStock(); } catch(error) { notify(error?.message||"Lecture du stock impossible pour la reprise comptable.",6000); return {attempted:pending.length,succeeded:0,error:error?.message||"read-failed"}; }
+    const mapping=targetStore.billing?.settings?.accountingAccounts||{};
     let succeeded=0;
     for(const operation of pending){
       const document=(stock.documents||[]).find(item=>String(item.id)===String(operation.documentId)||String(item.operation_uid)===String(operation.operationUid));
@@ -152,7 +150,7 @@ export async function retryPendingStockAccountingOperations(companyRole=null){
         operation.lastError="Document de stock non confirmé comme comptabilisé par le serveur.";
         continue;
       }
-      const result=postStockOperationJournalEntry(store,document,stock.movements||[],mapping,stock.settings?.accounting_mode||"perpetual",operation.reasonCode);
+      const result=postStockOperationJournalEntry(targetStore,document,stock.movements||[],mapping,stock.settings?.accounting_mode||"perpetual",operation.reasonCode);
       if(result.ok){
         operation.status=result.skipped?"skipped":"posted";
         operation.postedAt=new Date().toISOString();
@@ -161,11 +159,10 @@ export async function retryPendingStockAccountingOperations(companyRole=null){
         succeeded++;
       }else operation.lastError=(result.errors||["Écriture comptable impossible."]).join(" ");
     }
-    saveNow();
-    window.dispatchEvent(new Event("mizane:billing-changed"));
-    if(succeeded)toast(succeeded+" opération(s) de stock comptabilisée(s) automatiquement.");
+    save();
+    if(succeeded)notify(succeeded+" opération(s) de stock comptabilisée(s) automatiquement.");
     const failures=pending.filter(item=>item.status==="pending"&&item.lastError);
-    if(failures.length)toast(failures.length+" opération(s) de stock restent en attente : "+failures.map(item=>item.lastError).join(" ; "),7000);
+    if(failures.length)notify(failures.length+" opération(s) de stock restent en attente : "+failures.map(item=>item.lastError).join(" ; "),7000);
     return {attempted:pending.length,succeeded,failures:failures.length};
   })();
   try{return await retryPromise;}finally{retryPromise=null;}

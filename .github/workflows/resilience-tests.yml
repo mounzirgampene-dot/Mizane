@@ -5,6 +5,7 @@ on:
     branches:
       - feat/resilience-load-hardening
       - feat/stock-integrated-dev
+      - fix/lot2-billing-integrity
   pull_request:
     branches:
       - main

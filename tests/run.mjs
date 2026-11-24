@@ -18,7 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
-import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry } from "../js/stock-accounting.js";
+import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -1919,7 +1919,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v39/);
+  assert.match(serviceWorkerSource,/mizane-v40/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 

@@ -143,32 +143,98 @@ export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, 
   return { ok: true, currency: "MAD", ruleCode: rule?.code || "CUSTOM", label: rule?.label || "Taux personnalisé", rate, baseAmount: round2(base), taxAmount, netPayment: round2(base - taxAmount), date, legalReference: rule?.legalReference || String(customLegalReference), warnings };
 }
 
-export function buildMoroccoTaxCalendar({ fiscalEnd, year, withholdingMonths = [] } = {}) {
+export function buildMoroccoTaxCalendar({
+  fiscalStart, fiscalEnd, year, vatRegime = "monthly", includeIsAdvances = true,
+  includePayrollAnnual = true, withholdingMonths = [], includeVat = true,
+} = {}) {
   const errors = [];
+  const validYear = Number(year);
   if (!validDate(fiscalEnd)) errors.push("Date de clôture d'exercice invalide.");
-  const targetYear = Number(year);
-  if (!Number.isInteger(targetYear) || targetYear < 2000 || targetYear > 2200) errors.push("Année fiscale invalide.");
+  if (fiscalStart && !validDate(fiscalStart)) errors.push("Date de début d'exercice invalide.");
+  if (!Number.isInteger(validYear) || validYear < 2000 || validYear > 2200) errors.push("Année fiscale invalide.");
+  if (!["monthly", "quarterly", "none"].includes(vatRegime)) errors.push("Périodicité TVA invalide.");
   if (errors.length) return { ok: false, errors, items: [] };
-  const nextDate = (date, months, day) => {
-    const d = new Date(date + "T00:00:00Z");
-    d.setUTCDate(1);
-    d.setUTCMonth(d.getUTCMonth() + months);
-    const y = d.getUTCFullYear(), m = d.getUTCMonth();
-    const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
-    return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(Math.min(day, last)).padStart(2, "0");
+
+  const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const date = (y, m, d) => y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  const endOfMonth = (y, m) => date(y, m, lastDay(y, m));
+  const addMonthEnd = (value, count) => {
+    const d = new Date(value + "T00:00:00Z");
+    d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + count);
+    return endOfMonth(d.getUTCFullYear(), d.getUTCMonth() + 1);
   };
-  const items = [
-    { id: "IS_ANNUAL_" + fiscalEnd.slice(0, 4), taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)", period: fiscalEnd.slice(0, 4), dueDate: nextDate(fiscalEnd, 3, Number(fiscalEnd.slice(8, 10))), legalReference: "CGI 2026, art. 20-I", confidence: "statutory" },
-    { id: "PAYROLL_ANNUAL_" + targetYear, taxType: "IR", title: "État annuel des traitements et salaires", period: String(targetYear - 1), dueDate: targetYear + "-02-28", legalReference: "CGI 2026, art. 79-I", confidence: "statutory" },
-  ];
+  const items = [];
+  if (includeVat && vatRegime === "monthly") {
+    for (let month = 1; month <= 12; month++) {
+      const period = date(validYear, month, 1).slice(0, 7);
+      items.push({
+        id: "VAT_MA_" + period, taxType: "TVA", title: "Déclaration et paiement TVA — régime mensuel",
+        period, dueDate: addMonthEnd(period + "-01", 1), legalReference: "CGI 2026, articles 108 et 110",
+        confidence: "statutory_online", channel: "SIMPL-TVA",
+        requiredDocuments: ["Journal des ventes de la période", "Journal des achats et relevé des déductions", "Relevé des retenues à la source TVA, si applicable", "Factures et avoirs justificatifs"],
+      });
+    }
+  } else if (includeVat && vatRegime === "quarterly") {
+    for (let quarter = 1; quarter <= 4; quarter++) {
+      const month = quarter * 3;
+      const period = validYear + "-T" + quarter;
+      items.push({
+        id: "VAT_MA_" + period, taxType: "TVA", title: "Déclaration et paiement TVA — régime trimestriel",
+        period, dueDate: endOfMonth(validYear, month + 1), legalReference: "CGI 2026, articles 108 et 111",
+        confidence: "statutory_online", channel: "SIMPL-TVA",
+        requiredDocuments: ["Journal des ventes du trimestre", "Journal des achats et relevé des déductions", "Relevé des retenues à la source TVA, si applicable", "Factures et avoirs justificatifs"],
+      });
+    }
+  }
+  const fiscalStartDate = fiscalStart || (Number(fiscalEnd.slice(0, 4)) + "-01-01");
+  if (includeIsAdvances) {
+    for (const month of [3, 6, 9, 12]) {
+      const d = new Date(fiscalStartDate + "T00:00:00Z");
+      d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + month);
+      const dueDate = endOfMonth(d.getUTCFullYear(), d.getUTCMonth());
+      items.push({
+        id: "IS_ADVANCE_" + dueDate, taxType: "IS", title: "Acompte provisionnel IS — échéance à contrôler",
+        period: dueDate.slice(0, 4) + "-M" + String(month).padStart(2, "0"), dueDate,
+        legalReference: "CGI 2026, article 170", confidence: "statutory_review",
+        requiredDocuments: ["Dernière déclaration IS validée", "Calcul de l'impôt de référence", "Historique des acomptes versés", "Crédits et retenues imputables"],
+      });
+    }
+  }
+  const close = new Date(fiscalEnd + "T00:00:00Z");
+  close.setUTCDate(1); close.setUTCMonth(close.getUTCMonth() + 3);
+  const isDue = date(close.getUTCFullYear(), close.getUTCMonth() + 1,
+    Math.min(Number(fiscalEnd.slice(8, 10)), lastDay(close.getUTCFullYear(), close.getUTCMonth() + 1)));
+  items.push({
+    id: "IS_ANNUAL_" + fiscalEnd, taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)",
+    period: fiscalStartDate + " → " + fiscalEnd, dueDate: isDue,
+    legalReference: "CGI 2026, article 20-I", confidence: "statutory_review",
+    requiredDocuments: ["États de synthèse définitifs", "Tableau de passage du résultat comptable au résultat fiscal", "Détail des réintégrations et déductions", "Justificatifs des acomptes et retenues imputables"],
+  });
+  if (includePayrollAnnual) {
+    const payrollDue = date(validYear, 2, lastDay(validYear, 2));
+    items.push({
+      id: "PAYROLL_ANNUAL_" + (validYear - 1), taxType: "IR", title: "État annuel des traitements et salaires",
+      period: String(validYear - 1), dueDate: payrollDue, legalReference: "CGI 2026, article 79-I",
+      confidence: "statutory_review", channel: "SIMPL",
+      requiredDocuments: ["État nominatif des salariés", "Récapitulatif annuel des rémunérations", "Retenues IR opérées et versées", "Justificatifs des avantages et exonérations"],
+    });
+  }
   for (const month of withholdingMonths) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) continue;
-    const [y, m] = month.split("-").map(Number);
-    const due = new Date(Date.UTC(y, m + 1, 0));
-    const dueDate = due.getUTCFullYear() + "-" + String(due.getUTCMonth() + 1).padStart(2, "0") + "-" + String(due.getUTCDate()).padStart(2, "0");
-    items.push({ id: "WHT_" + month, taxType: "WITHHOLDING", title: "Déclaration / versement des retenues à la source — à confirmer selon la catégorie", period: month, dueDate, legalReference: "CGI 2026, articles 156 et 174", confidence: "review_required" });
+    const dueDate = addMonthEnd(String(month) + "-01", 1);
+    items.push({
+      id: "WHT_" + month, taxType: "WITHHOLDING",
+      title: "Déclaration / versement des retenues à la source — qualifier la catégorie",
+      period: month, dueDate, legalReference: "CGI 2026, articles 156 et 174",
+      confidence: "review_required",
+      requiredDocuments: ["État des paiements et bénéficiaires", "Calcul par catégorie de retenue", "Attestations fiscales et certificats de résidence, si requis", "Preuve du versement"],
+    });
   }
-  return { ok: true, items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate)), disclaimer: "Calendrier indicatif. Les échéances TVA, acomptes IS, retenues particulières et reports liés aux jours fériés doivent être confirmés selon le régime et le calendrier DGI de l'année." };
+  return {
+    ok: true,
+    items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id)),
+    disclaimer: "Calendrier marocain de préparation. Les échéances en ligne TVA suivent la fin du mois légalement applicable ; vérifier les avis DGI, reports officiels, jours non ouvrables, régime réel et exercice de l'entreprise avant validation. Les retenues à la source sont proposées uniquement pour les mois où des opérations ont été enregistrées.",
+  };
 }
 
 export function reconcileTaxLedger({ entries = [], accounts = {}, declared = {}, startDate, endDate } = {}) {

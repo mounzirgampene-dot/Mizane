@@ -30,6 +30,7 @@ on:
       - feat/lot25-senegal-ivory-coast-tax
       - feat/lot26-benin-burkina-mali-tax
       - feat/lot27-west-africa-tax
+      - feat/lot28-west-africa-tax-validation
   pull_request:
     branches:
       - main

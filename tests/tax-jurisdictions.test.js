@@ -30,7 +30,15 @@ assert.equal(getTaxCountryProfile("BF").status,"active");
 assert.equal(getTaxCountryProfile("ML").status,"active");
 assert.equal(getTaxCountryProfile("ML").calculationModules.includes("VAT"),false);
 assert.equal(getTaxCountryProfile("ZZ").status,"not_configured");
-for(const code of ["LR","MR","NE","GN","GW"]) assert.ok(["review_required","research_required"].includes(getTaxCountryProfile(code).status),code+" : pays non activé sans validation juridique");
+for(const code of ["LR","MR","NE","GN","GW"]){const p=getTaxCountryProfile(code);assert.ok(["review_required","research_required"].includes(p.status),code+" : pays non activé sans validation juridique");assert.deepEqual(p.calculationModules,[],code+" : aucun calculateur activé");assert.deepEqual(p.rules,[],code+" : aucune règle exploitable sans consolidation");assert.ok(p.legalSources.length>=2,code+" : références documentaires");}
+assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="VAT").value,"19 %");
+assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="IS").value,"30 %");
+assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="IS").value,"25 % / 30 % / 35 %");
+assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les importations de l’annexe I ; 0 % exportations");
+assert.equal(getTaxCountryProfile("LR").taxFacts.find(x=>x.taxType==="IS").value,"25 %");
+assert.equal(getTaxCountryProfile("MR").taxFacts.length,1);
+assert.equal(calculateTaxLine({countryCode:"NE",taxCode:"NE_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"GW",taxCode:"GW_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);
 assert.equal(getTaxCountryProfile("GH").taxFacts.find(x=>x.label.includes("NHIL"))?.value,undefined);
 assert.equal(getTaxCountryProfile("NG").taxFacts.find(x=>x.taxType==="IS").value,"0 % petite société éligible ; 30 % autres sociétés");
 assert.equal(getTaxCountryProfile("SL").taxFacts.find(x=>x.taxType==="IS").value,"30 %");

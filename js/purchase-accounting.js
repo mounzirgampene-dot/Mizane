@@ -69,10 +69,11 @@ export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode 
   if ((store.entries||[]).some(entry=>entry.reference===reference)) return {ok:false,errors:["Cette facture fournisseur possède déjà une écriture comptable."],entries:[]};
   const debitLines=[];
   const categories=[...groups.keys()];
-  let allocatedTax=0;
+  let allocatedTax=0, allocatedBase=0;
   categories.forEach((category,index)=>{
     const amount=groups.get(category);
-    const baseAmount=round2(amount*rate);
+    const baseAmount=index===categories.length-1 ? round2(baseHT-allocatedBase) : round2(amount*rate);
+    allocatedBase=round2(allocatedBase+baseAmount);
     const taxShare=recoverable ? 0 : index===categories.length-1 ? round2(baseTax-allocatedTax) : round2(baseTax*amount/sourceTotal);
     allocatedTax=round2(allocatedTax+taxShare);
     debitLines.push({account:groupAccounts[category],label:(category==="goods"?(accountingMode==="periodic"?"Achats":"Entrée en stock"):category==="service"?"Prestations de services":"Immobilisations")+" — "+invoice.number,third:"",debit:round2(baseAmount+taxShare),credit:0});

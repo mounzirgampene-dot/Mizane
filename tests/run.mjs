@@ -1,3 +1,4 @@
+import "./tax-compliance.test.js";
 import "./tax.test.js";
 import "./customer-followups.test.js";
 import "./fixed-assets.test.js";

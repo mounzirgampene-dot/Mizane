@@ -51,7 +51,8 @@ const getBilling = () => {
   }
   const settings = store.billing.settings;
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
-  const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);\n  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
+  const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
+  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
   if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
   else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
@@ -223,7 +224,8 @@ function invoiceHasStockLines(invoice) {
   return (invoice?.lines || []).some(line => line.stockProductId && line.stockWarehouseId);
 }
 function stockSerials(value) {
-  return String(value || "").split(/[\r\n,;]+/).map(value => value.trim()).filter(Boolean);
+  return String(value || "").split(/[\r
+,;]+/).map(value => value.trim()).filter(Boolean);
 }
 function stockOperationUid() {
   if (!globalThis.crypto?.randomUUID) throw new Error("Ce navigateur ne permet pas de sécuriser l'identifiant de mouvement de stock.");
@@ -1054,7 +1056,8 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
-      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}\n      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}
+      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
       ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
       ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
       ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}

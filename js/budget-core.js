@@ -2,7 +2,7 @@
 const round2 = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 
 function validDate(value) {
-  const match = String(value || "").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return false;
   const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
   const date = new Date(0);
@@ -21,7 +21,7 @@ export function validateBudgetLines(lines) {
     const account = String(item?.account || "").trim();
     const type = String(item?.type || "");
     const monthlyAmount = Number(item?.monthlyAmount);
-    if (!/^\\d{1,12}$/.test(account)) errors.push("Ligne " + (index + 1) + " : compte budgétaire invalide.");
+    if (!/^\d{1,12}$/.test(account)) errors.push("Ligne " + (index + 1) + " : compte budgétaire invalide.");
     if (!["expense", "income"].includes(type)) errors.push("Ligne " + (index + 1) + " : nature budgétaire invalide.");
     if (!Number.isFinite(monthlyAmount) || monthlyAmount <= 0 || monthlyAmount > 999999999999) errors.push("Ligne " + (index + 1) + " : le budget mensuel doit être positif et valide.");
     if (seen.has(account)) errors.push("Le compte " + account + " est budgété plusieurs fois.");
@@ -67,7 +67,7 @@ export function buildBudgetReport({ lines = [], entries = [], startDate, endDate
     for (const line of Array.isArray(entry.lines) ? entry.lines : []) {
       const account = String(line?.account || "");
       const debit = Number(line?.debit || 0), credit = Number(line?.credit || 0);
-      if (!/^\\d{1,12}$/.test(account) || !Number.isFinite(debit) || !Number.isFinite(credit)) continue;
+      if (!/^\d{1,12}$/.test(account) || !Number.isFinite(debit) || !Number.isFinite(credit)) continue;
       for (const report of lineReports) {
         if (!account.startsWith(report.account)) continue;
         const actual = round2(report.type === "expense" ? debit - credit : credit - debit);

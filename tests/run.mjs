@@ -54,6 +54,7 @@ const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "
 const opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");
 const stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125080000_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
 const stockPeriodicValuationHardeningMigration = readFileSync(new URL("../supabase/migrations/20261125090000_stock_periodic_inventory_valuation_hardening.sql", import.meta.url), "utf8");
+const stockPeriodicValuationSecurityMigration = readFileSync(new URL("../supabase/migrations/20261125100000_stock_periodic_inventory_function_security.sql", import.meta.url), "utf8");
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
@@ -2090,6 +2091,9 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(stockPeriodicValuationHardeningMigration,/stock_movements_periodic_valuation_idx/);
   assert.match(stockPeriodicValuationHardeningMigration,/sum\(m\.quantity_delta\) over/);
   assert.match(stockPeriodicValuationHardeningMigration,/'negative_movements'/);
+  assert.match(stockPeriodicValuationSecurityMigration,/private\.stock_period_valuation_impl/);
+  assert.match(stockPeriodicValuationSecurityMigration,/security invoker/i);
+  assert.match(stockPeriodicValuationSecurityMigration,/grant execute[\s\S]*to authenticated/i);
   assert.match(stockCloudSource,/stock_period_valuation/);
   assert.match(opsUiSource,/postPeriodicStockAdjustment/);
   assert.match(opsUiSource,/readCloudStockPeriodValuation/);

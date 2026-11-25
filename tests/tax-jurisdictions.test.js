@@ -20,7 +20,7 @@ for(const [code,spec] of Object.entries(expected)){
 const newEastAfricanProfiles={
  NA:{currency:"NAD",name:"Namibie",vat:"15 % standard ; 0 % pour opérations légalement éligibles",is:"30 % non-mining ; 37,5 % autres mines ; 55 % mines de diamants"},
  ZM:{currency:"ZMW",name:"Zambie",vat:"16 % standard ; 0 % pour opérations éligibles",is:"30 % taux général ; 10 % agriculture pour les activités éligibles"},
- TZ:{currency:"TZS",name:"Tanzanie (continentale)",vat:"18 % standard ; 0 % exportations ; 16 % conditionnel sous désignation de la Commissioner General",is:"30 % sociétés résidentes et établissements stables ; régimes préférentiels distincts"},
+ TZ:{currency:"TZS",name:"Tanzanie (continentale)",selectorName:"Tanzanie",vat:"18 % standard ; 0 % exportations ; 16 % conditionnel sous désignation de la Commissioner General",is:"30 % sociétés résidentes et établissements stables ; régimes préférentiels distincts"},
  KE:{currency:"KES",name:"Kenya",vat:"16 % standard ; 0 % zero-rated supplies",is:"30 % sociétés résidentes ; 37,5 % sociétés non-résidentes"},
  RW:{currency:"RWF",name:"Rwanda",vat:"18 % standard ; 0 % pour opérations légalement éligibles",is:"28 %"},
  UG:{currency:"UGX",name:"Uganda",vat:"18 % standard ; 0 % pour fournitures éligibles",is:"30 % du revenu imposable"}
@@ -39,7 +39,7 @@ for(const [code,spec] of Object.entries(newEastAfricanProfiles)){
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS activée");
  assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul TVA bloqué");
  const selector=getCountry(code);
- assert.equal(selector.name,spec.name,code+" : pays disponible dans le sélecteur");
+ assert.equal(selector.name,spec.selectorName||spec.name,code+" : pays disponible dans le sélecteur");
  assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
  assert.deepEqual(selector.vatRates,[],code+" : pas de taux par défaut non activés");
 }

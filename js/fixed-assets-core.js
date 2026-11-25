@@ -90,8 +90,11 @@ export function buildFixedAssetSchedule(asset, options = {}) {
         rate: round2(rate * 10000) / 100,
         openingValue: round2(cost - before),
         depreciation: round2(accumulated - before),
+        annuite: round2(accumulated - before),
         accumulated: round2(accumulated),
+        cumul: round2(accumulated),
         netBookValue: round2(Math.max(residual, cost - accumulated)),
+        vnc: round2(Math.max(residual, cost - accumulated)),
       });
     }
     cursor = nextAnniversary;

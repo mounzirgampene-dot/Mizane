@@ -187,23 +187,6 @@ function product(id) {
 function warehouse(id) {
   return (stockState?.warehouses || []).find(item => String(item.id) === String(id));
 }
-function purchaseLineKey(line) {
-  return String(line.productId) + "::" + String(line.warehouseId);
-}
-function orderLinesFor(order, line) {
-  return (order?.lines || []).filter(item => purchaseLineKey(item) === purchaseLineKey(line));
-}
-function orderedQuantity(order, line) {
-  return round(orderLinesFor(order, line).reduce((sum, item) => sum + num(item.baseQuantity), 0));
-}
-function invoicedQuantity(orderId, line, exceptInvoiceId = null) {
-  return round(data().documents
-    .filter(doc => doc.type === "invoice" && doc.orderId === orderId && doc.status !== "cancelled" && doc.id !== exceptInvoiceId)
-    .flatMap(doc => doc.lines || [])
-    .filter(item => item.lineType !== "service" && item.lineType !== "fixed_asset")
-    .filter(item => purchaseLineKey(item) === purchaseLineKey(line))
-    .reduce((sum, item) => sum + num(item.baseQuantity), 0));
-}
 function validateInvoiceAgainstOrder(order, invoice, { requireReceived = false } = {}) {
   const report = buildSupplierInvoiceControlReport({
     documents: data().documents,

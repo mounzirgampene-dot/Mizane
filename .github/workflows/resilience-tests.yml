@@ -37,7 +37,7 @@ jobs:
         with:
           node-version: 20
       - name: Installer les dépendances
-        run: npm ci || npm install
+        run: npm install --no-audit --no-fund
       - name: Vérifier le style et les erreurs
         run: npm run lint
       - name: Exécuter les tests fonctionnels et de résilience

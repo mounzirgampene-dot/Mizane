@@ -82,6 +82,7 @@ export function viewFinancial(period = null) {
     {label:"Créances ouvertes sur factures émises",current:outstanding,previous:round(priorDocs.reduce((sum,item)=>sum+item.amount,0))},
     {label:"Dettes fournisseurs estimées",current:payable,previous:round(priorVendors.reduce((sum,item)=>sum+item.amount,0))},
   ],money);
+  const forecastReceivables = receivables("", "");
   const purchaseInvoices = (store.billing?.purchases?.documents || []).filter(invoice => invoice?.type === "invoice" && invoice.status === "validated" && invoice.accountingPostedAt);
   const supplierBalance = invoice => {
     const tax = supplierInvoiceTaxBreakdown(invoice);
@@ -100,7 +101,7 @@ export function viewFinancial(period = null) {
   const financialForecast = buildFinancialForecast({
     baseCurrency: store.settings.currency,
     openingCash: currentCash,
-    receivables: docs.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
+    receivables: forecastReceivables.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
     payables: payablesForecast,
     manual,
     asOf: today(),

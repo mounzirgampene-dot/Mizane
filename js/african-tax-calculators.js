@@ -38,7 +38,7 @@ const CI_WHT=[
 ["CI_RIBIC","RIBIC — bénéficiaire résident non immatriculé, cas éligible",7.5,"gross","CGI Côte d'Ivoire, art. 93"],
 ["CI_RIBNC","RIBNC — prestataire non-résident sans installation professionnelle",25,"net80","CGI Côte d'Ivoire, art. 92-2° a) ; doctrine DGI n°046/2024"],
 ["CI_RIRL_PERSONAL","Acompte revenus locatifs — propriétaire personne physique",12,"gross","CGI Côte d'Ivoire, art. 168 et 169 ; DGI, Le système fiscal ivoirien","Acompte sur revenus locatifs : 12 % du loyer brut pour un propriétaire personne physique, sous réserve des conditions de retenue et du rôle de l’intermédiaire."],
-["CI_RIRL_LEGAL","Acompte revenus locatifs — propriétaire personne morale ou entreprise",15,"gross","CGI Côte d'Ivoire, art. 168 et 169 ; DGI, Le système fiscal ivoirien","Acompte sur revenus locatifs : 15 % du loyer brut lorsque le local appartient à une personne morale ou à une entreprise ; vérifier le redevable légal et les exceptions."]
+["CI_RIRL_LEGAL","Acompte revenus locatifs — propriétaire personne morale ou entreprise",15,"gross","CGI Côte d'Ivoire, art. 168 et 169 ; DGI, Le système fiscal ivoirien","Acompte sur revenus locatifs : 15 % du loyer brut lorsque le local appartient à une personne morale ou à une entreprise ; vérifier le redevable légal et les exceptions."],
 ["CI_FIRCA","Prélèvement FIRCA — filières agricoles, cas général",2,"gross","CGI Côte d'Ivoire, art. 60 bis"],
 ["CI_FIRCA_CACAO","Prélèvement FIRCA — pisteurs café-cacao",7.5,"gross","CGI Côte d'Ivoire, art. 60 bis"],
 ["CI_ARTISTS_2026","Rémunérations de certains artistes, sportifs et intervenants non salariés",7.5,"gross","Annexe fiscale 2026 — extension de la retenue sur cachets"]];

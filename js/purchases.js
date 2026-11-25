@@ -5,7 +5,7 @@ import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
-import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "./purchase-accounting.js";
+import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -31,6 +31,8 @@ function data() {
   p.nextSupplierId = Math.max(1, Number(p.nextSupplierId) || 1);
   p.nextOrderNumber = Math.max(1, Number(p.nextOrderNumber) || 1);
   p.nextInvoiceNumber = Math.max(1, Number(p.nextInvoiceNumber) || 1);
+  p.nextPaymentId = Math.max(1, Number(p.nextPaymentId) || 1);
+  for (const invoice of p.documents.filter(item => item.type === "invoice")) { invoice.payments ||= []; for (const payment of invoice.payments) p.nextPaymentId = Math.max(p.nextPaymentId, num(payment.id) + 1); }
   return p;
 }
 function persist(message) {
@@ -48,6 +50,22 @@ function modal(html) {
 }
 function supplierName(id) {
   return data().suppliers.find(item => String(item.id) === String(id))?.name || "Fournisseur inconnu";
+}
+function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
+function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
+function supplierInvoiceBalance(invoice) { return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice))); }
+function openSupplierPayment(invoice) {
+  const balance=supplierInvoiceBalance(invoice); if(balance<=0.001)return toast('Cette facture fournisseur est déjà intégralement réglée.');
+  const defaultRate=Number(invoice.accounting?.exchangeRate)||1;
+  const {box}=modal(`<h2>Règlement fournisseur — ${esc(invoice.number)}</h2><p>Reste dû : <strong>${money(balance)} ${esc(invoice.currency||'')}</strong></p><div class="grid cols-2"><div><label>Date</label><input id="psp-date" type="date" value="${today()}"></div><div><label>Montant</label><input id="psp-amount" type="number" min="0.01" max="${balance}" step="0.01" value="${balance}"></div><div><label>Mode</label><select id="psp-method"><option value="bank">Banque / virement</option><option value="cash">Caisse / espèces</option></select></div><div><label>Taux de conversion</label><input id="psp-rate" type="number" min="0.000001" step="0.000001" value="${defaultRate}"></div><div><label>Compte de trésorerie</label><select id="psp-treasury">${accountOptions('asset')}</select></div><div><label>Perte de change</label><select id="psp-fx-loss">${accountOptions('expense')}</select></div><div><label>Gain de change</label><select id="psp-fx-gain">${accountOptions('income')}</select></div></div><p class="muted">La dette est soldée au taux comptable de la facture ; l’écart de change est comptabilisé séparément.</p><div id="psp-error" class="errors"></div><div class="actions"><button id="psp-submit">Comptabiliser</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelector('#psp-submit').addEventListener('click',()=>{
+    const p=data(), payment={id:p.nextPaymentId,date:box.querySelector('#psp-date').value,amount:num(box.querySelector('#psp-amount').value),method:box.querySelector('#psp-method').value,exchangeRate:num(box.querySelector('#psp-rate').value),treasury:box.querySelector('#psp-treasury').value,fxLoss:box.querySelector('#psp-fx-loss').value,fxGain:box.querySelector('#psp-fx-gain').value,createdAt:new Date().toISOString()};
+    const reference='REGLEMENT FOURNISSEUR '+String(invoice.number||invoice.id)+' #'+String(payment.id), existing=(store.entries||[]).find(entry=>entry.reference===reference);
+    if(existing){invoice.payments||=[];invoice.payments.push({...payment,status:'posted',entryId:existing.id});p.nextPaymentId++;persist('Règlement existant réconcilié.');box.closest('dialog').close();renderList();return;}
+    const proposal=buildSupplierPaymentJournalEntry(store,invoice,payment,payment);if(!proposal.ok){box.querySelector('#psp-error').textContent=proposal.errors.join(' ');return;}
+    const posted=postSupplierPaymentJournalEntry(store,invoice,payment,payment);if(!posted.ok){box.querySelector('#psp-error').textContent=(posted.errors||['Règlement refusé.']).join(' ');return;}
+    payment.status='posted';payment.entryId=(store.entries||[]).find(entry=>entry.reference===reference)?.id||null;invoice.payments||=[];invoice.payments.push(payment);p.nextPaymentId++;persist('Règlement fournisseur comptabilisé.');box.closest('dialog').close();renderList();
+  });
 }
 function product(id) {
   return (stockState?.products || []).find(item => String(item.id) === String(id));
@@ -164,6 +182,8 @@ function renderList() {
   const docs = [...p.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || Number(b.id)-Number(a.id));
   const orders = docs.filter(doc => doc.type === "order");
   const invoices = docs.filter(doc => doc.type === "invoice");
+  const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
+  const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
   const rows = docs.map(doc => `<tr>
     <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
     <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
@@ -181,6 +201,7 @@ function renderList() {
         <div class="calculator-result"><strong>${orders.filter(x => ["ordered","partially_received"].includes(x.status)).length}</strong><br><span class="muted">Commandes en cours</span></div>
         <div class="calculator-result"><strong>${invoices.filter(x => x.status === "validated").length}</strong><br><span class="muted">Factures validées</span></div>
       </div>
+      <p><strong>Dettes fournisseurs comptabilisées :</strong> ${esc(outstandingSummary)}</p>
     </section>
     <section class="card"><h2>Documents d'achat</h2>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
@@ -320,8 +341,11 @@ function openDetail(id) {
       doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
+  const paymentRows=(doc.payments||[]).map(payment=>`<tr><td>${esc(payment.date)}</td><td>${money(payment.amount)} ${esc(doc.currency||"")}</td><td>${payment.method==="cash"?"Caisse":"Banque"}</td><td>${payment.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
+  const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
+    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
@@ -332,6 +356,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Configurer l’imputation comptable", () => configureSupplierAccounting(doc));
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
+  if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));

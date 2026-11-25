@@ -112,7 +112,7 @@ async function refreshCloudTaxEvidence(){
   document.querySelectorAll("[data-evidence-verify],[data-evidence-delete]").forEach(b=>{b.hidden=!result.canWrite;});
   document.querySelectorAll("[data-status]").forEach(b=>{b.disabled=!result.canWrite;});
   if(tab==="declarations")viewTax();
- }catch(error){if(status)status.textContent="Coffre partagé indisponible : "+(error?.message||"vérifiez votre connexion et vos droits.");if(transfer)transfer.hidden=true;toast(error?.message||"Impossible de charger les justificatifs partagés.");}
+ }catch(error){const before=ws().documents.length;ws().documents=ws().documents.filter(d=>d.storage!=="supabase_storage");if(ws().documents.length!==before)saveNow();if(status)status.textContent="Coffre partagé indisponible : "+(error?.message||"vérifiez votre connexion et vos droits.");if(transfer)transfer.hidden=true;toast(error?.message||"Impossible de charger les justificatifs partagés.");}
  finally{cloudDocsLoading=false;}
 }
 function bind(){

@@ -1,3 +1,4 @@
+import { buildCommercialPerformanceReport } from "./commercial-performance-core.js";
 // MIZANE — Synthèse stratégique : agrégats prudents, sans mélange de devises.
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
@@ -54,6 +55,16 @@ export function buildStrategicDashboardSnapshot(store, asOf = new Date().toISOSt
     balance: documentBalance(doc),
     dueDate: doc.dueDate || doc.date,
   }));
+  const startDate = validDate(store?.settings?.exerciceStart) ? store.settings.exerciceStart : asOf.slice(0, 4) + "-01-01";
+  const endDate = validDate(store?.settings?.exerciceEnd) ? store.settings.exerciceEnd : asOf.slice(0, 4) + "-12-31";
+  const performance = buildCommercialPerformanceReport({
+    invoices: salesInvoices,
+    creditNotes: billingDocs.filter(doc => doc?.type === "credit_note"),
+    movements: Array.isArray(store?.stock?.movements) ? store.stock.movements : [],
+    products: Array.isArray(store?.stock?.products) ? store.stock.products : [],
+    startDate, endDate, baseCurrency: currency,
+  });
+  const profitability = performance.ok ? performance.totalsByCurrency : {};
   const products = Array.isArray(store?.stock?.products) ? store.stock.products.filter(item => item && item.active !== false && item.type !== "service") : [];
   const lowStock = products.flatMap(product => {
     const threshold = Number(product.minimumStock ?? product.minStock ?? product.reorderPoint);
@@ -71,5 +82,6 @@ export function buildStrategicDashboardSnapshot(store, asOf = new Date().toISOSt
         return totals;
       }, {}) },
     inventory: { products: products.length, lowStock },
+    profitability,
   };
 }

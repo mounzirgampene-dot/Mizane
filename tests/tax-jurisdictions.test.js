@@ -36,6 +36,16 @@ assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="VAT").valu
 assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="IS").value,"30 %");
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="IS").value,"25 % / 30 % / 35 %");
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="VAT").value,"18 %");
+assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.label==="Remboursement du crédit de TVA — contrats Finex").legalReference.includes("art. 11"),true);
+assert.match(getTaxCountryProfile("GN").taxFacts.find(x=>x.label.includes("Taxe d’apprentissage")).value,/10 000 GNF/);
+assert.match(getTaxCountryProfile("GN").taxFacts.find(x=>x.label.includes("Contribution foncière unique")).value,/15 % propriétés louées/);
+assert.equal(getActiveTaxRules("GN","VAT","2026-11-25").length,0);
+assert.equal(getActiveTaxRules("GN","IS","2026-11-25").length,0);
+assert.equal(getActiveTaxRules("GW","VAT","2026-11-25").length,0);
+assert.equal(getActiveTaxRules("NE","VAT","2026-11-25").length,0);
+assert.equal(calculateTaxLine({countryCode:"GN",taxCode:"GN_VAT_18",baseAmount:100,date:"2026-11-25"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"GW",taxCode:"GW_VAT_19",baseAmount:100,date:"2026-11-25"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"NE",taxCode:"NE_VAT_19",baseAmount:100,date:"2026-11-25"}).ok,false);
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="VAT"&&x.value==="0 %").legalReference.includes("art. 373"),true);
 assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les opérations de l’annexe I ; 0 % exportations");
 assert.match(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").detail,/transmissions de biens et prestations de services/);

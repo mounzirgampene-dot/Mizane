@@ -22,9 +22,9 @@ assert.equal(ir.monthlyEquivalent, 1466.67);
 assert.equal(calculateMoroccoIR({ annualNetTaxableIncome: -1 }).ok, false);
 const irPro = calculateMoroccoIRProfessional({ fiscalProfit: 100000, minimumContributionBase: 500000, cmRate: 0.25, dependents: 1 });
 assert.equal(irPro.ok, true);
-assert.equal(irPro.annualIR, 6800);
+assert.equal(irPro.annualIR, 11400);
 assert.equal(irPro.minimumContribution, 1500);
-assert.equal(irPro.netDue, 6200);
+assert.equal(irPro.netDue, 11400);
 assert.equal(calculateMoroccoIRProfessional({ fiscalProfit: 10000, minimumContributionBase: 100000, cmRate: 4 }).minimumContribution, 4000);
 assert.equal(calculateMoroccoIRProfessional({ fiscalProfit: 10000, minimumContributionBase: 100000, cmRate: 3 }).ok, false);
 

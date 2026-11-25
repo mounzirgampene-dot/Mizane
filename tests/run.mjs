@@ -2533,18 +2533,19 @@ test("tableau de bord stratégique : agrège les ventes, achats et retards sans 
 test("prévisions financières : projections cumulées et ventilation stricte par devise", () => {
   const report = buildFinancialForecast({
     baseCurrency: "MAD", openingCash: 1000, asOf: "2026-11-25",
-    receivables: [{ id: "f1", dueDate: "2026-12-10", currency: "EUR", originalAmount: 100, baseAmount: 1100, customer: "Client A" }],
+    receivables: [{ id: "f1", dueDate: "2026-12-10", currency: "EUR", originalAmount: 100, baseAmount: 1100, customer: "Client A" }, { id: "f2", dueDate: "2026-11-20", currency: "MAD", originalAmount: 50, baseAmount: 50 }],
     payables: [{ id: "p1", dueDate: "2026-12-15", currency: "EUR", originalAmount: 50, baseAmount: 550, supplier: "Fournisseur B" }],
     manual: [{ id: "m1", date: "2026-11-26", label: "Loyer", amount: 25, direction: "out" }, { id: "m2", date: "2026-11-27", label: "Flux EUR non converti", amount: 500, direction: "in", currency: "EUR" }],
   });
   assert.equal(report.ok, true);
-  assert.equal(report.projections.find(item => item.days === 30).amount, 1525);
-  assert.equal(report.projections.find(item => item.days === 30).inflows, 1100);
+  assert.equal(report.projections.find(item => item.days === 30).amount, 1575);
+  assert.equal(report.projections.find(item => item.days === 30).inflows, 1150);
   assert.equal(report.projections.find(item => item.days === 30).outflows, 575);
-  assert.deepEqual(report.receivablesByCurrency, { EUR: 100 });
+  assert.deepEqual(report.receivablesByCurrency, { EUR: 100, MAD: 50 });
   assert.deepEqual(report.payablesByCurrency, { EUR: 50 });
   assert.equal(report.events.some(item => item.id === "m2"), false);
   assert.equal(report.monthly[0].outflows, 25);
+  assert.equal(report.monthly[0].inflows, 50);
   assert.equal(report.monthly[1].inflows, 1100);
   assert.equal(report.monthly[1].outflows, 550);
   assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});

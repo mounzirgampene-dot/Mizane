@@ -36,7 +36,6 @@ function overview(profile,vat){
 }
 function internationalOverview(profile,vat){
  const code=profile.countryCode, currency=profile.currency;
- const money=n=>new Intl.NumberFormat("fr-FR",{style:"currency",currency}).format(Number(n||0));
  const rates=profile.rules.filter(x=>x.taxType==="VAT").map(x=>'<tr><td>'+esc(x.label)+'</td><td>'+x.rate+' %</td><td>'+esc(x.validFrom)+'</td><td>'+esc(x.legalReference)+'</td></tr>').join("");
  const facts=(profile.taxFacts||[]).map(x=>'<tr><td>'+esc(x.label)+'</td><td>'+esc(x.value)+'</td><td>'+esc(x.detail)+'</td></tr>').join("");
  const scales=(profile.taxScales||[]).map(x=>'<section class="card"><h3>'+esc(x.label)+'</h3><table><tbody>'+x.brackets.map(y=>'<tr><td>'+Number(y.from).toLocaleString("fr-FR")+' – '+(y.to===null?"et plus":Number(y.to).toLocaleString("fr-FR"))+'</td><td>'+y.rate+' %</td></tr>').join("")+'</tbody></table><p class="muted">'+esc(x.detail)+'</p></section>').join("");

@@ -11,6 +11,7 @@ import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry
 import { supplierInvoiceTaxBreakdown } from "./purchase-tax.js";
 import { suggestSupplierInvoiceAccounts } from "./purchase-account-mapping.js";
 import { allAccounts } from "./plans.js";
+import { addSupplierPaymentTerms, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "./supplier-payables.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -334,14 +335,16 @@ function openSupplier() {
     <label>Nom / raison sociale</label><input id="ps-name" maxlength="180" required>
     <div class="grid cols-2"><div><label>Code fournisseur</label><input id="ps-code" maxlength="40"></div><div><label>Identifiant fiscal</label><input id="ps-tax" maxlength="80"></div></div>
     <div class="grid cols-2"><div><label>Téléphone</label><input id="ps-phone" maxlength="60"></div><div><label>E-mail</label><input id="ps-email" type="email" maxlength="180"></div></div>
-    <label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea><div id="ps-error" class="errors"></div>
+    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
     <div class="actions"><button id="ps-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#ps-save").addEventListener("click", () => {
     const name = box.querySelector("#ps-name").value.trim();
     const code = box.querySelector("#ps-code").value.trim();
     if (!name) { box.querySelector("#ps-error").textContent = "Le nom du fournisseur est obligatoire."; return; }
     if (code && p.suppliers.some(item => item.code.toLowerCase() === code.toLowerCase())) { box.querySelector("#ps-error").textContent = "Ce code fournisseur existe déjà."; return; }
-    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), active:true, createdAt:new Date().toISOString() });
+    const paymentTermsDays=Number(box.querySelector("#ps-terms").value);
+    if(!Number.isInteger(paymentTermsDays)||paymentTermsDays<0||paymentTermsDays>3650){box.querySelector("#ps-error").textContent="Le délai de paiement doit être compris entre 0 et 3 650 jours.";return;}
+    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, active:true, createdAt:new Date().toISOString() });
     box.closest("dialog").close(); persist("Fournisseur enregistré."); renderList();
   });
 }
@@ -355,7 +358,7 @@ function openDocument(type) {
   const { box } = modal(`<h2>${type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
     <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
     <div><label>Date</label><input id="pd-date" type="date" value="${today()}"></div></div>
-    ${type === "invoice" ? `<label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select>` : ""}
+    ${type === "invoice" ? `<div class="grid cols-2"><div><label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select></div><div><label>Échéance de paiement</label><input id="pd-due-date" type="date" value="${addSupplierPaymentTerms(today(),p.suppliers[0]?.paymentTermsDays ?? 30)}"></div></div>` : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
     ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable proposée automatiquement</h3><p class="muted">Les comptes sont préremplis selon le plan ' + esc(suggestedAccounts.planName) + ' ; vérifiez les suggestions et adaptez-les si nécessaire avant validation.</p><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", suggestedAccounts?.accounts.supplier || "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", suggestedAccounts?.accounts.stock || "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", suggestedAccounts?.accounts.purchases || "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", suggestedAccounts?.accounts.inputVat || "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", suggestedAccounts?.accounts.services || "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", suggestedAccounts?.accounts.fixedAssets || "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
@@ -382,6 +385,7 @@ function openDocument(type) {
   box.querySelector("#pd-tax-rate")?.addEventListener("input", updateTotal);
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
   box.querySelector("#pd-add-extra-line")?.addEventListener("click", () => { extraTbody.insertAdjacentHTML("beforeend", extraLineRow(extraTbody.children.length)); bindExtraRows(); updateTotal(); });
+  if(type==="invoice"){const dueInput=box.querySelector("#pd-due-date");const refreshDueDate=()=>{const supplier=p.suppliers.find(item=>String(item.id)===box.querySelector("#pd-supplier").value);dueInput.value=addSupplierPaymentTerms(box.querySelector("#pd-date").value||today(),supplier?.paymentTermsDays??30);};box.querySelector("#pd-date").addEventListener("change",refreshDueDate);box.querySelector("#pd-supplier").addEventListener("change",refreshDueDate);}
   box.querySelector("#pd-currency").addEventListener("input", () => {
     if (type === "invoice") {
       const currency = box.querySelector("#pd-currency").value.trim().toUpperCase();
@@ -418,7 +422,7 @@ function openDocument(type) {
       const matchingError = validateInvoiceAgainstOrder(order, candidate);
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(p.suppliers.find(item=>item.id===supplierId)?.paymentTermsDays??30)}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
     if (type === "invoice") {
       const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
       if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }

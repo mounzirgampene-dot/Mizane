@@ -31,6 +31,7 @@ on:
       - feat/lot26-benin-burkina-mali-tax
       - feat/lot27-west-africa-tax
       - feat/lot28-west-africa-tax-validation
+      - feat/lot30-tax-declaration-calendar
   pull_request:
     branches:
       - main

@@ -18,6 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
+import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
 import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, buildSupplierMultiInvoicePaymentJournalEntry, postSupplierMultiInvoicePaymentJournalEntry } from "../js/purchase-credit-notes.js";
 import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
@@ -1924,7 +1925,8 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v43/);
+  assert.match(serviceWorkerSource,/mizane-v44/);
+  assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
@@ -2260,6 +2262,20 @@ test("achats : ventilation comptable des factures mixtes marchandises, services 
   assert.equal(nonRecoverable.entries[0].lines.reduce((sum,line)=>sum+line.debit,0),110);
   assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,services:""}}},"perpetual").ok,false);
   assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,total:99},"perpetual").ok,false);
+});
+test("achats : TVA multi-taux calculée par ligne et comptabilisée sans écart", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[{code:"401",label:"Fournisseurs",type:"liability"},{code:"31",label:"Stock marchandises",type:"asset"},{code:"4455",label:"TVA récupérable",type:"asset"},{code:"613",label:"Services extérieurs",type:"expense"}];
+  const invoice={id:990,type:"invoice",number:"FAF-TVA-990",date:"2026-11-25",supplierName:"Fournisseur multi-taux",total:150,
+    lines:[{lineType:"goods",quantity:1,unitCost:100,taxRate:20},{lineType:"service",quantity:1,unitCost:50,taxRate:10}],
+    accounting:{exchangeRate:1,taxRate:0,taxRecoverable:true,accounts:{supplier:"401",stock:"31",inputVat:"4455",services:"613"}}};
+  const tax=supplierInvoiceTaxBreakdown(invoice);
+  assert.equal(tax.ok,true,tax.errors.join(" "));
+  assert.equal(tax.totalHT,150); assert.equal(tax.totalTax,25); assert.equal(tax.payable,175); assert.equal(tax.uniformTaxRate,null);
+  const proposal=buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",100,0],["613",50,0],["4455",25,0],["401",0,175]]);
+  assert.equal(supplierInvoiceTaxBreakdown({...invoice,lines:[{quantity:1,unitCost:100,taxRate:120}]}).ok,false);
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

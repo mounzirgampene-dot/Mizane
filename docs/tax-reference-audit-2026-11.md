@@ -70,3 +70,5 @@ Cet audit est un contrôle de cohérence logicielle et documentaire, pas une opi
 - `js/tax-core.js` — déclaration des modules disponibles.
 - `tests/tax-jurisdictions.test.js` — assertions explicites sur les modules réellement exposés.
 - `docs/tax-reference-audit-2026-11.md` — présent rapport.
+- `sw.js` — cache PWA porté à `mizane-v67` après modification du moteur.
+- `tests/run.mjs` — assertions de cache mises à jour pour `mizane-v67`.

@@ -7,6 +7,7 @@ import { buildFinancialForecast } from "../financial-forecast-core.js";
 import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
 import { buildSupplierPayablesSchedule } from "../supplier-payables.js";
 import { supplierInvoiceTaxBreakdown } from "../purchase-tax.js";
+import { buildReceivablesReport } from "../receivables-core.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -17,17 +18,17 @@ const invoiceBalance = doc => {
 };
 
 function receivables(start, end) {
-  return (store.billing?.documents || []).filter(doc => {
-    const date = doc.date || doc.dueDate || "";
-    return doc.type === "invoice" && doc.status !== "cancelled" && invoiceBalance(doc) > 0 && (!start || date >= start) && (!end || date <= end);
-  }).map(doc => ({
-    number: doc.number || "Facture",
-    customer: doc.customerName || "Client non renseigné",
-    dueDate: doc.dueDate || doc.date || today(),
-    amount: round(invoiceBalance(doc) * (Number(doc.exchangeRate) > 0 ? Number(doc.exchangeRate) : 1)),
-    currency: doc.currency || store.settings.currency,
-    originalAmount: invoiceBalance(doc),
-    days: dayDiff(doc.dueDate || doc.date || today(), today()),
+  const report = buildReceivablesReport({
+    documents: store.billing?.documents || [], startDate: start || "", endDate: end || "",
+    asOf: today(), baseCurrency: store.settings.currency || "MAD",
+  });
+  if (!report.ok) return [];
+  return report.rows.map(row => ({
+    number: row.number, customer: row.customer, dueDate: row.dueDate,
+    amount: row.baseAmount ?? 0, currency: row.currency,
+    originalAmount: row.outstandingAmount, days: row.overdueDays,
+    overdue: row.overdue, bucket: row.bucket, baseAmount: row.baseAmount,
+    exchangeRate: row.exchangeRate,
   }));
 }
 
@@ -65,6 +66,7 @@ export function viewFinancial(period = null) {
   const exerciceStart = period?.start || store.settings.exerciceStart;
   const exerciceEnd = period?.end || store.settings.exerciceEnd;
   const docs = receivables(exerciceStart, exerciceEnd);
+  const collectionReport = buildReceivablesReport({ documents: store.billing?.documents || [], startDate: exerciceStart, endDate: exerciceEnd, asOf: today(), baseCurrency: store.settings.currency || "MAD" });
   const vendors = suppliers(exerciceStart, exerciceEnd);
   const priorRange = previousYearRange(exerciceStart, exerciceEnd);
   const priorDocs = period?.compare === false ? [] : receivables(priorRange.start, priorRange.end);
@@ -156,6 +158,20 @@ export function viewFinancial(period = null) {
     <section class="card table-wrap">
       <h2>Soldes clients</h2>
       <table><thead><tr><th>Client</th><th class="num">Créance ouverte</th></tr></thead><tbody>${customers.length ? customers.map(item => "<tr><td>" + esc(item.name) + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"2\" class=\"muted\">Aucun solde client.</td></tr>"}</tbody></table>
+      <h2>Balance âgée des créances par devise</h2>
+      <p class="muted">Les devises d'origine restent séparées. Les avoirs validés sont déduits des factures concernées ; les factures brouillon, annulées ou soldées sont exclues.</p>
+      <table><thead><tr><th>Devise</th><th class="num">Solde ouvert</th><th class="num">En retard</th><th class="num">1–30 j</th><th class="num">31–60 j</th><th class="num">61–90 j</th><th class="num">Plus de 90 j</th></tr></thead><tbody>${Object.values(collectionReport.byCurrency || {}).map(item => {
+        const fmt = amount => Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + item.currency;
+        return "<tr><td>" + esc(item.currency) + "</td><td class=\"num\">" + fmt(item.outstanding) + "</td><td class=\"num\">" + fmt(item.overdue) + "</td><td class=\"num\">" + fmt(item.buckets["1_30"]) + "</td><td class=\"num\">" + fmt(item.buckets["31_60"]) + "</td><td class=\"num\">" + fmt(item.buckets["61_90"]) + "</td><td class=\"num\">" + fmt(item.buckets.over_90) + "</td></tr>";
+      }).join("") || "<tr><td colspan=\"7\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>
+      <h2 style="margin-top:18px">État détaillé du recouvrement</h2>
+      <p class="muted">Classement des factures par ancienneté, avec solde dans la devise de facturation et contre-valeur dans la devise de référence lorsqu'un taux de change valide est disponible.</p>
+      <div class="table-wrap"><table><thead><tr><th>Facture</th><th>Client</th><th>Échéance</th><th>Retard</th><th>Tranche</th><th class="num">Solde d'origine</th><th class="num">Contre-valeur</th></tr></thead><tbody>${collectionReport.rows.map(item => {
+        const original = Number(item.outstandingAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + item.currency;
+        const label = collectionReport.bucketLabels[item.bucket];
+        return "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.overdue ? item.overdueDays + " j" : "À échoir") + "</td><td>" + esc(label) + "</td><td class=\"num\">" + original + "</td><td class=\"num\">" + (item.baseAmount == null ? "Taux manquant" : money(item.baseAmount)) + "</td></tr>";
+      }).join("") || "<tr><td colspan=\"7\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table></div>
+      <p class="muted">${collectionReport.totals.overdueInvoices} facture(s) en retard. ${collectionReport.totals.unconvertedInvoices} facture(s) sans taux de conversion exploitable ne sont pas incluses dans les totaux convertis.</p>
       <h2>Factures clients à recouvrer</h2>
       <table><thead><tr><th>Facture</th><th>Client</th><th>Échéance</th><th>Retard</th><th class="num">Solde converti</th></tr></thead>
       <tbody>${docs.length ? docs.map(item => "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.days > 0 ? item.days + " j" : "—") + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>

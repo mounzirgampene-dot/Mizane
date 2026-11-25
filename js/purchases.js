@@ -68,7 +68,7 @@ function openSupplierCreditNote(invoice) {
     invoice.creditNotes ||= [];
     if(invoice.creditNotes.some(item=>String(item.number).toLowerCase()===number.toLowerCase())){box.querySelector("#pscn-error").textContent="Cette référence d'avoir existe déjà sur la facture.";return;}
     const creditNote={id:p.nextCreditNoteId||1,number,date:box.querySelector("#pscn-date").value,total,reason:box.querySelector("#pscn-reason").value.trim(),createdAt:new Date().toISOString()};
-    const mode=store.settings.inventoryMode==="periodic"?"periodic":"perpetual";
+    const mode=stockState?.settings?.accountingMode || "perpetual";
     const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
     if(!proposal.ok){box.querySelector("#pscn-error").textContent=proposal.errors.join(" ");return;}
     const posted=postSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);

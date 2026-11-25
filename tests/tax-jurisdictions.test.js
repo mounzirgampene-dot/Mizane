@@ -60,4 +60,5 @@ assert.equal(getTaxCountryProfile("CM").calculationModules.includes("IS"),false)
 assert.equal(getTaxCountryProfile("GA").calculationModules.includes("IS"),false);
 assert.equal(getTaxCountryProfile("TD").calculationModules.includes("IS"),false);
 assert.equal(getTaxCountryProfile("CG").status,"research_required");
+assert.equal(getTaxCountryProfile("GA").taxFacts.find(x=>x.label.includes("Minimum forfaitaire")).value,"IMF : 1 % du CA fiscal HT ; MP : 1 000 000 FCFA");
 console.log("Lot 23/33 — juridictions fiscales internationales et CEMAC : OK");

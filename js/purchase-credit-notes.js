@@ -26,6 +26,9 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
   if (!invoice || invoice.type !== "invoice" || invoice.status !== "validated" || !invoice.accountingPostedAt) {
     return { ok:false, errors:["La facture d'origine doit être validée et comptabilisée."], entries:[] };
   }
+  if ((invoice.lines || []).some(line => line.lineType === "service" || line.lineType === "fixed_asset")) {
+    return {ok:false,errors:["Avoir bloqué : la ventilation par nature de dépense doit être fournie pour corriger une facture mixte."],entries:[]};
+  }
   const dateMatch=String(creditNote?.date||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) errors.push("Date de l'avoir invalide.");
   else {

@@ -46,6 +46,7 @@ export function calculateMoroccoIS({
   const netDue = Math.max(0, round2(grossDue - credits));
   const warnings = [];
   if (rateCategory === "standard" && taxableProfit >= 100000000) warnings.push("Bénéfice fiscal atteignant 100 millions MAD : vérifier le taux de 35 % et les exclusions légales.");
+  if (rateCategory === "standard" && taxableProfit < 100000000) warnings.push("Le taux de 20 % sous le seuil de 100 millions MAD est soumis à la condition de bénéfice inférieur à ce seuil pendant trois exercices consécutifs ; vérifier l'historique.");
   if (rateCategory === "high_profit" && taxableProfit < 100000000) warnings.push("Le taux de 35 % doit être vérifié au regard de la règle des trois exercices consécutifs et des exceptions de l'article 19-I-B.");
   if (rateCategory === "financial") warnings.push("Le taux de 40 % est réservé aux catégories d'établissements expressément visées à l'article 19-I-C.");
   if (cmReducedBase > 0) warnings.push("Le taux CM de 0,15 % ne concerne que les ventes éligibles de produits légalement énumérés.");
@@ -134,13 +135,15 @@ export function buildMoroccoTaxCalendar({ fiscalEnd, year, withholdingMonths = [
   return { ok: true, items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate)), disclaimer: "Calendrier indicatif. Les échéances TVA, acomptes IS, retenues particulières et reports liés aux jours fériés doivent être confirmés selon le régime et le calendrier DGI de l'année." };
 }
 
-export function reconcileTaxLedger({ entries = [], accounts = {}, declared = {} } = {}) {
+export function reconcileTaxLedger({ entries = [], accounts = {}, declared = {}, startDate, endDate } = {}) {
   const results = [];
   for (const [taxType, accountCodes] of Object.entries(accounts || {})) {
     const codes = (Array.isArray(accountCodes) ? accountCodes : [accountCodes]).map(value => String(value || "").trim()).filter(Boolean);
     if (!codes.length) continue;
     let debit = 0, credit = 0;
     for (const entry of Array.isArray(entries) ? entries : []) {
+      if (startDate && validDate(startDate) && entry?.date < startDate) continue;
+      if (endDate && validDate(endDate) && entry?.date > endDate) continue;
       for (const line of Array.isArray(entry?.lines) ? entry.lines : []) {
         if (!codes.includes(String(line?.account || ""))) continue;
         debit += Number(line.debit || 0);

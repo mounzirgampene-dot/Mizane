@@ -1,7 +1,8 @@
 // MIZANE — Écran Outils : clôture d'exercice, immobilisations & amortissements, rapprochement bancaire.
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
-import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
+import { AMORT_METHODS, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
+import { buildFixedAssetSchedule } from "../fixed-assets-core.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
 import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady, hasActiveStockCompany, readCloudStockPeriodValuation } from "../cloud-sync.js";
@@ -253,7 +254,7 @@ export function viewTools() {
   }));
   $app.querySelectorAll("[data-sched]").forEach((b) => b.addEventListener("click", () => {
     const a = store.assets[Number(b.dataset.sched)];
-    const sched = amortizationSchedule(a.amount, a.years, a.method);
+    const sched = buildFixedAssetSchedule({ ...a, residualValue: Number(a.residualValue) || 0 }).rows;
     openModal(`
       <h2>Plan d'amortissement — ${esc(a.name)}</h2>
       <table><thead><tr><th>Année</th><th class="num">Taux</th><th class="num">Annuité</th><th class="num">Cumul</th><th class="num">VNC</th></tr></thead>

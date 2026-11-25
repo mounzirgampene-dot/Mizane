@@ -35,6 +35,7 @@ on:
       - feat/lot31-tax-document-traceability
       - feat/lot32-central-tax-document-vault
       - feat/lot33-central-africa-tax-profiles
+      - feat/lot34-drc-equatorial-guinea
   pull_request:
     branches:
       - main

@@ -224,8 +224,7 @@ function invoiceHasStockLines(invoice) {
   return (invoice?.lines || []).some(line => line.stockProductId && line.stockWarehouseId);
 }
 function stockSerials(value) {
-  return String(value || "").split(/[\r
-,;]+/).map(value => value.trim()).filter(Boolean);
+  return String(value || "").split(/[\r\n,;]+/).map(value => value.trim()).filter(Boolean);
 }
 function stockOperationUid() {
   if (!globalThis.crypto?.randomUUID) throw new Error("Ce navigateur ne permet pas de sécuriser l'identifiant de mouvement de stock.");

@@ -10,6 +10,7 @@ on:
       - feat/lot6-supplier-credit-notes-reconciliation
       - feat/lot7-mixed-supplier-invoices
       - feat/lot8-supplier-line-tax-rates
+      - feat/lot9-supplier-credit-note-line-allocation
   workflow_dispatch:
 
 permissions:

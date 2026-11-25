@@ -4,7 +4,7 @@
 
 - Devise : CDF.
 - TVA normale : 16 %.
-- Taux réduits activés : 5 % et 1 %, uniquement après confirmation de l'éligibilité de l'opération ou de la position tarifaire.
+- Taux réduits activés : 1 %, 5 % et 8 %, uniquement après confirmation de l'éligibilité de l'opération ou de la position tarifaire. Le taux de 1 % est notamment soumis au contingentement prévu par la LFR.
 - Taux zéro : exportations et opérations assimilées admissibles.
 - Le texte de la loi de finances rectificative n°26/032 du 7 août 2026, art. 13, mentionne également un taux réduit de 8 % pour certaines positions tarifaires. Ce taux n'est pas activé dans le moteur : les documents DGI de groupes de taxation 2026 consultés opérationnalisent les groupes 16 %, 5 % et 1 %, sans groupe 8 % identifié. Une confirmation administrative postérieure à la LFR est nécessaire avant son activation.
 - IBP documenté à 30 % au taux de droit commun ; barème IRPP publié par la DGI. Aucun calculateur IBP/IRPP, paie, minimum fiscal ou retenues n'est activé.

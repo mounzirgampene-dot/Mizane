@@ -2512,7 +2512,7 @@ test("tableau de bord stratégique : agrège les ventes, achats et retards sans 
     billing: {
       documents: [
         { id: 1, type: "invoice", status: "validated", currency: "MAD", date: "2026-11-01", dueDate: "2026-11-10", totals: { ttc: 120 }, payments: [{ amount: 20 }] },
-        { id: 2, type: "invoice", status: "validated", currency: "EUR", date: "2026-11-02", totals: { ttc: 50 } },
+        { id: 2, type: "invoice", status: "validated", currency: "EUR", date: "2026-11-02", dueDate: "2026-12-02", totals: { ttc: 50 } },
       ],
       purchases: { documents: [{ id: 3, type: "invoice", status: "validated", currency: "MAD", totals: { ttc: 75 } }] },
     },

@@ -53,6 +53,7 @@ const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
 const opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");
 const stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125080000_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
+const stockPeriodicValuationHardeningMigration = readFileSync(new URL("../supabase/migrations/20261125090000_stock_periodic_inventory_valuation_hardening.sql", import.meta.url), "utf8");
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
@@ -2022,6 +2023,19 @@ test("stock intermittent : valorisation locale historique, transferts neutres et
   assert.equal(valuation.movement_count,2);
   const blocked=calculateLocalStockPeriodValuation({...stock,countSessions:[{status:"counting"}]},"2026-02-01","2026-02-28");
   assert.equal(blocked.active_count_sessions,1);
+  const transientNegative=calculateLocalStockPeriodValuation({
+    settings:{accountingMode:"periodic"},
+    movements:[
+      {kind:"receipt",productId:2,warehouseId:1,quantity:5,quantityDelta:5,totalCost:50,date:"2026-01-01"},
+      {kind:"issue",productId:2,warehouseId:1,quantity:7,quantityDelta:-7,totalCost:70,date:"2026-02-05"},
+      {kind:"receipt",productId:2,warehouseId:1,quantity:5,quantityDelta:5,totalCost:50,date:"2026-02-10"},
+    ],
+    countSessions:[],
+  },"2026-02-01","2026-02-28");
+  assert.equal(transientNegative.closing_negative_positions,0);
+  assert.equal(transientNegative.negative_movements,1);
+  const transientBlocked=buildPeriodicStockClosingJournalEntry(newStore(),{...transientNegative,period_start:"2026-02-01",period_end:"2026-02-28"},{});
+  assert.equal(transientBlocked.ok,false);
 });
 
 test("stock intermittent : comptes automatiques par plan comptable", () => {
@@ -2073,6 +2087,9 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(stockPeriodicValuationMigration,/stock_count_sessions/);
   assert.match(stockPeriodicValuationMigration,/grant execute[\s\S]*to authenticated/i);
   assert.doesNotMatch(stockPeriodicValuationMigration,/limit\s+500/i);
+  assert.match(stockPeriodicValuationHardeningMigration,/stock_movements_periodic_valuation_idx/);
+  assert.match(stockPeriodicValuationHardeningMigration,/sum\(m\.quantity_delta\) over/);
+  assert.match(stockPeriodicValuationHardeningMigration,/'negative_movements'/);
   assert.match(stockCloudSource,/stock_period_valuation/);
   assert.match(opsUiSource,/postPeriodicStockAdjustment/);
   assert.match(opsUiSource,/readCloudStockPeriodValuation/);

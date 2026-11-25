@@ -2386,6 +2386,7 @@ test("échéances fournisseurs : calcul des délais, ancienneté et tranches de 
   assert.equal(addSupplierPaymentTerms("2026-11-25", 30), "2026-12-25");
   assert.equal(addSupplierPaymentTerms("2026-11-25", 0), "2026-11-25");
   assert.equal(addSupplierPaymentTerms("date-invalide", 30), "");
+  assert.equal(addSupplierPaymentTerms("2026-02-30", 30), "");
   assert.equal(addSupplierPaymentTerms("2026-11-25", -1), "");
   assert.equal(supplierPayableAge({ dueDate: "2026-11-20" }, "2026-11-25"), 5);
   assert.equal(classifySupplierPayable({ dueDate: "2026-11-25", balance: 50 }, "2026-11-25").bucket, "due_today");

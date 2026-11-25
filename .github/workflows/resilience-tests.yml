@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - feat/resilience-load-hardening
+      - feat/stock-integrated-dev
   pull_request:
     branches:
       - main
+      - feat/stock-integrated-dev
+      - fix/lot1-security-hardening
 
 permissions:
   contents: read

@@ -18,6 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, buildSupplierMultiInvoicePaymentJournalEntry, postSupplierMultiInvoicePaymentJournalEntry } from "../js/purchase-credit-notes.js";
 import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
@@ -1923,7 +1924,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v41/);
+  assert.match(serviceWorkerSource,/mizane-v42/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
@@ -1951,6 +1952,37 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
+
+test("achats : règlement groupé multi-factures, écriture unique, change et idempotence", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"571",label:"Caisse",type:"asset"},
+    {code:"675",label:"Pertes de change",type:"expense"},
+    {code:"778",label:"Gains de change",type:"income"},
+  ];
+  const invoices=[
+    {id:91,type:"invoice",number:"FAF-G-91",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:60,accounting:{exchangeRate:1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+    {id:92,type:"invoice",number:"FAF-G-92",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:40,accounting:{exchangeRate:1.1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+  ];
+  const allocations=[{invoiceId:91,amount:60},{invoiceId:92,amount:40}];
+  const payment={date:"2026-11-25",reference:"VIR-GROUPE-001",amount:100,currency:"MAD",method:"bank",exchangeRate:1.2};
+  const mapping={treasury:"512",fxLoss:"675",fxGain:"778"};
+  const proposal=buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.entries.length,1);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["401",60,0],["401",44,0],["675",16,0],["512",0,120],
+  ]);
+  const posted=postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping).ok,false,"un paiement groupé ne doit pas être comptabilisé deux fois");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,[{invoiceId:91,amount:61},{invoiceId:92,amount:40}],payment,mapping).ok,false,"une affectation ne peut dépasser le solde dû");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,amount:99},mapping).ok,false,"le montant payé doit correspondre aux affectations");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,method:"cash"}, {...mapping,treasury:"512"}).ok,false,"un paiement en espèces doit utiliser un compte de caisse");
+});
 
 test("stock : sorties manuelles et écarts d’inventaire sont comptabilisés selon les comptes configurés", () => {
   const store=newStore();
@@ -2100,7 +2132,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v41/);
+  assert.match(serviceWorkerSource,/mizane-v42/);
 });
 
 
@@ -2134,6 +2166,38 @@ test("achats : règlements fournisseurs partiels, change, plafonnement et idempo
   assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:5,treasury:"411"},{...partial,treasury:"411"}).ok,false,"un compte client de classe 4 ne peut pas être utilisé comme trésorerie");
   assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:6,method:"cash",treasury:"512"},{...partial,method:"cash",treasury:"512"}).ok,false,"un règlement en espèces doit utiliser un compte de caisse");
   assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,accountingPostedAt:null},partial,partial).ok,false,"une facture non comptabilisée ne peut pas être réglée");
+});
+
+test("achats : avoirs fournisseurs équilibrés et rapprochement multi-factures avec tolérance", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"6",label:"Achats",type:"expense"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={id:81,type:"invoice",number:"FAF-2026-0081",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:100,accounting:{exchangeRate:1,taxRate:20,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"6",inputVat:"3455"}},payments:[],creditNotes:[]};
+  const credit={id:1,number:"AVF-2026-0001",date:"2026-11-25",total:30};
+  const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual");
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",36,0],["31",0,30],["3455",0,6]]);
+  assert.equal(postSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual").ok,true);
+  assert.equal(buildSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual").ok,false,"un avoir déjà comptabilisé ne doit pas être dupliqué");
+  assert.equal(buildSupplierCreditNoteJournalEntry(store,{...invoice,creditNotes:[{payableAmount:110}]},{...credit,id:2},"perpetual").ok,false,"un avoir ne peut pas dépasser le solde dû");
+  const invoices=[
+    {...invoice,id:82,number:"FAF-82",total:60,creditNotes:[]},
+    {...invoice,id:83,number:"FAF-83",total:40,creditNotes:[]},
+  ];
+  const match=planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:40}],{amount:100,currency:"MAD"},{tolerance:0});
+  assert.equal(match.ok,true,match.errors?.join(" "));
+  assert.equal(match.total,100);
+  const tolerated=planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:39.75}],{amount:100,currency:"MAD"},{tolerance:0.25});
+  assert.equal(tolerated.ok,true,tolerated.errors?.join(" "));
+  assert.equal(tolerated.status,"matched_with_tolerance");
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:39}],{amount:100,currency:"MAD"},{tolerance:0.25}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:82,amount:40}],{amount:100,currency:"MAD"},{tolerance:0}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:40}],{amount:100,currency:"EUR"},{tolerance:0}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:73},{invoiceId:83,amount:27}],{amount:100,currency:"MAD"},{tolerance:0}).ok,false);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

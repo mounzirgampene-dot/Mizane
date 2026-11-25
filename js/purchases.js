@@ -6,6 +6,7 @@ import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from ".
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, postSupplierMultiInvoicePaymentJournalEntry } from "./purchase-credit-notes.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -53,7 +54,95 @@ function supplierName(id) {
 }
 function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
 function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
-function supplierInvoiceBalance(invoice) { return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice))); }
+function supplierInvoiceBalance(invoice) { const credited=round((invoice?.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0)); return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice)-credited)); }
+function openSupplierMultiInvoiceReconciliation() {
+  const p=data();
+  const invoices=p.documents.filter(invoice=>invoice.type==="invoice"&&invoice.status==="validated"&&invoice.accountingPostedAt&&supplierInvoiceBalance(invoice)>0.001);
+  if(invoices.length<2) return toast("Il faut au moins deux factures fournisseurs validées avec un solde dû.");
+  const {box}=modal(`<h2>Règlement groupé de factures fournisseurs</h2>
+    <p class="muted">Cette opération comptabilise un seul décaissement bancaire ou de caisse, puis l'affecte aux factures sélectionnées. Les écarts de change sont comptabilisés séparément.</p>
+    <div class="grid cols-2">
+      <div><label>Date du paiement</label><input id="psmr-date" type="date" value="${today()}"></div>
+      <div><label>Référence bancaire / caisse</label><input id="psmr-reference" maxlength="120" required></div>
+      <div><label>Montant total payé</label><input id="psmr-amount" type="number" min="0.01" step="0.01"></div>
+      <div><label>Tolérance d'ajustement</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"><small class="muted">Si elle est utilisée, l'écart est appliqué à la dernière facture sélectionnée pour équilibrer exactement le règlement.</small></div>
+      <div><label>Mode de paiement</label><select id="psmr-method"><option value="bank">Banque / virement</option><option value="cash">Caisse / espèces</option></select></div>
+      <div><label>Taux de conversion du paiement</label><input id="psmr-rate" type="number" min="0.000001" step="0.000001" value="1"></div>
+      <div><label>Compte bancaire / caisse</label><select id="psmr-treasury">${accountOptions("asset","","treasury")}</select></div>
+      <div><label>Perte de change</label><select id="psmr-fx-loss">${accountOptions("expense")}</select></div>
+      <div><label>Gain de change</label><select id="psmr-fx-gain">${accountOptions("income")}</select></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Choisir</th><th>Facture</th><th>Fournisseur</th><th>Devise</th><th>Solde dû</th><th>Affectation</th></tr></thead><tbody>${invoices.map(invoice=>`<tr data-reconcile-invoice="${invoice.id}"><td><input type="checkbox" class="psmr-check"></td><td>${esc(invoice.number)}</td><td>${esc(supplierName(invoice.supplierId))}</td><td>${esc(invoice.currency||"MAD")}</td><td>${money(supplierInvoiceBalance(invoice))}</td><td><input class="psmr-allocation" type="number" min="0" max="${supplierInvoiceBalance(invoice)}" step="0.01" value="0" disabled></td></tr>`).join("")}</tbody></table></div>
+    <div id="psmr-error" class="errors"></div><div class="actions"><button id="psmr-save">Comptabiliser le règlement groupé</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelectorAll("[data-reconcile-invoice]").forEach(row=>row.querySelector(".psmr-check").addEventListener("change",event=>{
+    const input=row.querySelector(".psmr-allocation");
+    input.disabled=!event.target.checked;
+    if(event.target.checked&&num(input.value)<=0) input.value=String(Math.min(supplierInvoiceBalance(invoices.find(item=>String(item.id)===row.dataset.reconcileInvoice)),num(box.querySelector("#psmr-amount").value)));
+  }));
+  box.querySelector("#psmr-amount").addEventListener("input",()=>{
+    const selected=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked);
+    if(selected.length===1&&num(selected[0].querySelector(".psmr-allocation").value)<=0) selected[0].querySelector(".psmr-allocation").value=box.querySelector("#psmr-amount").value;
+  });
+  box.querySelector("#psmr-save").addEventListener("click",()=>{
+    const error=box.querySelector("#psmr-error");
+    const reference=box.querySelector("#psmr-reference").value.trim();
+    if(!reference){error.textContent="La référence du paiement est obligatoire.";return;}
+    p.reconciliations ||= [];
+    if(p.reconciliations.some(item=>String(item.reference||"").toLowerCase()===reference.toLowerCase())){error.textContent="Cette référence de paiement est déjà rapprochée.";return;}
+    const allocations=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked).map(row=>({invoiceId:String(row.dataset.reconcileInvoice),amount:num(row.querySelector(".psmr-allocation").value)}));
+    const first=allocations.length?invoices.find(item=>String(item.id)===String(allocations[0].invoiceId)):null;
+    const payment={date:box.querySelector("#psmr-date").value,reference,amount:num(box.querySelector("#psmr-amount").value),currency:first?.currency||"MAD",method:box.querySelector("#psmr-method").value,exchangeRate:num(box.querySelector("#psmr-rate").value)};
+    const tolerance=num(box.querySelector("#psmr-tolerance").value);
+    const plan=planSupplierMultiInvoiceReconciliation(invoices,allocations,payment,{tolerance});
+    if(!plan.ok){error.textContent=plan.errors.join(" ");return;}
+    // A tolerance may absorb only a small rounding difference. Adjust the final allocation explicitly before posting.
+    const normalized=allocations.map(item=>({...item}));
+    if(Math.abs(plan.difference)>0.001){
+      const last=normalized[normalized.length-1];
+      const invoice=invoices.find(item=>String(item.id)===String(last.invoiceId));
+      const adjusted=round(last.amount+plan.difference);
+      if(!(adjusted>0)||adjusted>supplierInvoiceBalance(invoice)+0.001){error.textContent="La tolérance ne peut pas être absorbée par la dernière facture sélectionnée. Corrigez les affectations.";return;}
+      last.amount=adjusted;
+    }
+    const groupId=uuid();
+    const mapping={treasury:box.querySelector("#psmr-treasury").value,fxLoss:box.querySelector("#psmr-fx-loss").value,fxGain:box.querySelector("#psmr-fx-gain").value};
+    const posted=postSupplierMultiInvoicePaymentJournalEntry(store,invoices,normalized,payment,mapping);
+    if(!posted.ok){error.textContent=(posted.errors||["Comptabilisation du règlement refusée."]).join(" ");return;}
+    const entry=(store.entries||[]).find(item=>item.reference==="REGLEMENT GROUPE FOURNISSEUR "+reference);
+    for(const allocation of posted.allocations){
+      const invoice=invoices.find(item=>String(item.id)===String(allocation.invoiceId));
+      invoice.payments ||= [];
+      invoice.payments.push({id:p.nextPaymentId++,groupId,date:payment.date,amount:allocation.amount,method:payment.method,exchangeRate:payment.exchangeRate,treasury:mapping.treasury,fxLoss:mapping.fxLoss,fxGain:mapping.fxGain,reference,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
+    }
+    p.reconciliations.push({id:groupId,...plan,total:posted.summary.total,difference:0,allocations:posted.allocations,date:payment.date,reference,amount:payment.amount,currency:payment.currency,method:payment.method,exchangeRate:payment.exchangeRate,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
+    persist("Règlement groupé comptabilisé et affecté aux factures.");
+    box.closest("dialog").close();
+    renderList();
+  });
+}
+function openSupplierCreditNote(invoice) {
+  const {box}=modal(`<h2>Avoir fournisseur — ${esc(invoice.number)}</h2>
+    <p>Fournisseur : ${esc(supplierName(invoice.supplierId))} · Solde dû : <strong>${money(supplierInvoiceBalance(invoice))} ${esc(invoice.currency||"")}</strong></p>
+    <div class="grid cols-2"><div><label>Date de l'avoir</label><input id="pscn-date" type="date" value="${today()}"></div><div><label>Référence de l'avoir</label><input id="pscn-number" maxlength="80" required></div></div>
+    <label>Montant HT de l'avoir</label><input id="pscn-total" type="number" min="0.01" step="0.01" required>
+    <label>Motif</label><textarea id="pscn-reason" maxlength="500"></textarea>
+    <div id="pscn-error" class="errors"></div><div class="actions"><button id="pscn-save">Comptabiliser l'avoir</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelector("#pscn-save").addEventListener("click",()=>{
+    const p=data(), number=box.querySelector("#pscn-number").value.trim(), total=num(box.querySelector("#pscn-total").value);
+    if(!number || !(total>0)){box.querySelector("#pscn-error").textContent="La référence et un montant HT positif sont obligatoires.";return;}
+    invoice.creditNotes ||= [];
+    if(invoice.creditNotes.some(item=>String(item.number).toLowerCase()===number.toLowerCase())){box.querySelector("#pscn-error").textContent="Cette référence d'avoir existe déjà sur la facture.";return;}
+    const creditNote={id:p.nextCreditNoteId||1,number,date:box.querySelector("#pscn-date").value,total,reason:box.querySelector("#pscn-reason").value.trim(),createdAt:new Date().toISOString()};
+    const mode=stockState?.settings?.accountingMode || "perpetual";
+    const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
+    if(!proposal.ok){box.querySelector("#pscn-error").textContent=proposal.errors.join(" ");return;}
+    const posted=postSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
+    if(!posted.ok){box.querySelector("#pscn-error").textContent=(posted.errors||["Comptabilisation refusée."]).join(" ");return;}
+    creditNote.payableAmount=proposal.summary.payableAmount;creditNote.status="posted";
+    invoice.creditNotes.push(creditNote);p.nextCreditNoteId=creditNote.id+1;
+    persist("Avoir fournisseur comptabilisé.");box.closest("dialog").close();renderList();
+  });
+}
 function openSupplierPayment(invoice) {
   const balance=supplierInvoiceBalance(invoice); if(balance<=0.001)return toast('Cette facture fournisseur est déjà intégralement réglée.');
   const defaultRate=Number(invoice.accounting?.exchangeRate)||1;
@@ -196,6 +285,7 @@ function renderList() {
   const invoices = docs.filter(doc => doc.type === "invoice");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
+  const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   const rows = docs.map(doc => `<tr>
     <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
     <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
@@ -206,7 +296,7 @@ function renderList() {
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
         <div><h2>Achats</h2><p class="muted">Fournisseurs, commandes, factures et rapprochement des réceptions.</p></div>
-        <div class="actions"><button id="pa-supplier">Nouveau fournisseur</button><button id="pa-order">Nouvelle commande</button><button id="pa-invoice">Nouvelle facture</button></div>
+        <div class="actions"><button id="pa-supplier">Nouveau fournisseur</button><button id="pa-order">Nouvelle commande</button><button id="pa-invoice">Nouvelle facture</button><button class="secondary" id="pa-reconcile">Rapprocher un paiement groupé</button></div>
       </div>
       <div class="grid cols-3">
         <div class="calculator-result"><strong>${p.suppliers.length}</strong><br><span class="muted">Fournisseurs</span></div>
@@ -218,10 +308,12 @@ function renderList() {
     <section class="card"><h2>Documents d'achat</h2>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
+    <section class="card"><h2>Rapprochements de paiements groupés</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Devise</th><th>Montant</th><th>État</th><th>Factures</th></tr></thead><tbody>${reconciliationRows||'<tr><td colspan="6">Aucun rapprochement enregistré.</td></tr>'}</tbody></table></div></section>
     <section class="card"><h2>Règle d'entrée en stock</h2><p>${stockState?.settings?.purchase_trigger === "supplier_invoice" ? "L'entrée en stock est déclenchée à la validation de la facture fournisseur." : "L'entrée en stock est déclenchée à la réception physique. Les réceptions partielles sont prises en charge."}</p><p class="muted">Les factures et commandes sont synchronisées dans l'espace professionnel. Les quantités physiques sont inscrites dans le journal serveur de stock.</p></section>`;
   document.getElementById("pa-supplier").addEventListener("click", openSupplier);
   document.getElementById("pa-order").addEventListener("click", () => openDocument("order"));
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));
+  document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
 }
 function openSupplier() {
@@ -353,11 +445,12 @@ function openDetail(id) {
       doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
+  const creditNoteRows=(doc.creditNotes||[]).map(note=>`<tr><td>${esc(note.date)}</td><td>${esc(note.number)}</td><td>${money(note.payableAmount??note.total)} ${esc(doc.currency||"")}</td><td>${note.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const paymentRows=(doc.payments||[]).map(payment=>`<tr><td>${esc(payment.date)}</td><td>${money(payment.amount)} ${esc(doc.currency||"")}</td><td>${payment.method==="cash"?"Caisse":"Banque"}</td><td>${payment.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
-    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
+    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
@@ -369,6 +462,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
+  if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));

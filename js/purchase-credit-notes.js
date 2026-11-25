@@ -26,7 +26,12 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
   if (!invoice || invoice.type !== "invoice" || invoice.status !== "validated" || !invoice.accountingPostedAt) {
     return { ok:false, errors:["La facture d'origine doit être validée et comptabilisée."], entries:[] };
   }
-  if (!creditNote || !/^\d{4}-\d{2}-\d{2}$/.test(String(creditNote.date || ""))) errors.push("Date de l'avoir invalide.");
+  const dateMatch=String(creditNote?.date||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  if (!dateMatch) errors.push("Date de l'avoir invalide.");
+  else {
+    const date=new Date(Date.UTC(+dateMatch[1],+dateMatch[2]-1,+dateMatch[3]));
+    if(date.getUTCFullYear()!==+dateMatch[1]||date.getUTCMonth()!==+dateMatch[2]-1||date.getUTCDate()!==+dateMatch[3]) errors.push("Date de l'avoir invalide.");
+  }
   const amount = number(creditNote?.total);
   const taxRate = number(invoice.accounting?.taxRate);
   const exchangeRate = number(invoice.accounting?.exchangeRate);

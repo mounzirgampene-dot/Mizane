@@ -119,13 +119,19 @@ export function buildVatReport({ countryCode, startDate, endDate, salesDocuments
           warnings.push({ code: "invalid_base", documentId: document.id ?? null, line: index + 1, message: "Base imposable invalide : ligne ignorée." });
           continue;
         }
+        const explicitRule = line?.taxCode ? documentRules.find(item => item.code === line.taxCode) || null : null;
         const rawRate = line?.taxRate ?? document?.accounting?.taxRate ?? document?.taxRate;
-        const rate = rawRate === "" || rawRate === null || rawRate === undefined ? NaN : Number(rawRate);
+        let rate = rawRate === "" || rawRate === null || rawRate === undefined ? NaN : Number(rawRate);
+        if (!Number.isFinite(rate) && explicitRule) rate = explicitRule.rate;
         if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
           warnings.push({ code: "missing_tax_rate", documentId: document.id ?? null, line: index + 1, message: "Taux fiscal absent ou invalide : ligne à qualifier." });
           continue;
         }
-        let rule = line?.taxCode ? documentRules.find(item => item.code === line.taxCode) || null : null;
+        let rule = explicitRule;
+        if (rule && Math.abs(rule.rate - rate) > 0.0001) {
+          warnings.push({ code: "tax_code_rate_mismatch", documentId: document.id ?? null, line: index + 1, message: "Le code fiscal et le taux de TVA de la ligne sont incohérents." });
+          rule = null;
+        }
         if (!line?.taxCode && rate > 0) rule = rulesByRate.get(rate) || null;
         if (!rule) {
           warnings.push({ code: rate === 0 ? "zero_rate_unqualified" : "unsupported_rate", documentId: document.id ?? null, line: index + 1, rate, message: rate === 0 ? "Taux 0 % : distinguer exonération avec ou sans droit à déduction et opération hors champ." : "Taux non reconnu par le référentiel actif : vérifier la date et la qualification fiscale." });
@@ -135,13 +141,13 @@ export function buildVatReport({ countryCode, startDate, endDate, salesDocuments
         const key = currency + "|" + (rule?.code || "UNCLASSIFIED_" + String(rate));
         let row = rows.find(item => item.key === key && item.direction === direction);
         if (!row) {
-          row = { key, currency, direction, taxCode: rule?.code || null, label: rule?.label || (rate === 0 ? "TVA 0 % — qualification manquante" : "Taux non référencé"), rate, treatment: rule?.treatment || "unclassified", baseAmount: 0, taxAmount: 0, deductibleTax: 0, documents: 0 };
+          row = { key, currency, direction, taxCode: rule?.code || null, label: rule?.label || (rate === 0 ? "TVA 0 % — qualification manquante" : "Taux non référencé"), rate, treatment: rule?.treatment || "unclassified", baseAmount: 0, taxAmount: 0, deductibleTax: 0, lineCount: 0 };
           rows.push(row);
         }
         row.baseAmount = round2(row.baseAmount + baseAmount);
         row.taxAmount = round2(row.taxAmount + taxAmount);
         if (direction === "purchases" && line?.taxDeductible === true && rule?.treatment === "taxable") row.deductibleTax = round2(row.deductibleTax + taxAmount);
-        row.documents += 1;
+        row.lineCount += 1;
         const summary = byCurrency[currency] ||= { salesBase: 0, outputVat: 0, purchaseBase: 0, inputVat: 0, deductibleInputVat: 0, unclassifiedBase: 0, unclassifiedVat: 0, netVatPayable: 0 };
         if (direction === "sales") {
           summary.salesBase = round2(summary.salesBase + baseAmount);

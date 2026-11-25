@@ -62,6 +62,7 @@ const stockPeriodicValuationSecurityMigration = readFileSync(new URL("../supabas
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const purchaseControlsSource = readFileSync(new URL("../js/purchase-controls.js", import.meta.url), "utf8");
 const purchaseAccountingSource = readFileSync(new URL("../js/purchase-accounting.js", import.meta.url), "utf8");
 const serviceWorkerSource = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 const purchaseReceiptSource = readFileSync(new URL("../js/purchase-receipts.js", import.meta.url), "utf8");
@@ -1673,7 +1674,7 @@ test("achats : fournisseurs, commandes, factures et rapprochement commande/factu
   assert.match(purchasesUiSource,/Nouveau fournisseur/);
   assert.match(purchasesUiSource,/Nouvelle commande fournisseur/);
   assert.match(purchasesUiSource,/Nouvelle facture fournisseur/);
-  assert.match(purchasesUiSource,/Rapprochement impossible/);
+  assert.match(purchaseControlsSource,/Rapprochement impossible/);
   assert.match(purchasesUiSource,/purchase_trigger/);
   assert.match(purchasesUiSource,/supplier_receipt/);
   assert.match(purchasesUiSource,/supplier_invoice/);
@@ -1682,9 +1683,9 @@ test("achats : factures multiples rapprochées cumulativement par article et ent
   assert.match(purchasesUiSource,/function purchaseLineKey\(line\)/);
   assert.match(purchasesUiSource,/doc\.type === "order" && doc\.status !== "cancelled"/);
   assert.match(purchasesUiSource,/function orderLinesFor\(order, line\)/);
-  assert.match(purchasesUiSource,/function invoicedQuantity\(orderId, line, exceptInvoiceId = null\)/);
-  assert.match(purchasesUiSource,/cumul des factures dépasse la quantité commandée/);
-  assert.match(purchasesUiSource,/matches\.some\(item => Math\.abs\(num\(item\.unitCost\) - num\(line\.unitCost\)\) > 0\.0001\)/);
+  assert.match(purchaseControlsSource,/alreadyInvoiced/);
+  assert.match(purchaseControlsSource,/cumul des factures dépasse la quantité commandée/);
+  assert.match(purchaseControlsSource,/price_mismatch/);
   assert.match(purchasesUiSource,/requireReceived:stockState\?\.settings\?\.purchase_trigger === "receipt"/);
 });
 test("achats : réception d'une facture répartie avant le mouvement serveur", () => {

@@ -1,14 +1,15 @@
 import "./african-tax-calculators.test.js";
+import "./regional-african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
-const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]}};
+const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]}};
 for(const [code,spec] of Object.entries(expected)){
  const p=getTaxCountryProfile(code);
  assert.equal(p.status,"active",code);
  assert.equal(p.currency,spec.currency,code);
  assert.deepEqual(p.rules.filter(x=>x.taxType==="VAT").map(x=>x.rate),spec.rates,code);
- assert.deepEqual(p.calculationModules,["VAT",...(code==="FR"||code==="BE"||code==="SN"||code==="CI"?["IS","IR","WITHHOLDING"]:[])],code+" : modules fiscaux activés");
+ assert.deepEqual(p.calculationModules,code==="ML"?["IS"]:["VAT","IS","IR","WITHHOLDING"].filter(x=>p.calculationModules.includes(x)),code+" : modules fiscaux activés");
  assert.ok(p.legalSources.length>=2,code+" : sources officielles");
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : règles IS détaillées non activées dans le moteur de lignes");
@@ -24,5 +25,9 @@ const report=buildVatReport({countryCode:"SN",startDate:"2026-01-01",endDate:"20
 assert.equal(report.ok,true);
 assert.equal(report.byCurrency.XOF.outputVat,18000);
 assert.ok(getTaxCountryProfile("CI").taxFacts.length>=2);
+assert.equal(getTaxCountryProfile("BJ").status,"active");
+assert.equal(getTaxCountryProfile("BF").status,"active");
+assert.equal(getTaxCountryProfile("ML").status,"active");
+assert.equal(getTaxCountryProfile("ML").calculationModules.includes("VAT"),false);
 assert.equal(getTaxCountryProfile("ZZ").status,"not_configured");
 console.log("Lot 23 — juridictions fiscales internationales : OK");

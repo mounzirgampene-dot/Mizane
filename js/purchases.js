@@ -187,6 +187,12 @@ function product(id) {
 function warehouse(id) {
   return (stockState?.warehouses || []).find(item => String(item.id) === String(id));
 }
+function purchaseLineKey(line) {
+  return String(line.productId) + "::" + String(line.warehouseId);
+}
+function orderLinesFor(order, line) {
+  return (order?.lines || []).filter(item => purchaseLineKey(item) === purchaseLineKey(line));
+}
 function validateInvoiceAgainstOrder(order, invoice, { requireReceived = false } = {}) {
   const report = buildSupplierInvoiceControlReport({
     documents: data().documents,

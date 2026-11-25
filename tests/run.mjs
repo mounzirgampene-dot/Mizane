@@ -18,6 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { buildSupplierInvoiceControlReport } from "../js/purchase-controls.js";
 import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "../js/supplier-payables.js";
+import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1363,7 +1364,8 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
   assert.match(app, /\["stock", "Gestion de stock"\]/);
   assert.match(app, /\["purchases", "Achats"\]/);
-  assert.match(app, /"stock", "purchases"(?:, "notifications")?\]\s*;/);
+  assert.match(app, /\["commercial-margins", "Marges commerciales"\]/);
+  assert.match(app, /"stock", "purchases", "commercial-margins"(?:, "notifications")?\]\s*;/);
   assert.match(cloud, /delete billingPayload\.stock/);
   assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
@@ -1929,7 +1931,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v48/);
+  assert.match(serviceWorkerSource,/mizane-v49/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2138,7 +2140,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v48/);
+  assert.match(serviceWorkerSource,/mizane-v49/);
 });
 
 
@@ -2414,6 +2416,56 @@ test("échéances fournisseurs : échéancier et prévision de trésorerie par d
   assert.equal(forecast.ok, true);
   assert.deepEqual(forecast.amountByCurrency, { EUR: 250 });
   assert.equal(supplierCashOutflowForecast(invoices, "2026-11-25", 366).ok, false);
+});
+
+test("marges commerciales : coût réel des sorties, conversion en devise comptable et marge par article", () => {
+  const report = buildCommercialMarginReport({
+    startDate: "2026-11-01", endDate: "2026-11-30", baseCurrency: "MAD",
+    invoices: [{
+      id: 10, type: "invoice", status: "issued", date: "2026-11-10",
+      baseCurrency: "MAD", currency: "EUR", exchangeRate: 10,
+      stockDocuments: [{ documentId: "stock-1" }],
+      lines: [
+        { stockProductId: "p1", description: "Produit A", quantity: 2, unitPrice: 15 },
+        { stockProductId: "p1", description: "Produit A", quantity: 1, unitPrice: 15 },
+      ],
+    }],
+    creditNotes: [],
+    products: [{ id: "p1", name: "Produit A", sku: "A-01" }],
+    movements: [
+      { document_id: "stock-1", product_id: "p1", quantity_delta: -3, value_delta: -180 },
+      { document_id: "other", product_id: "p1", quantity_delta: -1, value_delta: -50 },
+    ],
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.rows.length, 1);
+  assert.equal(report.rows[0].units, 3);
+  assert.equal(report.rows[0].revenue, 450);
+  assert.equal(report.rows[0].cost, 180);
+  assert.equal(report.rows[0].margin, 270);
+  assert.equal(report.rows[0].marginRate, 60);
+  assert.equal(report.totals.invoices, 1);
+  assert.equal(report.rows[0].sku, "A-01");
+  assert.equal(report.rows[0].missingCostLines, 0);
+  assert.equal(report.totals.byCurrency.MAD.margin, 270);
+});
+
+test("marges commerciales : absence de coût signalée et devises non fusionnées", () => {
+  const report = buildCommercialMarginReport({
+    startDate: "2026-11-01", endDate: "2026-11-30",
+    invoices: [
+      { id: 1, type: "invoice", status: "issued", date: "2026-11-02", baseCurrency: "MAD", exchangeRate: 1, lines: [{ stockProductId: "p1", quantity: 1, unitPrice: 100 }] },
+      { id: 2, type: "invoice", status: "issued", date: "2026-11-03", baseCurrency: "EUR", exchangeRate: 1, lines: [{ stockProductId: "p2", quantity: 1, unitPrice: 50 }] },
+    ],
+    products: [{ id: "p1", name: "A" }, { id: "p2", name: "B" }],
+    movements: [],
+  });
+  assert.equal(report.rows.length, 2);
+  assert.equal(report.totals.missingCostLines, 2);
+  assert.equal(report.rows.every(row => row.marginRate === null), true);
+  assert.deepEqual(report.baseCurrencies.sort(), ["EUR", "MAD"]);
+  assert.deepEqual(Object.keys(report.totals.byCurrency).sort(), ["EUR", "MAD"]);
+  assert.equal(buildCommercialMarginReport({ startDate: "2026-02-30", endDate: "2026-03-01" }).ok, false);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

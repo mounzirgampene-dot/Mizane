@@ -3,7 +3,7 @@
 const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const validAmount = value => Number.isFinite(Number(value)) && Number(value) >= 0;
 const validSigned = value => Number.isFinite(Number(value));
-const validDate = value => { const m=String(value||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/); if(!m)return false; const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3]; };
+const validDate = value => { const m=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})$/); if(!m)return false; const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3]; };
 const FR_IR_BRACKETS = [
   { from: 0, to: 11600, rate: 0 },
   { from: 11600, to: 29579, rate: 11 },
@@ -117,7 +117,7 @@ const WHT = {
 export function calculateForeignWithholding({ countryCode, ruleCode, baseAmount, date, treatyRate, applyTreaty = false } = {}) {
   const code = String(countryCode || "").toUpperCase();
   const base = Number(baseAmount);
-  if (!["FR", "BE"].includes(code) || !validAmount(base) || !/^2026-\d{2}-\d{2}$/.test(String(date || ""))) {
+  if (!["FR", "BE"].includes(code) || !validAmount(base) || !validDate(date) || !String(date).startsWith("2026-")) {
     return { ok: false, errors: ["Juridiction, base ou date invalide ; ces règles sont versionnées pour 2026."] };
   }
   const rule = WHT[code].find(item => item.code === ruleCode);

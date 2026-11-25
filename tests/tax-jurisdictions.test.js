@@ -9,7 +9,8 @@ for(const [code,spec] of Object.entries(expected)){
  assert.equal(p.status,"active",code);
  assert.equal(p.currency,spec.currency,code);
  assert.deepEqual(p.rules.filter(x=>x.taxType==="VAT").map(x=>x.rate),spec.rates,code);
- assert.deepEqual(p.calculationModules,code==="ML"?["IS"]:["VAT","IS","IR","WITHHOLDING"].filter(x=>p.calculationModules.includes(x)),code+" : modules fiscaux activés");
+ const expectedModules={FR:["VAT","IS","IR","WITHHOLDING"],BE:["VAT","IS","IR","WITHHOLDING"],SN:["VAT","IS","IR","WITHHOLDING"],CI:["VAT","IS","IR","WITHHOLDING"],BJ:["VAT","IS","WITHHOLDING"],BF:["VAT","IS","WITHHOLDING"],ML:["IS"],GH:["VAT"],NG:["VAT"],TG:["VAT"],SL:["VAT"],GM:["VAT"],CV:[]};
+ assert.deepEqual(p.calculationModules,expectedModules[code],code+" : modules réellement exposés par l’interface");
  assert.ok(p.legalSources.length>=2,code+" : sources officielles");
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : règles IS détaillées non activées dans le moteur de lignes");

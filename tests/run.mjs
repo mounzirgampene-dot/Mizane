@@ -50,7 +50,8 @@ const stockProductCatalogMigration = readFileSync(new URL("../supabase/migration
 const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123164907_stock_catalog_indexes_and_read_policy.sql", import.meta.url), "utf8");
 const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165146_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
 const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20261123172036_stock_product_price_units.sql", import.meta.url), "utf8");
-const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");\nconst opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");\nconst stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125080000_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
+const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");\nconst stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125080000_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");

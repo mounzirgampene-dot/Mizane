@@ -12,27 +12,27 @@ const moroccoRules = [
 ];
 
 const profiles = {
-  MA: {
-    countryCode: "MA",
-    countryName: "Maroc",
-    currency: "MAD",
-    status: "active",
-    authority: "Direction Générale des Impôts (DGI)",
-    rulesVersion: "2026.1",
-    rulesEffectiveFrom: "2026-01-01",
-    legalSources: [
-      { label: "Code général des impôts 2026", url: "https://www.finances.gov.ma/Publication/dgi/2025/cgi-2026-fr.pdf" },
-      { label: "Loi de finances n° 50-25 pour 2026", url: "https://www.sgg.gov.ma/BO/FR/2873/2025/BO_7465-bis_fr.pdf" },
-      { label: "Notes circulaires de la DGI", url: "https://www.tax.gov.ma/wps/portal/DGI/Documentation-fiscale/Notes-circulaires" },
-    ],
-    rules: moroccoRules,
-  },
+ MA:{countryCode:"MA",countryName:"Maroc",currency:"MAD",status:"active",authority:"Direction Générale des Impôts (DGI)",rulesVersion:"2026.1",rulesEffectiveFrom:"2026-01-01",calculationModules:["VAT","IS","IR","WITHHOLDING","DECLARATIONS","RECONCILIATION"],taxFacts:[{taxType:"IS",label:"IS — taux normal",value:"20 %",detail:"Sous réserve des conditions de seuil et d'historique prévues par le CGI.",legalReference:"CGI 2026, art. 19-I",sourceUrl:"https://www.finances.gov.ma/Publication/dgi/2025/cgi-2026-fr.pdf"},{taxType:"IS",label:"IS — taux majorés",value:"35 % / 40 %",detail:"35 % au-delà du seuil légal sous réserve des exceptions ; 40 % pour les établissements expressément visés.",legalReference:"CGI 2026, art. 19-I-B et C",sourceUrl:"https://www.finances.gov.ma/Publication/dgi/2025/cgi-2026-fr.pdf"}],taxScales:[],legalSources:[{label:"Code général des impôts 2026",url:"https://www.finances.gov.ma/Publication/dgi/2025/cgi-2026-fr.pdf"},{label:"Loi de finances 2026",url:"https://www.sgg.gov.ma/BO/FR/2873/2025/BO_7465-bis_fr.pdf"},{label:"Calendrier fiscal DGI",url:"https://www.tax.gov.ma/wps/portal/DGI/Vos-impots-procedures/Vos-echeances-fiscales"}],rules:moroccoRules},
+ FR:{countryCode:"FR",countryName:"France métropolitaine",currency:"EUR",status:"active",authority:"Direction générale des Finances publiques (DGFiP)",rulesVersion:"2026.1",rulesEffectiveFrom:"2026-01-01",calculationModules:["VAT"],taxFacts:[{taxType:"IS",label:"Impôt sur les sociétés — taux normal",value:"25 %",detail:"Le taux réduit PME et les contributions additionnelles ne sont pas calculés ici.",legalReference:"CGI, art. 219-I",sourceUrl:"https://www.impots.gouv.fr/international-professionnel/impot-sur-les-societes"}],taxScales:[{taxType:"IR",label:"Barème IR 2026 — revenus 2025, une part",currency:"EUR",brackets:[{from:0,to:11600,rate:0},{from:11600,to:29579,rate:11},{from:29579,to:84577,rate:30},{from:84577,to:181917,rate:41},{from:181917,to:null,rate:45}],detail:"Le quotient familial, plafonnements, réductions, crédits et prélèvements additionnels ne sont pas intégrés."}],legalSources:[{label:"Fiscalité des entreprises — impots.gouv.fr",url:"https://www.impots.gouv.fr/international-professionnel/fiscalite-des-entreprises"},{label:"Barème IR 2026 — Service-Public",url:"https://www.service-public.gouv.fr/particuliers/vosdroits/F1419"},{label:"BOFiP — taux de TVA",url:"https://bofip.impots.gouv.fr/bofip/1380-PGP.html/identifiant=BOI-TVA-LIQ-10-20250514"}],rules:[
+ {code:"FR_VAT_STANDARD",countryCode:"FR",taxType:"VAT",rate:20,treatment:"taxable",label:"TVA — taux normal",validFrom:"2026-01-01",validTo:null,legalReference:"CGI, art. 278"},
+ {code:"FR_VAT_10",countryCode:"FR",taxType:"VAT",rate:10,treatment:"taxable",label:"TVA — taux intermédiaire (opérations éligibles)",validFrom:"2026-01-01",validTo:null,legalReference:"CGI, art. 279"},
+ {code:"FR_VAT_55",countryCode:"FR",taxType:"VAT",rate:5.5,treatment:"taxable",label:"TVA — taux réduit (opérations éligibles)",validFrom:"2026-01-01",validTo:null,legalReference:"CGI, art. 278-0 bis"},
+ {code:"FR_VAT_21",countryCode:"FR",taxType:"VAT",rate:2.1,treatment:"taxable",label:"TVA — taux particulier (opérations énumérées)",validFrom:"2026-01-01",validTo:null,legalReference:"CGI, art. 281 quater et suivants"}]},
+ BE:{countryCode:"BE",countryName:"Belgique",currency:"EUR",status:"active",authority:"Service public fédéral Finances",rulesVersion:"2026.1",rulesEffectiveFrom:"2026-01-01",calculationModules:["VAT"],taxFacts:[],taxScales:[{taxType:"IR",label:"IPP 2026 — revenus 2026 (exercice d'imposition 2027)",currency:"EUR",personalAllowance:11550,brackets:[{from:0,to:16720,rate:25},{from:16720,to:29510,rate:40},{from:29510,to:51070,rate:45},{from:51070,to:null,rate:50}],detail:"Barème fédéral avant additionnels communaux et mécanismes personnels ; quotité exemptée de base indiquée par le SPF : 11 550 EUR."}],legalSources:[{label:"Taux de TVA — SPF Finances",url:"https://finances.belgium.be/fr/entreprises/tva/assujettissement-tva/taux-et-calcul/taux-tva"},{label:"Taux de l'impôt des personnes physiques — SPF Finances",url:"https://finances.belgium.be/en/private-individuals/tax-return/income/tax-rates"},{label:"Déclaration d'impôt 2026 — SPF Finances",url:"https://finances.belgium.be/fr/particuliers/declaration_impot/rentrer-declaration/declaration-impot"}],rules:[
+ {code:"BE_VAT_21",countryCode:"BE",taxType:"VAT",rate:21,treatment:"taxable",label:"TVA — taux normal",validFrom:"2026-01-01",validTo:null,legalReference:"Arrêté royal n° 20"},
+ {code:"BE_VAT_12",countryCode:"BE",taxType:"VAT",rate:12,treatment:"taxable",label:"TVA — taux intermédiaire (opérations éligibles)",validFrom:"2026-01-01",validTo:null,legalReference:"Arrêté royal n° 20"},
+ {code:"BE_VAT_6",countryCode:"BE",taxType:"VAT",rate:6,treatment:"taxable",label:"TVA — taux réduit (opérations éligibles)",validFrom:"2026-01-01",validTo:null,legalReference:"Arrêté royal n° 20"}]},
+ SN:{countryCode:"SN",countryName:"Sénégal",currency:"XOF",status:"active",authority:"Direction générale des Impôts et des Domaines (DGID)",rulesVersion:"2025.1 — vérifié 2026-11",rulesEffectiveFrom:"2025-01-01",calculationModules:["VAT"],taxFacts:[{taxType:"IS",label:"Impôt sur les sociétés — taux normal",value:"30 %",detail:"Taux normal publié par la DGID ; régimes et contributions spécifiques à vérifier séparément.",legalReference:"CGI Sénégal — taux publié par la DGID",sourceUrl:"https://www.dgid.sn/loi-reglement"},{taxType:"IS",label:"Impôt minimum forfaitaire",value:"0,5 %",detail:"Assis sur le chiffre d'affaires annuel, plafonné à 5 000 000 FCFA selon la présentation DGID.",legalReference:"CGI Sénégal — IMF",sourceUrl:"https://www.dgid.sn/loi-reglement"}],taxScales:[{taxType:"IR",label:"Barème IR publié par la DGID",currency:"XOF",brackets:[{from:0,to:630000,rate:0},{from:630000,to:1500000,rate:20},{from:1500000,to:4000000,rate:30},{from:4000000,to:8000000,rate:35},{from:8000000,to:13500000,rate:37},{from:13500000,to:50000000,rate:40},{from:50000000,to:null,rate:43}],detail:"Barème de référence DGID ; parts, abattements, minimums et retenues sur salaires non calculés ici."}],legalSources:[{label:"Code général des impôts et taux — DGID",url:"https://www.dgid.sn/loi-reglement"},{label:"Obligations fiscales des entreprises — DGID",url:"https://www.dgid.sn/entreprises"}],rules:[{code:"SN_VAT_18",countryCode:"SN",taxType:"VAT",rate:18,treatment:"taxable",label:"TVA — taux normal",validFrom:"2025-01-01",validTo:null,legalReference:"CGI Sénégal — taux normal publié par la DGID"}]},
+ CI:{countryCode:"CI",countryName:"Côte d’Ivoire",currency:"XOF",status:"active",authority:"Direction générale des Impôts (DGI)",rulesVersion:"2026.1",rulesEffectiveFrom:"2026-01-01",calculationModules:["VAT"],taxFacts:[{taxType:"IS",label:"Impôt sur les bénéfices — taux de droit commun",value:"25 %",detail:"Documentation DGI : 30 % pour les secteurs télécommunications, technologies de l'information et de la communication.",legalReference:"Documentation fiscale DGI — régime BIC/BA",sourceUrl:"https://www.dgi.gouv.ci/assets/documents/EBOOK/LE_SYTEME_FISCAL_IVOIRIEN/files/basic-html/page16.html"}],taxScales:[],legalSources:[{label:"Système fiscal ivoirien — DGI",url:"https://www.dgi.gouv.ci/assets/documents/EBOOK/LE_SYTEME_FISCAL_IVOIRIEN/files/basic-html/page16.html"},{label:"Communiqué DGI du 16 janvier 2026 — TVA à 9 % pour produits déterminés",url:"https://www.fne.dgi.gouv.ci/uploads/communiques/pdf_696e12da46ae5_COMMUNIQUE_TAUX_REDUIT.pdf"},{label:"Direction générale des Impôts",url:"https://www.dgi.gouv.ci/"}],rules:[
+ {code:"CI_VAT_18",countryCode:"CI",taxType:"VAT",rate:18,treatment:"taxable",label:"TVA — taux normal",validFrom:"2026-01-01",validTo:null,legalReference:"Annexe fiscale à la loi de finances 2026, art. 6"},
+ {code:"CI_VAT_9",countryCode:"CI",taxType:"VAT",rate:9,treatment:"taxable",label:"TVA — taux réduit pour produits expressément énumérés",validFrom:"2026-01-17",validTo:null,legalReference:"Ordonnance n° 2026-03 du 7 janvier 2026 ; communiqué DGI du 16 janvier 2026"}
+ ]}
 };
 
 export function getTaxCountryProfile(countryCode) {
   const code = String(countryCode || "").trim().toUpperCase();
   const profile = profiles[code];
-  return profile ? { ...profile, rules: profile.rules.map(rule => ({ ...rule })) } : {
+  return profile ? { ...profile, rules: profile.rules.map(rule => ({ ...rule })), calculationModules: [...(profile.calculationModules || [])], taxFacts: (profile.taxFacts || []).map(item => ({ ...item })), taxScales: (profile.taxScales || []).map(item => ({ ...item, brackets: (item.brackets || []).map(bracket => ({ ...bracket })) })) } : {
     countryCode: code,
     countryName: code || "Pays non défini",
     currency: "",
@@ -41,6 +41,9 @@ export function getTaxCountryProfile(countryCode) {
     rulesVersion: "",
     rulesEffectiveFrom: "",
     legalSources: [],
+    calculationModules: [],
+    taxFacts: [],
+    taxScales: [],
     rules: [],
   };
 }

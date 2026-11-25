@@ -191,7 +191,7 @@ export function buildMoroccoTaxCalendar({
     for (const month of [3, 6, 9, 12]) {
       const d = new Date(fiscalStartDate + "T00:00:00Z");
       d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + month - 1);
-      const dueDate = endOfMonth(d.getUTCFullYear(), d.getUTCMonth());
+      const dueDate = endOfMonth(d.getUTCFullYear(), d.getUTCMonth() + 1);
       items.push({
         id: "IS_ADVANCE_" + dueDate, taxType: "IS", title: "Acompte provisionnel IS — échéance à contrôler",
         period: dueDate.slice(0, 4) + "-M" + String(month).padStart(2, "0"), dueDate,

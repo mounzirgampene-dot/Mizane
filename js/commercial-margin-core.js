@@ -28,7 +28,7 @@ export function buildCommercialMarginReport({
   const includedInvoices = new Set();
   const notesByInvoice = new Map();
   for (const note of Array.isArray(creditNotes) ? creditNotes : []) {
-    if (note?.type !== "credit_note" || note.sourceInvoiceId == null || !validDate(note.date) || note.date < startDate || note.date > endDate) continue;
+    if (note?.type !== "credit_note" || note.sourceInvoiceId == null) continue;
     const key = String(note.sourceInvoiceId);
     const list = notesByInvoice.get(key) || [];
     list.push(note);
@@ -93,7 +93,7 @@ export function buildCommercialMarginReport({
     currencyTotals.margin = round(currencyTotals.revenue - currencyTotals.cost);
     totals.byCurrency[row.currency] = currencyTotals;
     totals.missingCostLines += row.missingCostLines;
-    return { ...row, invoices: row.invoices.size, marginRate };
+    return { ...row, invoiceIds: [...row.invoices], invoices: row.invoices.size, marginRate };
   }).sort((a, b) => b.margin - a.margin || a.productName.localeCompare(b.productName, "fr"));
   totals.invoices = includedInvoices.size;
   totals.products = resultRows.length;

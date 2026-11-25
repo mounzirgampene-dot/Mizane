@@ -19,6 +19,7 @@ import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js
 import { buildSupplierInvoiceControlReport } from "../js/purchase-controls.js";
 import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "../js/supplier-payables.js";
 import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
+import { buildCommercialPerformanceReport } from "../js/commercial-performance-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1931,7 +1932,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v49/);
+  assert.match(serviceWorkerSource,/mizane-v50/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2140,7 +2141,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v49/);
+  assert.match(serviceWorkerSource,/mizane-v50/);
 });
 
 
@@ -2466,6 +2467,42 @@ test("marges commerciales : absence de coût signalée et devises non fusionnée
   assert.deepEqual(report.baseCurrencies.sort(), ["EUR", "MAD"]);
   assert.deepEqual(Object.keys(report.totals.byCurrency).sort(), ["EUR", "MAD"]);
   assert.equal(buildCommercialMarginReport({ startDate: "2026-02-30", endDate: "2026-03-01" }).ok, false);
+});
+
+test("performances commerciales : tendances mensuelles et classements par devise", () => {
+  const report = buildCommercialPerformanceReport({
+    startDate: "2026-10-01", endDate: "2026-11-30",
+    invoices: [
+      { id: "oct", type: "invoice", status: "issued", date: "2026-10-10", baseCurrency: "MAD", exchangeRate: 1, stockDocuments: [{ documentId: "oct-stock" }], lines: [{ stockProductId: "p1", quantity: 2, unitPrice: 100 }] },
+      { id: "nov", type: "invoice", status: "issued", date: "2026-11-10", baseCurrency: "MAD", exchangeRate: 1, stockDocuments: [{ documentId: "nov-stock" }], lines: [{ stockProductId: "p1", quantity: 3, unitPrice: 100 }, { stockProductId: "p2", quantity: 1, unitPrice: 200 }] },
+      { id: "eur", type: "invoice", status: "issued", date: "2026-11-12", baseCurrency: "EUR", exchangeRate: 1, stockDocuments: [{ documentId: "eur-stock" }], lines: [{ stockProductId: "p2", quantity: 1, unitPrice: 50 }] },
+    ],
+    creditNotes: [
+      { id: "cn", type: "credit_note", sourceInvoiceId: "oct", date: "2026-11-05", lines: [{ stockProductId: "p1", quantity: 1, unitPrice: 100 }] },
+    ],
+    movements: [
+      { document_id: "oct-stock", product_id: "p1", quantity_delta: -2, value_delta: -100 },
+      { document_id: "nov-stock", product_id: "p1", quantity_delta: -3, value_delta: -150 },
+      { document_id: "nov-stock", product_id: "p2", quantity_delta: -1, value_delta: -80 },
+      { document_id: "eur-stock", product_id: "p2", quantity_delta: -1, value_delta: -20 },
+    ],
+    products: [{ id: "p1", name: "Produit A" }, { id: "p2", name: "Produit B" }],
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.monthly.length, 3);
+  assert.equal(report.monthly.find(row => row.month === "2026-10").revenue, 100);
+  assert.equal(report.monthly.find(row => row.month === "2026-11" && row.currency === "MAD").revenue, 500);
+  assert.equal(report.monthly.find(row => row.month === "2026-11" && row.currency === "EUR").revenue, 50);
+  assert.equal(report.rankings.MAD.byMargin[0].productId, "p1");
+  assert.equal(report.rankings.EUR.byMargin[0].productId, "p2");
+  assert.equal(report.totalsByCurrency.MAD.margin, 270);
+  assert.equal(report.totalsByCurrency.EUR.margin, 30);
+});
+
+test("performances commerciales : refuse une période invalide", () => {
+  const report = buildCommercialPerformanceReport({ startDate: "2026-02-30", endDate: "2026-03-01" });
+  assert.equal(report.ok, false);
+  assert.equal(report.monthly.length, 0);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

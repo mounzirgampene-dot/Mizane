@@ -12,6 +12,7 @@ on:
       - feat/lot8-supplier-line-tax-rates
       - feat/lot9-supplier-credit-note-line-allocation
       - feat/lot10-supplier-auto-account-mapping
+      - feat/lot11-supplier-purchase-controls
   workflow_dispatch:
 
 permissions:

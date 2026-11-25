@@ -11,5 +11,5 @@ assert.equal(getTaxEvidenceReadiness(declaration,verified).ready,true);
 assert.equal(canMoveTaxDeclarationToReview(declaration,verified).ok,true);
 assert.equal(createTaxEvidenceMetadata({id:"e3",declarationId:"d",category:"x",file:{name:"empty",size:0}}).ok,false);
 assert.equal(createTaxEvidenceMetadata({id:"e4",declarationId:"d",category:"x",file:{name:"large",size:16*1024*1024}}).ok,false);
-assert.equal(createTaxEvidenceMetadata({id:"e5",declarationId:"d",category:"x",file:{name:"a",size:1},referenceDate:"2026-99-99"}).ok,true);
+assert.equal(createTaxEvidenceMetadata({id:"e5",declarationId:"d",category:"x",file:{name:"a",size:1},referenceDate:"2026-99-99"}).ok,false);
 console.log("Lot 31 — gestion documentaire fiscale : OK");

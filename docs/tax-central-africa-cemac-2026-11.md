@@ -34,7 +34,7 @@ Sources principales : DGI Gabon, pages officielles TVA et IS ; Journal officiel,
 - IS documenté à 35 % à titre de repère, mais aucun calculateur IS/IR/retenues n'est activé.
 - La qualification du taux réduit nécessite une confirmation explicite d'éligibilité.
 
-Sources principales : DGI Tchad, CGI officiel 2026, notamment art. 238 ; Ministère des Finances, circulaire 2026 ; guide officiel de l'investisseur. L'articulation du taux légal et des centimes additionnels est aussi recoupée avec une source secondaire spécialisée.
+Sources principales : DGI Tchad, CGI officiel 2026, art. 238 ; loi n° 008/AN/SENAT/2025 portant loi de finances 2026, art. 32 (taux de TVA) et 73 (centimes additionnels) ; Ministère des Finances, circulaire 2026 ; ANIE, guide officiel de l'investisseur. La loi de finances 2026 confirme directement le taux légal et le prélèvement additionnel.
 
 ### République du Congo / Congo-Brazzaville (CG) — recherche requise
 - Devise : XAF.

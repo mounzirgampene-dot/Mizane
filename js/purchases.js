@@ -76,8 +76,8 @@ function openSupplierMultiInvoiceReconciliation() {
     if(!reference){box.querySelector("#psmr-error").textContent="La référence du paiement est obligatoire.";return;}
     p.reconciliations ||= [];
     if(p.reconciliations.some(item=>item.reference.toLowerCase()===reference.toLowerCase())){box.querySelector("#psmr-error").textContent="Cette référence de paiement est déjà rapprochée.";return;}
-    const allocations=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked).map(row=>({invoiceId:Number(row.dataset.reconcileInvoice),amount:num(row.querySelector(".psmr-allocation").value)}));
-    const first=allocations.length?invoices.find(item=>item.id===allocations[0].invoiceId):null;
+    const allocations=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked).map(row=>({invoiceId:String(row.dataset.reconcileInvoice),amount:num(row.querySelector(".psmr-allocation").value)}));
+    const first=allocations.length?invoices.find(item=>String(item.id)===String(allocations[0].invoiceId)):null;
     const payment={date:box.querySelector("#psmr-date").value,reference,amount:num(box.querySelector("#psmr-amount").value),currency:first?.currency||"MAD"};
     const plan=planSupplierMultiInvoiceReconciliation(invoices,allocations,payment,{tolerance:num(box.querySelector("#psmr-tolerance").value)});
     if(!plan.ok){box.querySelector("#psmr-error").textContent=plan.errors.join(" ");return;}
@@ -250,6 +250,7 @@ function renderList() {
   const invoices = docs.filter(doc => doc.type === "invoice");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
+  const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   const rows = docs.map(doc => `<tr>
     <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
     <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
@@ -274,7 +275,6 @@ function renderList() {
     </section>
     <section class="card"><h2>Rapprochements de paiements groupés</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Devise</th><th>Montant</th><th>État</th><th>Factures</th></tr></thead><tbody>${reconciliationRows||'<tr><td colspan="6">Aucun rapprochement enregistré.</td></tr>'}</tbody></table></div></section>
     <section class="card"><h2>Règle d'entrée en stock</h2><p>${stockState?.settings?.purchase_trigger === "supplier_invoice" ? "L'entrée en stock est déclenchée à la validation de la facture fournisseur." : "L'entrée en stock est déclenchée à la réception physique. Les réceptions partielles sont prises en charge."}</p><p class="muted">Les factures et commandes sont synchronisées dans l'espace professionnel. Les quantités physiques sont inscrites dans le journal serveur de stock.</p></section>`;
-  const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   document.getElementById("pa-supplier").addEventListener("click", openSupplier);
   document.getElementById("pa-order").addEventListener("click", () => openDocument("order"));
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));

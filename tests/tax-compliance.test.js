@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import {
-  calculateMoroccoIS, calculateMoroccoIR, calculateMoroccoWithholding,
+  calculateMoroccoIS, calculateMoroccoIR, calculateMoroccoIRProfessional, calculateMoroccoWithholding,
   buildMoroccoTaxCalendar, reconcileTaxLedger, validateTaxDeclaration,
 } from "../js/tax-compliance-core.js";
 
@@ -20,6 +20,13 @@ assert.equal(ir.familyReduction, 1200);
 assert.equal(ir.annualTax, 17600);
 assert.equal(ir.monthlyEquivalent, 1466.67);
 assert.equal(calculateMoroccoIR({ annualNetTaxableIncome: -1 }).ok, false);
+const irPro = calculateMoroccoIRProfessional({ fiscalProfit: 100000, minimumContributionBase: 500000, cmRate: 0.25, dependents: 1 });
+assert.equal(irPro.ok, true);
+assert.equal(irPro.annualIR, 6800);
+assert.equal(irPro.minimumContribution, 1500);
+assert.equal(irPro.netDue, 6200);
+assert.equal(calculateMoroccoIRProfessional({ fiscalProfit: 10000, minimumContributionBase: 100000, cmRate: 4 }).minimumContribution, 4000);
+assert.equal(calculateMoroccoIRProfessional({ fiscalProfit: 10000, minimumContributionBase: 100000, cmRate: 3 }).ok, false);
 
 const wht = calculateMoroccoWithholding({ ruleCode: "MA_WHT_SERVICE_COMPANY_5", baseAmount: 10000, date: "2026-06-01", payerEligible: true });
 assert.equal(wht.ok, true);

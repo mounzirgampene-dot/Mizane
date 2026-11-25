@@ -1,4 +1,5 @@
 import "./tax-compliance.test.js";
+import "./tax-documents.test.js";
 import "./tax-jurisdictions.test.js";
 import "./tax.test.js";
 import "./customer-followups.test.js";
@@ -1943,7 +1944,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v68/g);
+  assert.match(serviceWorkerSource,/mizane-v69/g);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2152,7 +2153,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v68/);
+  assert.match(serviceWorkerSource,/mizane-v69/);
 });
 
 

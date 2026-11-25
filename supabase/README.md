@@ -341,3 +341,10 @@ Ces tests valident le moteur client et ses règles de comparaison. Ils ne rempla
 
 
 L'application comptable locale écoute également les événements `storage` : lorsqu'une synchronisation du portail met à jour `mizane_v1` dans un autre onglet, l'état en mémoire de l'application est rechargé avant la prochaine sauvegarde. Le client compare en outre la valeur locale au début et à la fin de l'opération ; si un autre onglet a modifié les données pendant l'échange réseau, il interrompt la synchronisation au lieu d'écraser ces modifications.
+
+
+## Coffre documentaire fiscal partagé
+
+La migration `20261125172040_tax_document_vault.sql` ajoute le bucket privé `tax-evidence` et la table `public.company_tax_documents`. Les politiques RLS autorisent la lecture aux membres actifs de l'entreprise et réservent le téléversement, la vérification et la suppression aux rôles administrateur et comptable. Le bucket limite les fichiers à 15 Mo et à une liste de formats bureautiques et d'images courants.
+
+Le frontend utilise uniquement la clé publique et la session Auth de l'utilisateur. Aucun secret de service n'est exposé au navigateur. Les anciens fichiers locaux ne sont transférés vers le coffre partagé qu'après clic explicite sur le bouton de transfert dans le registre des déclarations.

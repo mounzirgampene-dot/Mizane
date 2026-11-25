@@ -53,7 +53,7 @@ const getBilling = () => {
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
   const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
-  if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
+  if (!settings.accountingAccounts) settings.accountingAccounts = { ...suggestedAccounts, inventory:suggestedStockAccounts.inventory, stockVariation:suggestedStockAccounts.stockVariation };
   else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
     const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";

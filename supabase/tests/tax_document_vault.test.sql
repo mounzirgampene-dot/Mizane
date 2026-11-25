@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap;
-select plan(8);
+select plan(10);
 select has_table('public','company_tax_documents','company tax document metadata table exists');
 select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.company_tax_documents'::regclass),'document metadata enforces RLS');
 select ok((select not public from storage.buckets where id='tax-evidence'),'tax evidence bucket is private');
@@ -9,5 +9,7 @@ select ok(exists(select 1 from pg_policies where schemaname='public' and tablena
 select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='company_tax_documents' and policyname='company_tax_documents_insert_finance_roles'),'only finance roles have metadata insert policy');
 select ok(exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='tax_evidence_select_company_members'),'private object reads are company scoped');
 select ok(exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='tax_evidence_insert_finance_roles'),'private object uploads require finance roles');
+select ok(exists(select 1 from pg_trigger where tgrelid='public.company_tax_documents'::regclass and tgname='guard_company_tax_document_update' and not tgisinternal),'document metadata immutability trigger is installed');
+select ok(exists(select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='private' and p.proname='guard_company_tax_document_update'),'immutability guard stays in the private schema');
 select * from finish();
 rollback;

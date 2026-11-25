@@ -303,4 +303,36 @@ assert.match(getTaxCountryProfile("TN").taxFacts.find(x=>x.taxType==="IS").detai
 assert.equal(getTaxCountryProfile("JO").taxFacts.find(x=>x.taxType==="SALES_TAX").taxType,"SALES_TAX");
 assert.match(getTaxCountryProfile("SA").taxFacts.find(x=>x.taxType==="IS").detail,/Zakat/);
 
+
+const lot52Profiles={
+ AE:{currency:"AED",name:"Émirats arabes unis",indirect:"5 % taux normal ; taux zéro et exonérations selon les opérations",direct:"0 % jusqu'à AED 375 000 ; 9 % au-delà ; régime distinct pour les grandes multinationales"},
+ QA:{currency:"QAR",name:"Qatar",indirect:"TVA non appliquée au Qatar à la date de la revue 2026",direct:"10 % sur le revenu imposable concerné ; au moins 35 % pour les opérations pétrolières et gazières ; DMTT 15 % pour les groupes éligibles"},
+ KW:{currency:"KWD",name:"Koweït",indirect:"Aucune TVA ni taxe générale sur les ventes mise en œuvre identifiée à la date de la revue 2026",direct:"15 % sur les bénéfices imposables des sociétés étrangères concernées ; DMTT 15 % pour les groupes multinationaux éligibles"},
+ BH:{currency:"BHD",name:"Bahreïn",indirect:"10 % taux normal depuis le 1er janvier 2022 ; taux zéro et exonérations selon la loi",direct:"Pas d'impôt général sur les bénéfices ; 46 % hydrocarbures ; DMTT 15 % pour les groupes multinationaux éligibles"},
+ OM:{currency:"OMR",name:"Oman",indirect:"5 % taux de base ; 0 % pour certaines fournitures ; exonérations prévues par la loi",direct:"15 % taux général ; 3 % petites entreprises sous conditions ; 55 % pétrole et gaz ; retenue 10 % sur certains paiements"}
+};
+for(const [code,spec] of Object.entries(lot52Profiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code+" : aucun module fiscal activé");
+ assert.deepEqual(p.rules,[],code+" : aucune règle fiscale activée");
+ assert.ok(p.legalSources.length>=3,code+" : références institutionnelles");
+ assert.equal(p.taxFacts.find(x=>["VAT","SALES_TAX"].includes(x.taxType)).value,spec.indirect,code);
+ assert.equal(p.taxFacts.find(x=>x.taxType==="IS").value,spec.direct,code);
+ assert.deepEqual(getActiveTaxRules(code,"VAT","2026-11-25"),[],code+" : aucune règle TVA active");
+ assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS active");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul fiscal bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays disponible dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : aucun taux par défaut non validé");
+}
+assert.match(getTaxCountryProfile("AE").taxFacts.find(x=>x.taxType==="IS").detail,/AED 375 000/);
+assert.match(getTaxCountryProfile("QA").taxFacts.find(x=>x.taxType==="SALES_TAX").detail,/n'a pas appliqué la TVA/);
+assert.match(getTaxCountryProfile("KW").taxFacts.find(x=>x.taxType==="IS").detail,/750 millions EUR/);
+assert.match(getTaxCountryProfile("BH").taxFacts.find(x=>x.taxType==="IS").detail,/Decree-Law No. 11 of 2024/);
+assert.match(getTaxCountryProfile("OM").taxFacts.find(x=>x.taxType==="IS").detail,/55 %/);
+
 console.log("Lot 23/33/34/35 — juridictions fiscales internationales et Afrique centrale : OK");

@@ -34,7 +34,8 @@ Les sources de référence sont prioritairement les publications de la Direction
 
 6. **DGI — Le système fiscal ivoirien.** La fiche expose le barème ITS et la réduction d’impôt pour charges de famille (RICF), ainsi que les règles générales de l’IMF.  
    - https://www.dgi.gouv.ci/assets/documents/LE%20SYSTEME%20FISCAL%20IVOIRIEN.pdf  
-   - Barème ITS, page HTML : https://www.dgi.gouv.ci/assets/documents/EBOOK/LE_SYTEME_FISCAL_IVOIRIEN/files/basic-html/page32.html
+   - Barème ITS, page HTML : https://www.dgi.gouv.ci/assets/documents/EBOOK/LE_SYTEME_FISCAL_IVOIRIEN/files/basic-html/page32.html  
+   - Acompte sur revenus locatifs, page HTML : https://www.dgi.gouv.ci/assets/documents/EBOOK/LE_SYTEME_FISCAL_IVOIRIEN/files/basic-html/page43.html
 
 7. **DGI — Doctrine fiscale n° 046 du 8 juillet 2024, rémunérations de prestations de services versées à l’étranger.** Elle confirme le taux de 25 % appliqué à une base nette après déduction forfaitaire de 20 %, soit un effet de 20 % sur le montant brut dans le cas ordinaire décrit.  
    - https://www.dgi.gouv.ci/assets/documents/DOCTRINE%20FISCALE%202024/REGIMES%20SPECIFIQUES/N%C2%B0%20046%20MFB%20DGI%20DLCD%20DU%2008%20JUIL%202024%20R%C3%A9gime%20fiscal%20des%20redevances%20et%20r%C3%A9mun%C3%A9rations%20de%20prestations%20de%20services%20vers%C3%A9es%20%C3%A0%20l%27%C3%A9tranger.pdf
@@ -98,11 +99,16 @@ La doctrine DGI n° 046/2024 confirme un taux de retenue de 25 % appliqué à un
 
 ### 3.6. Retenue sur revenus locatifs : référence juridique à corriger
 
-Le calculateur `CI_RIRL` référence actuellement l’article 93 du CGI. Or le formulaire officiel de la DGI relatif à la retenue à la source à titre d’acompte d’impôt sur les revenus locatifs rattache cette retenue aux **articles 168 et suivants**.
+Le calculateur `CI_RIRL` applique actuellement un taux unique de **7,5 %** et cite l’article 93 du CGI. Ces deux paramètres sont incompatibles avec les documents officiels DGI consultés.
 
-Il existe donc une incohérence de référence juridique dans le code. Le taux et les conditions de la règle `CI_RIRL` doivent également être revérifiés dans le CGI 2026 avant toute correction du calcul. Il ne faut pas simplement remplacer la référence de l’article sans vérifier le taux, l’assiette, les redevables légaux et les exonérations.
+Le formulaire officiel DGI rattache l’acompte sur les revenus locatifs aux **articles 168 et suivants**. La fiche « Le système fiscal ivoirien », à la rubrique consacrée à cet acompte, indique :
+- **12 % du montant brut des loyers** pour le cas général décrit, notamment les loyers pris en location par les entreprises soumises au régime réel, à la taxe d’État de l’entreprenant ou à l’impôt des microentreprises, ainsi que les cas d’intermédiaires concernés ;
+- **15 %** lorsque les locaux loués appartiennent à une personne morale ou à une entreprise ;
+- le dispositif concerne également les ambassades et organismes internationaux, sous réserve des conditions et exceptions applicables.
 
-**État :** point bloquant à corriger dans un sous-lot dédié après contrôle des articles 168 et suivants du CGI 2026.
+Il s’agit d’un **acompte sur l’impôt sur les revenus locatifs**, et non d’un taux général de retenue sur tous les loyers ni d’un impôt autonome de 7,5 %. La base documentée est le montant brut des loyers. Les articles 168 et 169, les catégories de payeurs, les intermédiaires et la distinction entre bailleur personne physique et bailleur personne morale doivent être représentés correctement.
+
+**État :** incohérence substantielle confirmée. La règle `CI_RIRL` ne doit pas être utilisée telle quelle. La correction doit remplacer le taux unique de 7,5 % par une logique conditionnelle 12 % / 15 %, après contrôle final du CGI 2026 et de toutes les exceptions, puis ajouter des tests ciblés. Il ne suffit pas de changer uniquement le numéro d’article.
 
 ### 3.7. Autres retenues : AIRSI, PPSSI, RIBIC, IRVM et FIRCA
 
@@ -117,13 +123,13 @@ Le commentaire DGI de l’annexe fiscale 2025 décrit une dispense conditionnell
 1. Aucun nouveau taux n’est ajouté dans ce lot documentaire.
 2. Les règles de TVA 18 % et 9 % existantes sont conservées, sous réserve de la documentation de la période transitoire.
 3. Le champ de la retenue BNC 7,5 % de 2026 doit être explicitement conditionné.
-4. La référence de `CI_RIRL` à l’article 93 est signalée comme incohérente ; aucune correction de taux n’est faite sans examen du CGI 2026.
+4. La règle `CI_RIRL` est signalée comme substantiellement incohérente : elle utilise 7,5 % et l’article 93 alors que les documents DGI consultés décrivent un acompte sur revenus locatifs régi par les articles 168 et suivants, aux taux de 12 % ou 15 % selon le propriétaire et la situation. Ne pas utiliser cette règle avant correction et tests.
 5. Les retenues AIRSI, PPSSI, RIBIC, IRVM et FIRCA restent soumises à une vérification juridique individuelle.
 6. Aucun calculateur fiscal du Niger, de la Guinée ou de la Guinée-Bissau n’est activé par ce dossier.
 
 ## 5. Travaux suivants
 
-1. Contrôler dans le CGI 2026 les articles 19, 51, 84 bis, 92 à 99, 115 et suivants, 168 et suivants, 182 et 355.
+1. Contrôler dans le CGI 2026 les articles 19, 51, 84 bis, 92 à 99, 115 et suivants, 168 et 169, 182 et 355, en priorité les conditions exactes de l’acompte sur revenus locatifs.
 2. Rapprocher chaque retenue ivoirienne de son article exact, de son assiette, du statut du bénéficiaire et de ses exonérations.
 3. Ajouter des tests de non-régression pour les dates d’entrée en vigueur de la TVA, le taux réduit conditionnel et les retenues soumises à conditions.
 4. Corriger uniquement les écarts démontrés, dans une PR ciblant exclusivement `feat/stock-integrated-dev`.

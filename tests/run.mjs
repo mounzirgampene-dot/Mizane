@@ -25,6 +25,7 @@ import { buildCommercialPerformanceReport } from "../js/commercial-performance-c
 import { buildStrategicDashboardSnapshot } from "../js/strategic-dashboard-core.js";
 import { buildFinancialForecast, groupFinancialAmounts } from "../js/financial-forecast-core.js";
 import { buildBudgetReport, validateBudgetLines } from "../js/budget-core.js";
+import { buildReceivablesReport } from "../js/receivables-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1938,7 +1939,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v55/);
+  assert.match(serviceWorkerSource,/mizane-v56/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2147,7 +2148,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v55/);
+  assert.match(serviceWorkerSource,/mizane-v56/);
 });
 
 
@@ -2584,5 +2585,33 @@ test("budgets : comparaison mensuelle, écarts favorables et alertes sans écrit
   assert.equal(validateBudgetLines([{account:"6",type:"expense",monthlyAmount:10},{account:"60",type:"expense",monthlyAmount:20}]).ok, false);
   assert.equal(buildBudgetReport({startDate:"2026-02-30",endDate:"2026-12-31"}).ok, false);
 });
+
+test("créances clients : balance âgée, règlements, avoirs et séparation des devises", () => {
+  const report = buildReceivablesReport({
+    asOf: "2026-11-25", baseCurrency: "MAD",
+    documents: [
+      { id: 1, type: "invoice", status: "validated", number: "F-001", customerName: "Client A", date: "2026-10-01", dueDate: "2026-11-01", currency: "MAD", exchangeRate: 1, totals: { ttc: 1000 }, payments: [{ amount: 200 }] },
+      { id: 2, type: "invoice", status: "validated", number: "F-002", customerName: "Client A", date: "2026-11-10", dueDate: "2026-12-10", currency: "EUR", exchangeRate: 11, totals: { ttc: 100 } },
+      { id: 3, type: "invoice", status: "validated", customerName: "Client B", date: "2026-09-01", dueDate: "2026-08-01", currency: "MAD", totals: { ttc: 500 } },
+      { id: 4, type: "credit_note", status: "validated", sourceInvoiceId: 3, currency: "MAD", totals: { ttc: 100 } },
+      { id: 5, type: "invoice", status: "draft", customerName: "Brouillon", date: "2026-11-01", dueDate: "2026-11-05", currency: "MAD", totals: { ttc: 900 } },
+      { id: 6, type: "invoice", status: "validated", customerName: "Soldée", date: "2026-11-01", dueDate: "2026-11-05", currency: "MAD", totals: { ttc: 200 }, paidAmount: 200 },
+    ],
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.rows.length, 3);
+  assert.equal(report.rows.find(row => row.invoiceId === 1).outstandingAmount, 800);
+  assert.equal(report.rows.find(row => row.invoiceId === 1).bucket, "1_30");
+  assert.equal(report.rows.find(row => row.invoiceId === 3).outstandingAmount, 400);
+  assert.equal(report.rows.find(row => row.invoiceId === 3).bucket, "over_90");
+  assert.equal(report.byCurrency.MAD.outstanding, 1200);
+  assert.equal(report.byCurrency.EUR.outstanding, 100);
+  assert.equal(report.byCurrency.EUR.baseOutstanding, 1100);
+  assert.equal(report.totals.overdueInvoices, 2);
+  assert.equal(report.totals.outstandingBase, 2300);
+  assert.equal(report.byCustomer.find(item => item.customer === "Client A" && item.currency === "MAD").outstanding, 800);
+  assert.equal(buildReceivablesReport({ asOf: "2026-02-30" }).ok, false);
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

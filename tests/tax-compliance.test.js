@@ -49,6 +49,8 @@ assert.equal(calendar.items.find(x => x.id === "WHT_2026-01").dueDate, "2026-02-
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-12").dueDate, "2027-01-31");
 
 
+const unconfirmedVatCalendar = buildMoroccoTaxCalendar({ fiscalEnd: "2026-12-31", year: 2026 });
+assert.equal(unconfirmedVatCalendar.items.some(x => x.taxType === "TVA"), false);
 const monthlyCalendar = buildMoroccoTaxCalendar({ fiscalStart: "2026-01-01", fiscalEnd: "2026-12-31", year: 2026, vatRegime: "monthly" });
 assert.equal(monthlyCalendar.items.filter(x => x.taxType === "TVA").length, 12);
 assert.equal(monthlyCalendar.items.find(x => x.id === "VAT_MA_2026-01").dueDate, "2026-02-28");

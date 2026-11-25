@@ -37,7 +37,7 @@ assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="IS").value
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="IS").value,"25 % / 30 % / 35 %");
 assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les importations de l’annexe I ; 0 % exportations");
 assert.equal(getTaxCountryProfile("LR").taxFacts.find(x=>x.taxType==="IS").value,"25 %");
-assert.equal(getTaxCountryProfile("MR").taxFacts.length,1);
+assert.equal(getTaxCountryProfile("MR").taxFacts.length,8);
 assert.equal(calculateTaxLine({countryCode:"NE",taxCode:"NE_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);
 assert.equal(calculateTaxLine({countryCode:"GW",taxCode:"GW_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);
 assert.equal(getTaxCountryProfile("GH").taxFacts.find(x=>x.label.includes("NHIL"))?.value,undefined);

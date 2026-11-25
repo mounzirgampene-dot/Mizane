@@ -5,6 +5,7 @@ import { store, $app, toast, esc, money } from "../state.js";
 import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
 import { buildFinancialForecast } from "../financial-forecast-core.js";
 import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
+import { buildSupplierPayablesSchedule } from "../supplier-payables.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -80,10 +81,25 @@ export function viewFinancial(period = null) {
     {label:"Créances ouvertes sur factures émises",current:outstanding,previous:round(priorDocs.reduce((sum,item)=>sum+item.amount,0))},
     {label:"Dettes fournisseurs estimées",current:payable,previous:round(priorVendors.reduce((sum,item)=>sum+item.amount,0))},
   ],money);
+  const purchaseInvoices = (store.billing?.purchases?.documents || []).filter(invoice => invoice?.type === "invoice" && invoice.status === "validated" && invoice.accountingPostedAt);
+  const supplierBalance = invoice => {
+    const total = Number(invoice.payableAmount ?? invoice.totals?.ttc ?? invoice.total ?? 0);
+    const paid = (invoice.payments || []).filter(payment => !payment.status || payment.status === "posted").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const credited = (invoice.creditNotes || []).filter(note => !note.status || note.status === "posted").reduce((sum, note) => sum + Number(note.payableAmount ?? note.total ?? 0), 0);
+    return round(Math.max(0, total - paid - credited));
+  };
+  const supplierSchedule = buildSupplierPayablesSchedule(purchaseInvoices.map(invoice => ({ ...invoice, balance: supplierBalance(invoice) })), today());
+  const payablesForecast = supplierSchedule.items.map(item => {
+    const invoice = purchaseInvoices.find(candidate => String(candidate.id) === String(item.invoiceId));
+    const rate = Number(invoice?.exchangeRate);
+    const baseAmount = item.currency === String(store.settings.currency).toUpperCase() ? item.balance : (Number.isFinite(rate) && rate > 0 ? round(item.balance * rate) : null);
+    return { id: item.invoiceId, number: item.number, supplier: item.supplierName, dueDate: item.dueDate, currency: item.currency, originalAmount: item.balance, baseAmount };
+  });
   const financialForecast = buildFinancialForecast({
     baseCurrency: store.settings.currency,
     openingCash: currentCash,
     receivables: docs.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
+    payables: payablesForecast,
     manual,
     asOf: today(),
   });
@@ -98,6 +114,9 @@ export function viewFinancial(period = null) {
     "<tr><td>" + esc(item.month) + "</td><td class=\\"num\\">" + money(item.inflows) + "</td><td class=\\"num\\">" + money(item.outflows) + "</td><td class=\\"num\\">" + money(item.net) + "</td><td class=\\"num\\">" + money(item.closing) + "</td></tr>"
   ).join("");
   const receivableCurrencyRows = Object.entries(financialForecast.receivablesByCurrency).map(([currency, amount]) =>
+    "<tr><td>" + esc(currency) + "</td><td class=\\"num\\">" + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + " " + esc(currency) + "</td></tr>"
+  ).join("");
+  const payableCurrencyRows = Object.entries(financialForecast.payablesByCurrency).map(([currency, amount]) =>
     "<tr><td>" + esc(currency) + "</td><td class=\\"num\\">" + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + " " + esc(currency) + "</td></tr>"
   ).join("");
   const agingChart = renderHorizontalBars("Ancienneté des créances",buckets.map(name=>({

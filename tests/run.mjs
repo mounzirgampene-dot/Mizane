@@ -22,6 +22,7 @@ import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "../js/commercial-performance-core.js";
 import { buildStrategicDashboardSnapshot } from "../js/strategic-dashboard-core.js";
 import { buildFinancialForecast, groupFinancialAmounts } from "../js/financial-forecast-core.js";
+import { buildBudgetReport, validateBudgetLines } from "../js/budget-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -2550,6 +2551,35 @@ test("prévisions financières : projections cumulées et ventilation stricte pa
   assert.equal(report.monthly[1].outflows, 550);
   assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});
   assert.equal(buildFinancialForecast({baseCurrency:"MAD",openingCash:0,asOf:"2026-02-30"}).ok, false);
+});
+
+test("budgets : comparaison mensuelle, écarts favorables et alertes sans écriture", () => {
+  const report = buildBudgetReport({
+    startDate: "2026-01-01", endDate: "2026-02-28", currency: "MAD",
+    lines: [
+      { account: "60", type: "expense", monthlyAmount: 100, label: "Charges" },
+      { account: "70", type: "income", monthlyAmount: 200, label: "Produits" },
+    ],
+    entries: [
+      { date: "2026-01-15", lines: [{ account: "601", debit: 80, credit: 0 }, { account: "701", debit: 0, credit: 150 }] },
+      { date: "2026-02-15", lines: [{ account: "601", debit: 30, credit: 10 }, { account: "701", debit: 0, credit: 0 }] },
+      { date: "2025-12-31", lines: [{ account: "601", debit: 999, credit: 0 }] },
+    ],
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.months.length, 2);
+  assert.equal(report.totals.budgetExpenses, 200);
+  assert.equal(report.totals.actualExpenses, 100);
+  assert.equal(report.totals.expenseVariance, 100);
+  assert.equal(report.totals.budgetIncome, 400);
+  assert.equal(report.totals.actualIncome, 150);
+  assert.equal(report.totals.incomeVariance, -250);
+  assert.equal(report.totals.netBudget, 200);
+  assert.equal(report.totals.netActual, 50);
+  assert.equal(report.months[1].actualExpenses, 20);
+  assert.equal(report.alerts.some(item => item.month === "2026-02" && item.type === "income_shortfall"), true);
+  assert.equal(validateBudgetLines([{account:"6",type:"expense",monthlyAmount:10},{account:"60",type:"expense",monthlyAmount:20}]).ok, false);
+  assert.equal(buildBudgetReport({startDate:"2026-02-30",endDate:"2026-12-31"}).ok, false);
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

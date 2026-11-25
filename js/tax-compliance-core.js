@@ -86,6 +86,37 @@ export function calculateMoroccoIR({ annualNetTaxableIncome, dependents = 0 } = 
   };
 }
 
+
+export function calculateMoroccoIRProfessional({
+  fiscalProfit, additions = 0, deductions = 0, dependents = 0,
+  minimumContributionBase = 0, cmRate = 0.25, cmExempt = false,
+  credits = 0,
+} = {}) {
+  const values = { fiscalProfit, additions, deductions, minimumContributionBase, credits };
+  const errors = Object.entries(values).filter(([key, value]) => !Number.isFinite(Number(value)) || (key !== "fiscalProfit" && Number(value) < 0)).map(([key]) => key + " : montant invalide.");
+  if (![0.25, 0.15, 4].includes(Number(cmRate))) errors.push("Taux de cotisation minimale IR non autorisé.");
+  if (errors.length) return { ok: false, errors };
+  const profit = round2(Number(fiscalProfit) + Number(additions) - Number(deductions));
+  const taxableProfit = Math.max(0, profit);
+  const ir = calculateMoroccoIR({ annualNetTaxableIncome: taxableProfit, dependents });
+  if (!ir.ok) return ir;
+  const minimumContribution = cmExempt ? 0 : Math.max(1500, round2(Number(minimumContributionBase) * Number(cmRate) / 100));
+  const grossDue = Math.max(ir.annualTax, minimumContribution);
+  const netDue = Math.max(0, round2(grossDue - Number(credits)));
+  const warnings = [];
+  if (cmRate === 0.15) warnings.push("Le taux de 0,15 % est réservé aux ventes commerciales des produits légalement énumérés.");
+  if (cmRate === 4) warnings.push("Le taux de 4 % ne concerne que les professions expressément visées aux articles 89-I-12° et 91-VI-1° du CGI.");
+  if (cmExempt) warnings.push("L'exonération de cotisation minimale IR est limitée aux trois premiers exercices de l'activité professionnelle ou agricole, sous conditions.");
+  return {
+    ok: true, currency: "MAD", fiscalProfit: profit, taxableProfit,
+    annualIR: ir.annualTax, grossAnnualIR: ir.grossAnnualTax,
+    minimumContribution, grossDue, credits: round2(credits), netDue,
+    cmRate: Number(cmRate), warnings,
+    legalReference: "CGI 2026, articles 73, 74 et 144",
+    disclaimer: "Simulation IR professionnel et cotisation minimale : vérifier le régime RNR/RNS, la nature de l'activité, les exonérations et les éléments de base avant déclaration.",
+  };
+}
+
 export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, customLegalReference, date, payerEligible = false, treatyRate, applyTreaty = false } = {}) {
   const base = amount(baseAmount);
   if (!Number.isFinite(base) || !validDate(date)) return { ok: false, errors: ["Base ou date de mise à disposition invalide."] };

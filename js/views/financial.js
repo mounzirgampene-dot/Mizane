@@ -167,9 +167,6 @@ export function viewFinancial(period = null) {
         return "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.overdue ? item.overdueDays + " j" : "À échoir") + "</td><td>" + esc(label) + "</td><td class=\"num\">" + original + "</td><td class=\"num\">" + (item.baseAmount == null ? "Taux manquant" : money(item.baseAmount)) + "</td></tr>";
       }).join("") || "<tr><td colspan=\"7\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table></div>
       <p class="muted">${collectionReport.totals.overdueInvoices} facture(s) en retard. ${collectionReport.totals.unconvertedInvoices} facture(s) sans taux de conversion exploitable ne sont pas incluses dans les totaux convertis.</p>
-      <h2>Factures clients à recouvrer</h2>
-      <table><thead><tr><th>Facture</th><th>Client</th><th>Échéance</th><th>Retard</th><th class="num">Solde converti</th></tr></thead>
-      <tbody>${docs.length ? docs.map(item => "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.days > 0 ? item.days + " j" : "—") + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>
     </section>
     <section class="card">
       <h2>Prévisions de trésorerie — devise de référence : ${esc(store.settings.currency)}</h2>

@@ -118,7 +118,8 @@ export function buildSupplierPaymentJournalEntry(store, invoice, payment, mappin
   const treasuryMeta = accounts.find(account => String(account.code) === treasury);
   const treasuryLabel = String(treasuryMeta?.label || "").toLocaleLowerCase();
   if (treasury && (!String(treasury).startsWith("5") || !/(banque|caisse|trésorerie)/.test(treasuryLabel))) errors.push("Le compte de règlement doit être un compte de banque ou de caisse de la classe 5.");
-  if (treasury && payment?.method === "cash" && !/caisse/.test(treasuryLabel)) errors.push("Un règlement en espèces doit utiliser un compte de caisse.");\n  if (treasury && payment?.method === "bank" && !/(banque|trésorerie)/.test(treasuryLabel)) errors.push("Un virement doit utiliser un compte bancaire.");
+  if (treasury && payment?.method === "cash" && !/caisse/.test(treasuryLabel)) errors.push("Un règlement en espèces doit utiliser un compte de caisse.");
+  if (treasury && payment?.method === "bank" && !/(banque|trésorerie)/.test(treasuryLabel)) errors.push("Un virement doit utiliser un compte bancaire.");
   const baseDebt = round2(amount * invoiceRate);
   const basePaid = round2(amount * paymentRate);
   const difference = round2(basePaid - baseDebt);

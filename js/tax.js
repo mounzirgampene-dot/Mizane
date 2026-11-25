@@ -87,6 +87,31 @@ function reconPanel(){
 function bind(){
  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;viewTax();}));
  document.getElementById("tax-country")?.addEventListener("change",e=>{store.settings.taxCountry=e.target.value;saveNow();viewTax();});
+
+ const xof=n=>new Intl.NumberFormat("fr-FR",{style:"currency",currency:"XOF",maximumFractionDigits:0}).format(Number(n||0));
+ document.getElementById("africa-is-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const code=String(store.settings.taxCountry||"").toUpperCase();
+  const common={fiscalProfit:Number(document.getElementById("africa-is-profit").value),additions:Number(document.getElementById("africa-is-add").value),deductions:Number(document.getElementById("africa-is-ded").value)};
+  const r=code==="SN"?calculateSenegalIS({...common,priorYearTurnover:Number(document.getElementById("africa-is-turnover").value),taxpayerCategory:"standard",minimumTaxExempt:document.getElementById("africa-is-exempt").checked}):calculateCoteIvoireIS({...common,sector:document.getElementById("africa-is-sector").value});
+  const out=document.getElementById("africa-is-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_IS"]=r;saveNow();
+  out.innerHTML='<h3>IS calculé : '+xof(r.corporateTax)+'</h3>'+(code==="SN"?'<p>IMF estimé : '+xof(r.minimumTax)+' · Montant indicatif à retenir : <strong>'+xof(r.amountDue)+'</strong></p>':'<p>Taux appliqué : '+r.rate+' %</p>')+'<ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+' — '+esc(r.disclaimer)+'</p>';
+ });
+ document.getElementById("africa-ir-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const code=String(store.settings.taxCountry||"").toUpperCase(),parts=Number(document.getElementById("africa-ir-parts").value);
+  const r=code==="SN"?calculateSenegalIR({annualTaxableIncome:Number(document.getElementById("africa-ir-income").value),familyParts:parts}):calculateCoteIvoireITS({monthlyTaxableSalary:Number(document.getElementById("africa-ir-income").value),familyParts:parts});
+  const out=document.getElementById("africa-ir-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_IR"]=r;saveNow();
+  out.innerHTML='<h3>'+ (code==="SN"?"IR annuel : ":"ITS mensuel : ")+xof(code==="SN"?r.annualTax:r.monthlyTax)+'</h3><p>Impôt avant réduction familiale : '+xof(r.grossAnnualTax??r.grossMonthlyTax)+' · Réduction familiale : '+xof(r.familyReduction)+'</p><p>Taux effectif : '+r.effectiveRate+' %</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+' — '+esc(r.disclaimer)+'</p>';
+ });
+ document.getElementById("africa-wht-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const code=String(store.settings.taxCountry||"").toUpperCase();
+  const args={ruleCode:document.getElementById("africa-wht-rule").value,baseAmount:Number(document.getElementById("africa-wht-base").value),date:document.getElementById("africa-wht-date").value};
+  const r=code==="SN"?calculateSenegalWithholding(args):calculateCoteIvoireWithholding(args);
+  const out=document.getElementById("africa-wht-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_WITHHOLDING"]=r;saveNow();
+  out.innerHTML='<h3>Retenue estimée : '+xof(r.taxAmount)+'</h3><p>Base retenue : '+xof(r.taxableBase??r.baseAmount)+' · Taux : '+r.rate+' % · Net versé : '+xof(r.netPayment)+'</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+'</p>';
+ });
  const foreignIsForm=document.getElementById("foreign-is-form");
  foreignIsForm?.addEventListener("submit",e=>{
   e.preventDefault();const code=foreignIsForm.dataset.country||String(store.settings.taxCountry||"").toUpperCase();

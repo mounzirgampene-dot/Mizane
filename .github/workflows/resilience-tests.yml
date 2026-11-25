@@ -17,6 +17,7 @@ on:
       - fix/lot1-security-hardening
       - fix/lot2-billing-integrity
       - feat/lot4-periodic-inventory-closing
+      - feat/lot5-supplier-settlements
 
 permissions:
   contents: read

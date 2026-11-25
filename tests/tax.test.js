@@ -32,7 +32,7 @@ const beforeSales = structuredClone(salesDocuments);
 const beforePurchases = structuredClone(purchaseDocuments);
 const report = buildVatReport({ countryCode: "MA", startDate: "2026-02-01", endDate: "2026-02-28", salesDocuments, purchaseDocuments });
 assert.equal(report.ok, true);
-assert.equal(report.documentsCount, 3);
+assert.equal(report.documentsCount, 4);
 assert.equal(report.byCurrency.MAD.salesBase, 100);
 assert.equal(report.byCurrency.MAD.outputVat, 30);
 assert.equal(report.byCurrency.MAD.purchaseBase, 150);

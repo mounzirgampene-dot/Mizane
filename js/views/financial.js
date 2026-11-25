@@ -166,6 +166,12 @@ export function viewFinancial(period = null) {
         <section class="table-wrap"><h3>Créances ouvertes par devise d’origine</h3><table><thead><tr><th>Devise</th><th class="num">Montant restant</th></tr></thead><tbody>${receivableCurrencyRows || '<tr><td colspan="2" class="muted">Aucune créance.</td></tr>'}</tbody></table></section>
         <section class="table-wrap"><h3>Flux prévisionnels mensuels — 6 mois</h3><table><thead><tr><th>Mois</th><th class="num">Entrées</th><th class="num">Sorties</th><th class="num">Net</th><th class="num">Solde fin</th></tr></thead><tbody>${monthlyForecastRows}</tbody></table></section>
       </div>
+      <p class="muted">Les projections sont exprimées dans la devise de référence de l’entreprise. Les créances et dettes restent également ventilées dans leurs devises d’origine.</p>
+      <div class="grid cols-2">
+        <section class="table-wrap"><h3>Créances ouvertes par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${receivableCurrencyRows || '<tr><td colspan="2">Aucune créance.</td></tr>'}</tbody></table></section>
+        <section class="table-wrap"><h3>Dettes fournisseurs à échéance par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${payableCurrencyRows || '<tr><td colspan="2">Aucune dette.</td></tr>'}</tbody></table></section>
+      </div>
+      <section class="table-wrap"><h3>Flux prévisionnels mensuels — 6 mois</h3><table><thead><tr><th>Mois</th><th class="num">Entrées</th><th class="num">Sorties</th><th class="num">Net</th><th class="num">Solde fin</th></tr></thead><tbody>${monthlyForecastRows}</tbody></table></section>
       <form id="forecast-form">
         <div class="row">
           <div><label for="forecast-date">Date prévue</label><input id="forecast-date" type="date" min="${today()}" required></div>

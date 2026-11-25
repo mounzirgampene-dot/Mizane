@@ -219,3 +219,95 @@ Le statut Niger demeure `research_required`, avec `calculationModules: []` et `r
 - FMI — Rapport n° 25/200, supplément du 10 juillet 2025, mention de la signature du CGI : https://www.imf.org/-/media/files/publications/cr/2025/french/1nerfa2025003-source-pdf.pdf
 
 **Conclusion du Lot 41 :** les sources de publication et d'application du nouveau CGI sont mieux cartographiées, et les règles transitoires ont été repérées. L'ordonnance rectificative n° 2026-45 reste le verrou documentaire majeur : son existence et son dépôt institutionnel sont confirmés, mais son contenu n'a pas pu être récupéré automatiquement. Le moteur fiscal reste donc volontairement inactif pour le Niger.
+
+
+## Lot 43 — Consolidation fiscale Guinée, Guinée-Bissau et Niger (25 novembre 2026)
+
+### 1. Objet et décision
+
+Ce lot consolide les trois profils ouest-africains déjà présents dans le référentiel mais qui demeurent volontairement non activés : Guinée (`GN`), Guinée-Bissau (`GW`) et Niger (`NE`). Il ne crée pas de doublon pays et ne transforme pas des taux documentaires en règles de calcul. Les trois profils conservent `research_required`, `calculationModules: []` et `rules: []`.
+
+### 2. Guinée — loi de finances 2026 vérifiée sur ses dispositions fiscales
+
+La loi ordinaire L/2026/010/CNT portant loi de finances initiale pour 2026 a été adoptée le 31 mars 2026. Le décret D/2026/103/PRG/SGG du même jour en porte promulgation et la référence bibliographique indique une publication au Journal officiel, numéro spécial 4 « Textes législatifs » de mars 2026, page 21.
+
+Le texte intégral de la loi de finances est accessible depuis le domaine de la Direction générale du Budget. Le chapitre III, pages 18 à 21, comporte notamment les mesures fiscales suivantes :
+
+| Disposition | Modification vérifiée | Conséquence pour MIZANE |
+|---|---|---|
+| Article 11 — CGI, art. 387-II | Ajoute les assujettis bénéficiant exclusivement de contrats sur financement extérieur (Finex), dont la TVA est payée par CTSS, à la liste des personnes pouvant demander le remboursement d'un crédit de TVA, sous réserve de l'article 388 | Ajout d'un fait documentaire ; aucun remboursement automatique ni calcul de crédit |
+| Article 12 — CGI, art. 208 et 210-III | Mensualise la taxe d'apprentissage et fixe un seuil de mise en recouvrement lorsque son montant mensuel excède 10 000 GNF | Ajout d'un fait documentaire ; aucun calcul de paie ou de taxe d'apprentissage |
+| Article 13 — CGI, art. 383-VI | Modifie les mentions obligatoires de facturation, notamment les identifiants fiscaux et TVA, la séquence chronologique, les dates, la description, les quantités, prix HT et taux de TVA | Référence pour les contrôles documentaires ; aucune validation automatique de facture |
+| Article 14 — CGI, art. 265 | Fixe les taux de CFU : 2 % habitation occupée par le propriétaire ; 10 % usage professionnel occupé par le propriétaire ; 15 % propriétés louées ; 5 % propriétés achevées non occupées | Ajout d'un fait documentaire ; pas de calculateur foncier |
+
+Le taux général de TVA de 18 % et le taux zéro des opérations limitativement énumérées demeurent documentés à l'article 373 du CGI. Le taux IS est différencié à l'article 229 : 35 % pour les sociétés de téléphonie, banques, assurances et certains opérateurs pétroliers ; 30 % pour les titulaires de titres miniers ; 25 % pour les autres personnes morales. Ces éléments sont documentés, mais le profil reste non activé car la consolidation complète des règles, exonérations, seuils, retenues, remboursements et textes modificatifs demeure nécessaire.
+
+L'article 373 ter du CGI prévoit en outre une retenue de 50 % du montant de la TVA sur certaines opérations fournies à des entités publiques et à des secteurs désignés (notamment télécommunications, produits pétroliers et sociétés minières). La portée opérationnelle de cette retenue, son articulation avec la déclaration mensuelle et les justificatifs doivent être traités dans un module dédié, et non assimilés à une réduction du taux de TVA. La déclaration mensuelle de TVA est en principe déposée au plus tard le 15 de chaque mois, conformément à l'article 373 sexies.
+
+Le Ministère de l'Économie, des Finances et du Budget a également annoncé le 12 juin 2026 la présentation du Rapport d'évaluation des dépenses fiscales 2024 et le processus de rationalisation des exonérations. Cette communication renseigne l'orientation de la politique fiscale, mais ne modifie pas par elle-même les taux ou les règles d'assiette.
+
+**Sources Guinée :**
+- Loi de finances 2026, loi L/2026/010/CNT, chapitre III, art. 11 à 15, PDF DGB : https://dgb.gov.gn/wp-content/uploads/2026/02/loi-de-finances-en-vigueur-1.pdf
+- Décret D/2026/103/PRG/SGG du 31 mars 2026, promulgation de la loi de finances 2026 : https://www.legisguinee.com/textes/decret-2026-103-promulgation-loi-de-finances-2026
+- CGI, loi L/2021/032/AN du 4 juillet 2021, articles 229, 373, 373 ter, 373 sexies, 387 et suivants : https://www.legisguinee.com/textes/loi-2021-032-code-general-impots
+- DGI Guinée, catalogue des codes et publications : https://dgi.gov.gn/codes/
+- MEFB, annonce du Rapport d'évaluation des dépenses fiscales 2024, 12 juin 2026 : https://www.mef.gov.gn/modernisation-des-finances-publiques-le-ministere-de-leconomie-des-finances-et-du-budget-engage-la-rationalisation-des-depenses-fiscales-pour-une-souverainete-budgetaire-renforcee/
+
+**Limite de preuve :** la loi de finances 2026 est une publication institutionnelle consultable et son chapitre fiscal a été examiné. Le CGI de base est consultable sur une base juridique guinéenne indépendante, tandis que le portail DGI consulté ne fournit pas encore un code consolidé 2026 complet. Les règles de calcul complexes ne sont donc pas certifiées pour activation.
+
+### 3. Guinée-Bissau — code IVA et cadre de mise en œuvre
+
+Le portail officiel des Alfândegas de la Guiné-Bissau identifie le Code do IVA comme l'annexe à la Lei n.º 4/2022, adopté pour remplacer l'ancien Imposto Geral sobre Vendas e Serviços (IGV). Le Despacho n.º 130/GMF/2024 du 31 octobre 2024 fixe la mise en œuvre nationale de l'IVA au 1er janvier 2025.
+
+L'article 18 du Code prévoit :
+1. 10 % pour les importations, transmissions de biens et prestations de services figurant à l'Annexe I ;
+2. 19 % pour les autres importations, transmissions de biens et prestations de services ;
+3. 0 % pour les exportations.
+
+La page institutionnelle des douanes reproduit également les taux, les principes d'assiette à l'importation, le droit à déduction sous justificatif conforme, et les principales exonérations prévues par le Code. Elle précise expressément que les taux affichés sont ceux de la Lei n.º 4/22 et invite à tenir compte d'éventuelles modifications postérieures.
+
+La documentation institutionnelle consultée mentionne également la Lei 3/2022 (Lei Geral Tributária), la Lei 5/2022 (Regime Geral das Infrações Tributárias), ainsi que plusieurs actes douaniers récents, dont l'Ordem de Serviço GDGA 10/26 relative au module ASYVal de contrôle de la valeur en douane. Cette dernière concerne la valorisation douanière et ne doit pas être interprétée comme une modification du taux d'IVA.
+
+Le FMI, dans son communiqué du 12 juin 2026 relatif à la onzième revue du programme, confirme que les autorités ont remplacé la sales tax par une TVA et poursuivent la digitalisation de l'administration des recettes. Ce communiqué confirme le contexte de réforme et de mise en œuvre, mais ne remplace pas une loi fiscale modificative ni un texte de taux.
+
+**Décision :** conserver les taux du Code comme faits documentaires de référence, mais maintenir `research_required` et ne pas activer de calculateur tant que l'Annexe I complète, les exonérations, les textes modificatifs postérieurs, les modalités de déduction/remboursement et les règles de facturation ne sont pas rapprochés dans une matrice consolidée.
+
+**Sources Guinée-Bissau :**
+- Alfândegas — page officielle IVA, synthèse du Code et des taux de l'article 18 : https://alfandegas.mef.gw/imposto-sobre-valor-acrescentado-iva/
+- Boletim Oficial, 4.º Suplemento ao n.º 8, Lei n.º 4/2022, Código do IVA, notamment articles 16 à 19 : https://alfandegas.mef.gw/wp-content/uploads/2025/03/IVA-E-LEI-GERAL-TRIBUTARIA.pdf
+- Despacho n.º 130/GMF/2024 du 31 octobre 2024, date de mise en œuvre du 1er janvier 2025 : https://alfandegas.mef.gw/d/
+- Alfândegas — législation par matière, notamment Lei 3/2022 et Lei 5/2022 : https://alfandegas.mef.gw/legislacao/legislacao-por-assunto/
+- FMI, communiqué n° 26/204, 12 juin 2026 : https://www.imf.org/en/news/articles/2026/06/12/pr-26204-guinea-bissau-imf-completes-the-11th-rev-under-ecf-arrang
+
+**Limite de preuve :** le PDF officiel du Code IVA est identifié, mais son poids (environ 33 MB) empêche son extraction intégrale dans l'environnement de recherche automatisé. La page institutionnelle des douanes fournit une synthèse explicite de l'article 18, mais l'Annexe I et l'ensemble des dispositions doivent être examinés avant activation.
+
+### 4. Niger — verrou de l'ordonnance rectificative n° 2026-45
+
+Le Ministère des Finances du Niger répertorie officiellement l'ordonnance n° 2026-45 portant première rectification de la loi de finances 2026, datée du 14 septembre 2026. La fiche institutionnelle annonce un fichier de 21,42 MB. La même référence est visible dans la catégorie « Loi de finances 2026 ».
+
+Les tentatives de récupération et d'extraction intégrale du fichier restent infructueuses. Le contenu des dispositions fiscales de cette ordonnance n'a donc pas été contrôlé article par article. Les mesures décrites dans les rapports du FMI constituent des indications de politique budgétaire et ne doivent pas être présentées comme la transcription certifiée de l'ordonnance.
+
+Le nouveau CGI adopté par l'ordonnance n° 2025-22, la loi de finances 2026 n° 2025-44 et la première rectification n° 2026-45 doivent être consolidés dans leur version publiée et authentifiée. La copie de circulaire du 20 février 2026 précédemment repérée sur une plateforme tierce reste une piste documentaire, et non une instruction administrative certifiée.
+
+**Décision :** Niger demeure `research_required`, sans module de calcul, règle active ou barème. Aucune modification de taux n'est opérée.
+
+**Sources Niger :**
+- Ministère des Finances — catégorie Loi de finances 2026 : https://www.finances.gouv.ne/index.php/lois-de-finances/category/165-loi-de-finances-2026
+- Fiche officielle de l'ordonnance n° 2026-45, 14 septembre 2026, 21,42 MB : https://www.finances.gouv.ne/index.php/lois-de-finances/file/1351-ordonnance-n-2026-45-premiere-rectification-de-la-loi-de-finances-2026
+- DGI Niger — portail officiel : https://www.dgi.gov.ne/
+- FMI, rapport n° 26/74 du 2 mars 2026 : https://www.imf.org/-/media/files/publications/cr/2026/english/1nerea2026001-source-pdf.pdf
+
+### 5. Modifications MIZANE et tests
+
+- Le profil Guinée reçoit trois faits fiscaux 2026 documentés : remboursement de crédit de TVA pour certains contrats Finex payés par CTSS, mensualisation de la taxe d'apprentissage avec seuil de recouvrement de 10 000 GNF, et taux de CFU selon l'occupation du bien.
+- Les profils Guinée-Bissau et Niger ne reçoivent aucune règle exécutable ni nouveau taux actif.
+- Les trois profils restent `research_required`, avec `calculationModules: []` et `rules: []`.
+- Les tests contrôlent explicitement l'absence de règles actives et le rejet des calculs TVA sur les trois juridictions.
+- Aucun changement dans `js/countries.js`, aucune migration Supabase, aucune opération Supabase et aucune modification de `main`.
+- Aucun changement de cache PWA : ce lot touche le référentiel documentaire et les tests, pas les ressources frontales.
+
+### 6. Décision finale du Lot 43
+
+Les trois pays sont mieux documentés sans créer de fausse certitude juridique. La Guinée bénéficie d'une extraction plus complète de la loi de finances 2026 ; la Guinée-Bissau dispose d'une meilleure traçabilité institutionnelle du Code IVA et de son entrée en vigueur ; le Niger conserve son verrou de sécurité en attendant la lecture du texte rectificatif.
+
+**Aucun des trois calculateurs fiscaux n'est activé dans ce lot.**

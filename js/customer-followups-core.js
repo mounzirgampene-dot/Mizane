@@ -32,10 +32,10 @@ export function buildCustomerFollowupQueue({documents=[],followups={},asOf=new D
  const rows=report.rows.map(row=>{
   const events=Array.isArray(followups[String(row.invoiceId)])?followups[String(row.invoiceId)]:[];
   const last=events.length?[...events].sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(b.createdAt||"").localeCompare(String(a.createdAt||"")))[0]:null;
-  const nextDates=events.map(event=>event.nextDate).filter(validDate).sort();
-  const promiseDates=events.filter(event=>event.status==="promesse").map(event=>event.promiseDate).filter(validDate).sort();
-  const nextDate=nextDates.length?nextDates[nextDates.length-1]:"";
-  const promiseDate=promiseDates.length?promiseDates[promiseDates.length-1]:"";
+  // Seul le dernier suivi fait foi : une nouvelle action peut annuler
+  // une ancienne échéance ou remplacer une promesse de paiement.
+  const nextDate=validDate(last?.nextDate)?last.nextDate:"";
+  const promiseDate=last?.status==="promesse"&&validDate(last?.promiseDate)?last.promiseDate:"";
   const status=last?.status||"a_relancer";
   return {...row,events,lastContact:last?.date||"",lastChannel:last?.channel||"",followupStatus:status,followupStatusLabel:FOLLOWUP_STATUSES[status]||FOLLOWUP_STATUSES.a_relancer,nextDate,promiseDate,actionDue:Boolean(nextDate&&nextDate<=asOf&&status!=="suspendu"),promiseOverdue:Boolean(status==="promesse"&&promiseDate&&promiseDate<asOf&&row.outstandingAmount>0)};
  });

@@ -25,6 +25,7 @@ on:
       - feat/lot20-customer-receivables
       - feat/lot21-customer-followups
       - fix/lot21-followup-latest-event
+      - feat/lot22-international-tax
   pull_request:
     branches:
       - main

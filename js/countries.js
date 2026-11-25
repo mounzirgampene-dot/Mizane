@@ -47,7 +47,7 @@ const existingProfiles = [
   { code: "GQ", name: "Guinée Équatoriale", zone: "OHADA", currency: "XAF", plan: "syscohada", vatRates: [15, 0], locale: "es-GQ" },
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
   { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [19, 13, 7, 0], locale: "fr-TN" },
-  { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 14, 10, 7, 0], locale: "fr-MA" },
+  { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
 ];
 const profiles = new Map(existingProfiles.map((country) => [country.code, country]));
 let regionNames;

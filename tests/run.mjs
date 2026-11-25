@@ -1,3 +1,4 @@
+import "./tax.test.js";
 import "./customer-followups.test.js";
 import "./fixed-assets.test.js";
 import "./asset-disposals.test.js";
@@ -1374,7 +1375,7 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   assert.match(app, /\["purchases", "Achats"\]/);
   assert.match(app, /\["commercial-margins", "Marges commerciales"\]/);
   assert.match(app, /\["budget", "Budget et écarts"\]/);
-  assert.match(app, /"stock", "purchases", "commercial-margins", "customer-followups", "budget"(?:, "notifications")?\]\s*;/);
+  assert.match(app, /"stock", "purchases", "commercial-margins", "customer-followups", "budget", "tax"(?:, "notifications")?\]\s*;/);
   assert.match(cloud, /delete billingPayload\.stock/);
   assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
@@ -1940,7 +1941,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v58/);
+  assert.match(serviceWorkerSource,/mizane-v59/g);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2149,7 +2150,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v58/);
+  assert.match(serviceWorkerSource,/mizane-v59/);
 });
 
 

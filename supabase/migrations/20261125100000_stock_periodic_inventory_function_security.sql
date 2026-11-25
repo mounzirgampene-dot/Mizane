@@ -139,9 +139,9 @@ returns jsonb
 language sql
 security invoker
 set search_path = ''
-as $
+as $$
   select private.stock_period_valuation_impl(p_company_id,p_start_date,p_end_date);
-$;
+$$;
 
 revoke all on function public.stock_period_valuation(uuid,date,date) from public,anon;
 grant execute on function public.stock_period_valuation(uuid,date,date) to authenticated;

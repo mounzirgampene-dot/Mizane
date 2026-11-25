@@ -11,3 +11,7 @@ Le coffre fiscal partagé utilise le projet Supabase MIZANE-DEV et le bucket pri
 - Sans entreprise active, l'application conserve le mode local. Si une entreprise est sélectionnée mais que la session est absente ou inactive, l'accès cloud est refusé et un message explicite est affiché.
 
 Le statut « Vérifié » signifie qu'un membre habilité a contrôlé la pièce dans MIZANE ; il ne certifie pas à lui seul sa conformité juridique. Aucun dépôt fiscal ou paiement n'est exécuté.
+
+- Les justificatifs cloud sont également listés sur un autre appareil même si la déclaration correspondante n'y a pas encore été créée ou synchronisée.
+- La suppression d'une entreprise par son administrateur nettoie d'abord les fichiers du bucket privé ; l'entreprise n'est supprimée que si le nettoyage du coffre aboutit.
+- Les métadonnées structurantes sont immuables après téléversement et une vérification ne peut pas être rétrogradée par le client.

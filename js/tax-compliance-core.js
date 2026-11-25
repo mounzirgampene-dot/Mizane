@@ -144,7 +144,7 @@ export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, 
 }
 
 export function buildMoroccoTaxCalendar({
-  fiscalStart, fiscalEnd, year, vatRegime = "monthly", includeIsAdvances = true,
+  fiscalStart, fiscalEnd, year, vatRegime = "unconfirmed", includeIsAdvances = true,
   includePayrollAnnual = true, withholdingMonths = [], includeVat = true,
 } = {}) {
   const errors = [];
@@ -152,7 +152,7 @@ export function buildMoroccoTaxCalendar({
   if (!validDate(fiscalEnd)) errors.push("Date de clôture d'exercice invalide.");
   if (fiscalStart && !validDate(fiscalStart)) errors.push("Date de début d'exercice invalide.");
   if (!Number.isInteger(validYear) || validYear < 2000 || validYear > 2200) errors.push("Année fiscale invalide.");
-  if (!["monthly", "quarterly", "none"].includes(vatRegime)) errors.push("Périodicité TVA invalide.");
+  if (!["monthly", "quarterly", "none", "unconfirmed"].includes(vatRegime)) errors.push("Périodicité TVA invalide.");
   if (errors.length) return { ok: false, errors, items: [] };
 
   const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -233,7 +233,7 @@ export function buildMoroccoTaxCalendar({
   return {
     ok: true,
     items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.id.localeCompare(b.id)),
-    disclaimer: "Calendrier marocain de préparation. Les échéances en ligne TVA suivent la fin du mois légalement applicable ; vérifier les avis DGI, reports officiels, jours non ouvrables, régime réel et exercice de l'entreprise avant validation. Les retenues à la source sont proposées uniquement pour les mois où des opérations ont été enregistrées.",
+    disclaimer: "Calendrier marocain de préparation. Si la périodicité TVA est « à déterminer », aucune échéance TVA n’est générée. Les échéances en ligne TVA suivent la fin du mois légalement applicable ; vérifier les avis DGI, reports officiels, jours non ouvrables, régime réel et exercice de l'entreprise avant validation. Les retenues à la source sont proposées uniquement pour les mois où des opérations ont été enregistrées.",
   };
 }
 

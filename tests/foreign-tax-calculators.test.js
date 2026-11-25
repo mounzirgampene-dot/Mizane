@@ -5,4 +5,5 @@ assert.equal(calculateFranceIR({annualTaxableIncome:40000,householdParts:1}).ann
 assert.equal(calculateBelgiumIS({fiscalProfit:150000,smallCompanyEligible:true}).grossTax,32500);
 const be=calculateBelgiumIR({annualTaxableIncome:40000}); assert.equal(be.annualTax,11129);
 assert.equal(calculateForeignWithholding({countryCode:"FR",ruleCode:"FR_NONRESIDENT_DIVIDENDS",baseAmount:10000,date:"2026-06-01"}).taxAmount,1280);
+assert.equal(calculateForeignWithholding({countryCode:"FR",ruleCode:"FR_NONRESIDENT_DIVIDENDS",baseAmount:10000,date:"2026-02-30"}).ok,false);
 console.log("Lot 24 — calculateurs France et Belgique : OK");

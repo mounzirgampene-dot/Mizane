@@ -209,4 +209,34 @@ assert.match(getTaxCountryProfile("MU").taxFacts.find(x=>x.taxType==="IS").detai
 assert.match(getTaxCountryProfile("SC").taxFacts.find(x=>x.taxType==="VAT").detail,/annexes du VAT Act en 2025/);
 assert.match(getTaxCountryProfile("KM").taxFacts.find(x=>x.taxType==="IS").detail,/1,5 % du chiffre d'affaires/);
 
+
+const lot49Profiles={
+ BI:{currency:"BIF",name:"Burundi",taxType:"VAT",value:"18 %"},
+ DJ:{currency:"DJF",name:"Djibouti",taxType:"VAT",value:"Non validé (7 % historique / 10 % rapporté)"},
+ ET:{currency:"ETB",name:"Éthiopie",taxType:"VAT",value:"15 %"},
+ ER:{currency:"ERN",name:"Érythrée",taxType:"VAT",value:"Non documenté — à vérifier"},
+ SO:{currency:"SOS",name:"Somalie",taxType:"SALES_TAX",value:"5 % pour plusieurs catégories ; taux sectoriels distincts"}
+};
+for(const [code,spec] of Object.entries(lot49Profiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code+" : aucun module fiscal activé");
+ assert.deepEqual(p.rules,[],code+" : aucune règle fiscale activée");
+ assert.ok(p.legalSources.length>=3,code+" : références documentaires");
+ assert.equal(p.taxFacts.find(x=>x.taxType===spec.taxType).value,spec.value,code);
+ assert.deepEqual(getActiveTaxRules(code,spec.taxType,"2026-11-25"),[],code+" : aucune règle fiscale active");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul fiscal bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays présent dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : aucun taux TVA par défaut");
+}
+assert.match(getTaxCountryProfile("BI").taxFacts.find(x=>x.taxType==="VAT").detail,/facturation, de déduction et de remboursement/);
+assert.match(getTaxCountryProfile("DJ").taxFacts.find(x=>x.taxType==="VAT").detail,/7 %.*10 %/);
+assert.match(getTaxCountryProfile("ET").taxFacts.find(x=>x.taxType==="VAT").legalReference,/1341\/2024/);
+assert.match(getTaxCountryProfile("ER").taxFacts.find(x=>x.taxType==="IS").detail,/Aucun code fiscal consolidé/);
+assert.match(getTaxCountryProfile("SO").taxFacts.find(x=>x.taxType==="SALES_TAX").detail,/Il ne s'agit pas d'une TVA générale/);
+
 console.log("Lot 23/33/34/35 — juridictions fiscales internationales et Afrique centrale : OK");

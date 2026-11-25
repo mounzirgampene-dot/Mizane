@@ -57,6 +57,11 @@ const existingProfiles = [
   { code: "ZW", name: "Zimbabwe", zone: "International", currency: "ZWG", vatRates: [], locale: "en-ZW" },
   { code: "LS", name: "Lesotho", zone: "International", currency: "LSL", vatRates: [], locale: "en-LS" },
   { code: "SZ", name: "Eswatini", zone: "International", currency: "SZL", vatRates: [], locale: "en-SZ" },
+  { code: "BI", name: "Burundi", zone: "International", currency: "BIF", vatRates: [], locale: "fr-BI" },
+  { code: "DJ", name: "Djibouti", zone: "International", currency: "DJF", vatRates: [], locale: "fr-DJ" },
+  { code: "ET", name: "Éthiopie", zone: "International", currency: "ETB", vatRates: [], locale: "am-ET" },
+  { code: "ER", name: "Érythrée", zone: "International", currency: "ERN", vatRates: [], locale: "ti-ER" },
+  { code: "SO", name: "Somalie", zone: "International", currency: "SOS", vatRates: [], locale: "so-SO" },
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
   { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [19, 13, 7, 0], locale: "fr-TN" },
   { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
@@ -83,7 +88,7 @@ export function getCountry(code) {
 }
 
 const CURRENCY_SYMBOLS = {
-  MAD: "DH", AOA: "Kz", MGA: "Ar", MUR: "₨", SCR: "₨", KMF: "CF", ZWG: "ZiG", LSL: "M", SZL: "E", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
+  MAD: "DH", AOA: "Kz", MGA: "Ar", MUR: "₨", SCR: "₨", KMF: "CF", BIF: "FBu", DJF: "Fdj", ETB: "Br", ERN: "Nfk", SOS: "Sh.So.", ZWG: "ZiG", LSL: "M", SZL: "E", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
   USD: "$US", CAD: "$CA", AUD: "$AU", NZD: "$NZ",
   GNF: "FG", CDF: "FC", MRU: "UM", GMD: "D",
   NGN: "₦", GHS: "GH₵", KES: "KSh", RWF: "FRw", UGX: "USh", NAD: "N$", ZMW: "K", TZS: "TSh", BWP: "P", MZN: "MT", MWK: "MK", ZAR: "R",

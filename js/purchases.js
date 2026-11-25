@@ -54,7 +54,7 @@ function supplierName(id) {
 }
 function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
 function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
-function supplierInvoiceBalance(invoice) { return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice))); }
+function supplierInvoiceBalance(invoice) { const credited=round((invoice?.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0)); return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice)-credited)); }
 function openSupplierCreditNote(invoice) {
   const {box}=modal(`<h2>Avoir fournisseur — ${esc(invoice.number)}</h2>
     <p>Fournisseur : ${esc(supplierName(invoice.supplierId))} · Solde dû : <strong>${money(supplierInvoiceBalance(invoice))} ${esc(invoice.currency||"")}</strong></p>

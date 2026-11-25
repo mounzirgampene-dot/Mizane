@@ -1,4 +1,5 @@
 import "./tax-compliance.test.js";
+import "./tax-documents.test.js";
 import "./tax-jurisdictions.test.js";
 import "./tax.test.js";
 import "./customer-followups.test.js";

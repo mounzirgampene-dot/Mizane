@@ -29,7 +29,6 @@ function progressiveTax(income, brackets) {
   return { tax, breakdown };
 }
 export function calculateFranceIS({ fiscalProfit, additions = 0, deductions = 0, reducedRateEligible = false } = {}) {
-  const values = { fiscalProfit, additions, deductions };
   if (!validSigned(fiscalProfit) || !validAmount(additions) || !validAmount(deductions) || ![true, false].includes(reducedRateEligible)) {
     return { ok: false, errors: ["Résultat fiscal ou retraitements invalides."] };
   }
@@ -70,7 +69,6 @@ export function calculateFranceIR({ annualTaxableIncome, householdParts = 1 } = 
   };
 }
 export function calculateBelgiumIS({ fiscalProfit, additions = 0, deductions = 0, smallCompanyEligible = false } = {}) {
-  const values = { fiscalProfit, additions, deductions };
   if (!validSigned(fiscalProfit) || !validAmount(additions) || !validAmount(deductions) || ![true, false].includes(smallCompanyEligible)) {
     return { ok: false, errors: ["Résultat fiscal ou retraitements invalides."] };
   }

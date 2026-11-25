@@ -22,7 +22,10 @@ assert.equal(getRegionalWithholdingOptions("BF").length,5);
 
 const ml=calculateRegionalIS({countryCode:"ML",fiscalProfit:10000000,turnover:100000000});
 assert.equal(ml.corporateTax,3000000);
-assert.equal(ml.minimumTax,1000000);
+assert.equal(ml.minimumTax,0);
+const mlLoss=calculateRegionalIS({countryCode:"ML",fiscalProfit:-100,turnover:100000000});
+assert.equal(mlLoss.minimumTax,1000000);
+assert.equal(mlLoss.amountDue,1000000);
 assert.equal(calculateRegionalIS({countryCode:"XX",fiscalProfit:100}).ok,false);
 assert.equal(calculateRegionalWithholding({countryCode:"ML",ruleCode:"x",baseAmount:100,date:"2026-01-01"}).ok,false);
 assert.equal(calculateRegionalWithholding({countryCode:"BJ",ruleCode:"BJ_AIB_SERVICES_REGISTERED",baseAmount:100,date:"2026-02-30"}).ok,false);

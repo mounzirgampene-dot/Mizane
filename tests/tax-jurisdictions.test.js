@@ -18,6 +18,9 @@ for(const [code,spec] of Object.entries(expected)){
 }
 
 const newEastAfricanProfiles={
+ BW:{currency:"BWP",name:"Botswana",vat:"14 % standard selon les documents budgétaires 2025/26 ; 0 % opérations zéro",is:"22 % sociétés résidentes ; 30 % non-résidentes ; 15 % manufacturing/IFSC sous conditions"},
+ MZ:{currency:"MZN",name:"Mozambique",vat:"16 % standard ; 5 % réduit pour secteurs/supplies désignés ; 0 % opérations éligibles",is:"32 % sur le bénéfice imposable des entités résidentes et des établissements stables"},
+ MW:{currency:"MWK",name:"Malawi",vat:"17,5 % standard ; 0 % pour opérations éligibles",is:"30 % jusqu'à 5 milliards MWK ; 40 % au-delà"},
  NA:{currency:"NAD",name:"Namibie",vat:"15 % standard ; 0 % pour opérations légalement éligibles",is:"30 % non-mining ; 37,5 % autres mines ; 55 % mines de diamants"},
  ZM:{currency:"ZMW",name:"Zambie",vat:"16 % standard ; 0 % pour opérations éligibles",is:"30 % taux général ; 10 % agriculture pour les activités éligibles"},
  TZ:{currency:"TZS",name:"Tanzanie (continentale)",selectorName:"Tanzanie",vat:"18 % standard ; 0 % exportations ; 16 % conditionnel sous désignation de la Commissioner General",is:"30 % sociétés résidentes et établissements stables ; régimes préférentiels distincts"},
@@ -48,6 +51,12 @@ assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("PAYE"
 assert.match(getTaxCountryProfile("RW").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/20 000 000 RWF/);
 assert.match(getTaxCountryProfile("KE").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/5 000 000 KES/);
 assert.match(getTaxCountryProfile("NA").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/500 000 NAD/);
+assert.match(getTaxCountryProfile("BW").taxFacts.find(x=>x.taxType==="VAT").detail,/12 %/);
+assert.match(getTaxCountryProfile("BW").taxFacts.find(x=>x.taxType==="VAT").value,/14 %/);
+assert.match(getTaxCountryProfile("MZ").taxFacts.find(x=>x.taxType==="OTHER").value,/2 500 000 MZN/);
+assert.match(getTaxCountryProfile("MW").taxFacts.find(x=>x.taxType==="IS").value,/40 % au-delà/);
+assert.match(getTaxCountryProfile("MW").taxFacts.find(x=>x.label.includes("Minimum Alternative Tax")).value,/0,5 %/);
+
 assert.match(getTaxCountryProfile("NA").taxFacts.find(x=>x.taxType==="IS").detail,/28 %/);
 assert.match(getTaxCountryProfile("ZM").taxFacts.find(x=>x.label.includes("Turnover Tax")).value,/5 000 000 ZMW/);
 assert.match(getTaxCountryProfile("ZM").taxFacts.find(x=>x.taxType==="IR").value,/37 %/);

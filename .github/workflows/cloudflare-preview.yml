@@ -17,6 +17,7 @@ on:
       - feat/lot15-strategic-dashboard
       - feat/lot15-profitability-dashboard
       - feat/lot16-financial-forecast
+      - feat/lot17-budget-control
   workflow_dispatch:
 
 permissions:

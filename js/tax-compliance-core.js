@@ -180,7 +180,7 @@ export function buildMoroccoTaxCalendar({
       const period = validYear + "-T" + quarter;
       items.push({
         id: "VAT_MA_" + period, taxType: "TVA", title: "Déclaration et paiement TVA — régime trimestriel",
-        period, dueDate: endOfMonth(validYear, month + 1), legalReference: "CGI 2026, articles 108 et 111",
+        period, dueDate: addMonthEnd(date(validYear, month, 1), 1), legalReference: "CGI 2026, articles 108 et 111",
         confidence: "statutory_online", channel: "SIMPL-TVA",
         requiredDocuments: ["Journal des ventes du trimestre", "Journal des achats et relevé des déductions", "Relevé des retenues à la source TVA, si applicable", "Factures et avoirs justificatifs"],
       });

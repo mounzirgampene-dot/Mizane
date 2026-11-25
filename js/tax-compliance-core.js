@@ -86,7 +86,7 @@ export function calculateMoroccoIR({ annualNetTaxableIncome, dependents = 0 } = 
   };
 }
 
-export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, customLegalReference, date, recipientType, payerEligible = false, treatyRate, applyTreaty = false } = {}) {
+export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, customLegalReference, date, payerEligible = false, treatyRate, applyTreaty = false } = {}) {
   const base = amount(baseAmount);
   if (!Number.isFinite(base) || !validDate(date)) return { ok: false, errors: ["Base ou date de mise à disposition invalide."] };
   const rule = MOROCCO_WITHHOLDING_RULES.find(item => item.code === ruleCode);

@@ -178,4 +178,35 @@ assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_18_TELEPHONY",ba
 assert.equal(getTaxCountryProfile("MR").taxFacts.find(x=>x.label.includes("Téléphonie")).value,"16 % depuis la loi de finances 2022");
 assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_0_EXPORT",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,0);
 assert.equal(getTaxCountryProfile("MR").calculationModules.includes("IS"),false);
+
+const lot48Profiles={
+ AO:{currency:"AOA",name:"Angola",vat:"14 %",is:"25 %"},
+ MG:{currency:"MGA",name:"Madagascar",vat:"20 %",is:"20 %"},
+ MU:{currency:"MUR",name:"Maurice",vat:"15 %",is:"15 % en règle générale ; 3 % pour certaines sociétés exportatrices de biens"},
+ SC:{currency:"SCR",name:"Seychelles",vat:"15 %",is:"15 % sur les premiers SCR 1 000 000 ; 25 % au-delà"},
+ KM:{currency:"KMF",name:"Comores",vat:"Non validé",is:"35 %"}
+};
+for(const [code,spec] of Object.entries(lot48Profiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code+" : aucun module fiscal activé");
+ assert.deepEqual(p.rules,[],code+" : aucune règle fiscale activée");
+ assert.ok(p.legalSources.length>=3,code+" : références documentaires");
+ assert.equal(p.taxFacts.find(x=>x.taxType==="VAT").value,spec.vat,code);
+ assert.equal(p.taxFacts.find(x=>x.taxType==="IS").value,spec.is,code);
+ assert.deepEqual(getActiveTaxRules(code,"VAT","2026-11-25"),[],code+" : aucune règle TVA active");
+ assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS active");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul TVA bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays présent dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : aucun taux par défaut non validé");
+}
+assert.match(getTaxCountryProfile("MG").taxFacts.find(x=>x.taxType==="VAT").detail,/loi de finances rectificative 2026/);
+assert.match(getTaxCountryProfile("MU").taxFacts.find(x=>x.taxType==="IS").detail,/Finance Act 2026/);
+assert.match(getTaxCountryProfile("SC").taxFacts.find(x=>x.taxType==="VAT").detail,/annexes du VAT Act en 2025/);
+assert.match(getTaxCountryProfile("KM").taxFacts.find(x=>x.taxType==="IS").detail,/1,5 % du chiffre d'affaires/);
+
 console.log("Lot 23/33/34/35 — juridictions fiscales internationales et Afrique centrale : OK");

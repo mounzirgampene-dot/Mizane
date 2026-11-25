@@ -34,7 +34,7 @@ export function calculateRegionalIS({countryCode,fiscalProfit,additions=0,deduct
   const rate=27.5,tax=round2(taxable*rate/100),minimum=round2(Number(turnover)*.005);
   return{ok:true,countryCode:code,currency:"XOF",rulesVersion:"CGI-BF-2026 / paramètres vérifiés disponibles",fiscalProfit:profit,taxableProfit:taxable,rate,corporateTax:tax,minimumTax:minimum,minimumRate:.5,amountDue:Math.max(tax,minimum),legalReference:"CGI Burkina Faso, art. 87 à 90 ; taux 27,5 % et minimum forfaitaire",warnings:["Minimum forfaitaire calculé à 0,5 % du chiffre d’affaires HT ; vérifier le plancher/plafond et les règles sectorielles applicables dans le CGI 2026 avant déclaration."],disclaimer:"Simulation IS indicative sur bénéfice fiscal déjà déterminé."};
  }
- const tax=round2(taxable*.30),minimum=round2(Number(turnover)*.01);
+ const tax=round2(taxable*.30),minimum=profit<=0?round2(Number(turnover)*.01):0;
  return{ok:true,countryCode:code,currency:"XOF",rulesVersion:"CGI-Mali / Loi de finances 2025",fiscalProfit:profit,taxableProfit:taxable,rate:30,corporateTax:tax,minimumTax:minimum,minimumRate:1,amountDue:Math.max(tax,minimum),legalReference:"CGI Mali ; DGI Mali — régime réel : 30 % du bénéfice, 1 % du CA HT en cas de déficit",warnings:["Le minimum de 1 % du chiffre d’affaires HT est décrit par la DGI en cas de déficit ; la présente simulation l’affiche comme repère de plancher, à confirmer selon le régime et la situation exacte."],disclaimer:"Simulation indicative ; régimes IBIC/IS, minimums et crédits doivent être vérifiés au regard du CGI et de la loi de finances applicables."};
 }
 export function calculateRegionalWithholding({countryCode,ruleCode,baseAmount,date}={}){

@@ -29,6 +29,7 @@ on:
       - feat/lot22-morocco-tax-compliance
       - feat/lot25-senegal-ivory-coast-tax
       - feat/lot26-benin-burkina-mali-tax
+      - feat/lot27-west-africa-tax
   pull_request:
     branches:
       - main

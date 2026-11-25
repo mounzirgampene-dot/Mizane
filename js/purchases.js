@@ -245,14 +245,20 @@ function refreshLineUnits(row, unit = "") {
   row.querySelector(".pa-unit").innerHTML = item ? unitOptions(item, unit || item.base_unit) : "";
 }
 function readLines(box) {
-  return [...box.querySelectorAll("[data-purchase-line]")].map(row => {
+  const goods = [...box.querySelectorAll("[data-purchase-line]")].map(row => {
     const item = product(row.querySelector(".pa-product").value);
     const unit = row.querySelector(".pa-unit").value;
     const factor = Number(row.querySelector(".pa-unit").selectedOptions[0]?.dataset.factor || 1);
     const quantity = num(row.querySelector(".pa-quantity").value);
     const unitCost = num(row.querySelector(".pa-cost").value);
-    return { productId: item?.id, warehouseId: row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity: round(quantity * factor), baseUnitCost: factor > 0 ? round(unitCost / factor) : 0 };
+    return { lineType:"goods", productId:item?.id, warehouseId:row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity:round(quantity*factor), baseUnitCost:factor>0?round(unitCost/factor):0 };
   });
+  const extras = [...box.querySelectorAll("[data-extra-line]")].map(row => ({
+    lineType:row.querySelector(".pa-extra-type").value, description:row.querySelector(".pa-extra-description").value.trim(),
+    quantity:num(row.querySelector(".pa-extra-quantity").value), unitCost:num(row.querySelector(".pa-extra-cost").value), factor:1,
+    baseQuantity:num(row.querySelector(".pa-extra-quantity").value), baseUnitCost:num(row.querySelector(".pa-extra-cost").value),
+  }));
+  return goods.concat(extras);
 }
 function accountOptions(type, selected = "", purpose = "") {
   const accounts = [...(store.__accountCache ? Object.entries(store.__accountCache).map(([code, account]) => ({ code, ...account })) : []), ...(store.settings.customAccounts || [])];
@@ -272,7 +278,9 @@ function accountOptions(type, selected = "", purpose = "") {
 }
 function validateLines(lines) {
   if (!lines.length) return "Ajoutez au moins une ligne d'achat.";
-  if (lines.some(line => !line.productId || !line.warehouseId || !(line.quantity > 0) || !(line.factor > 0) || line.unitCost < 0 || !Number.isFinite(line.baseQuantity))) return "Une ligne comporte un article, un entrepôt, une quantité ou un coût invalide.";
+  if (lines.some(line => line.lineType === "service" || line.lineType === "fixed_asset"
+    ? (!line.description || !(line.quantity > 0) || !(line.unitCost > 0) || !Number.isFinite(line.quantity * line.unitCost))
+    : (!line.productId || !line.warehouseId || !(line.quantity > 0) || !(line.factor > 0) || line.unitCost < 0 || !Number.isFinite(line.baseQuantity)))) return "Une ligne comporte une nature, une désignation, un article, un entrepôt, une quantité ou un coût invalide."; 
   return "";
 }
 function totals(lines) {

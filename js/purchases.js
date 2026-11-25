@@ -416,6 +416,8 @@ function openDocument(type) {
     if (type === "invoice") {
       const metadata = validateSupplierInvoiceMetadata({ reference:supplierReference, date:box.querySelector("#pd-date").value || today(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD" });
       if (!metadata.ok) { box.querySelector("#pd-error").textContent = metadata.errors[0]; return; }
+      const dueDate=box.querySelector("#pd-due-date").value;
+      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate)||Number.isNaN(Date.parse(dueDate+"T00:00:00Z"))){box.querySelector("#pd-error").textContent="La date d’échéance doit être valide.";return;}
       const duplicate = findDuplicateSupplierInvoice(p.documents, supplierId, supplierReference);
       if (duplicate) {
         box.querySelector("#pd-error").textContent = "Cette référence de facture fournisseur existe déjà pour ce fournisseur (" + duplicate.number + "). Vérifiez qu'il ne s'agit pas d'une double saisie.";

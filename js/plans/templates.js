@@ -31,6 +31,10 @@ export const COMMERCE = makePlan(
     ["627","Publicité et communication","expense"],["641","Impôts et taxes","expense"],["661","Salaires et charges de personnel","expense"],
     ["681","Dotations aux amortissements","expense"],["707","Ventes de marchandises","income"],["709","Rabais et remises accordés","expense"],
     ["758","Autres produits de gestion","income"],["658","Autres charges de gestion","expense"],
+    ["207","Fonds commercial","asset"],["2815","Amortissements des installations commerciales","asset"],["391","Dépréciations des stocks","asset"],
+    ["408","Fournisseurs — factures non parvenues","liability"],["419","Clients créditeurs","liability"],["425","Avances au personnel","asset"],
+    ["4457","TVA collectée — compte de suivi","liability"],["519","Concours bancaires courants","liability"],["606","Fournitures non stockées","expense"],
+    ["615","Entretien et réparations","expense"],["618","Services divers","expense"],["706","Produits des services annexes","income"],
   ]
 );
 
@@ -48,6 +52,11 @@ export const SERVICES = makePlan(
     ["641","Impôts et taxes","expense"],["661","Salaires et rémunérations","expense"],["645","Charges sociales","expense"],
     ["681","Dotations aux amortissements","expense"],["706","Prestations de services","income"],["708","Produits des activités annexes","income"],
     ["709","Rabais et réductions accordés","expense"],["758","Autres produits de gestion","income"],
+    ["207","Fonds commercial","asset"],["213","Constructions et aménagements","asset"],["232","Immobilisations en cours","asset"],
+    ["2815","Amortissements du matériel","asset"],["409","Fournisseurs débiteurs","asset"],["419","Clients créditeurs","liability"],
+    ["425","Avances au personnel","asset"],["437","Autres organismes sociaux","liability"],["4457","TVA collectée — compte de suivi","liability"],
+    ["519","Concours bancaires courants","liability"],["605","Fournitures et petit équipement","expense"],["616","Assurances","expense"],
+    ["618","Services divers","expense"],["625","Déplacements et missions","expense"],["631","Frais bancaires et assimilés","expense"],
   ]
 );
 
@@ -66,6 +75,12 @@ export const AGRICULTURE = makePlan(
     ["613","Locations de terres et matériels","expense"],["641","Taxes et contributions","expense"],["661","Salaires agricoles","expense"],
     ["681","Dotations aux amortissements","expense"],["701","Ventes de produits agricoles","income"],["702","Ventes de produits transformés","income"],
     ["74","Subventions d'exploitation — traitement à adapter","income"],["758","Autres produits agricoles","income"],
+    ["207","Fonds commercial et droits","asset"],["214","Matériel spécialisé et équipements","asset"],["218","Autres équipements agricoles","asset"],
+    ["232","Immobilisations agricoles en cours","asset"],["2815","Amortissements du matériel agricole","asset"],["391","Dépréciations des stocks d'intrants","asset"],
+    ["409","Avances versées aux fournisseurs","asset"],["419","Clients créditeurs","liability"],["425","Avances au personnel","asset"],
+    ["437","Organismes sociaux — autres","liability"],["4457","TVA collectée — compte de suivi","liability"],["519","Concours bancaires courants","liability"],
+    ["608","Frais accessoires sur achats agricoles","expense"],["616","Assurances agricoles","expense"],["618","Services divers","expense"],
+    ["625","Déplacements et missions","expense"],["628","Frais de télécommunication","expense"],["708","Produits accessoires agricoles","income"],
   ]
 );
 
@@ -83,6 +98,12 @@ export const ASSOCIATION = makePlan(
     ["661","Salaires et charges de personnel","expense"],["681","Dotations aux amortissements","expense"],
     ["706","Prestations et activités associatives","income"],["741","Subventions d'exploitation","income"],["742","Dons et legs","income"],
     ["743","Cotisations des membres","income"],["744","Mécénat et parrainage","income"],["758","Autres produits","income"],
+    ["207","Fonds commercial et droits","asset"],["213","Constructions et aménagements","asset"],["232","Immobilisations en cours","asset"],
+    ["2815","Amortissements du matériel","asset"],["409","Fournisseurs débiteurs","asset"],["418","Produits à recevoir","asset"],
+    ["419","Adhérents créditeurs","liability"],["425","Avances au personnel","asset"],["437","Autres organismes sociaux","liability"],
+    ["448","Autres créances et dettes","asset"],["519","Concours bancaires courants","liability"],["605","Achats non stockés","expense"],
+    ["616","Assurances","expense"],["618","Services divers","expense"],["625","Déplacements et missions","expense"],
+    ["631","Frais bancaires","expense"],["708","Produits accessoires","income"],["745","Produits de manifestations","income"],
   ]
 );
 

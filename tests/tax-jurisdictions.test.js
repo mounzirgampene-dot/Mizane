@@ -1,3 +1,4 @@
+import "./african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";

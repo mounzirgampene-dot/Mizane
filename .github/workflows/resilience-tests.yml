@@ -11,6 +11,7 @@ on:
       - feat/lot5-supplier-settlements
       - feat/lot6-supplier-credit-notes-reconciliation
       - feat/lot7-mixed-supplier-invoices
+      - feat/lot8-supplier-line-tax-rates
   pull_request:
     branches:
       - main
@@ -19,6 +20,7 @@ on:
       - fix/lot2-billing-integrity
       - feat/lot4-periodic-inventory-closing
       - feat/lot5-supplier-settlements
+      - feat/lot8-supplier-line-tax-rates
 
 permissions:
   contents: read

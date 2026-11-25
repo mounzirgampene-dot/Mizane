@@ -1,5 +1,5 @@
 // MIZANE — Espace fiscal : référentiel pays et aperçu analytique TVA.
-import { store, $app, esc, money } from "./state.js";
+import { store, $app, esc } from "./state.js";
 import { buildVatReport, getActiveTaxRules, getTaxCountryProfile } from "./tax-core.js";
 
 const today = () => new Date().toISOString().slice(0, 10);

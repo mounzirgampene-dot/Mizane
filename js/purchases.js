@@ -61,7 +61,18 @@ function openSupplierPayment(invoice) {
   box.querySelector('#psp-submit').addEventListener('click',()=>{
     const p=data(), payment={id:p.nextPaymentId,date:box.querySelector('#psp-date').value,amount:num(box.querySelector('#psp-amount').value),method:box.querySelector('#psp-method').value,exchangeRate:num(box.querySelector('#psp-rate').value),treasury:box.querySelector('#psp-treasury').value,fxLoss:box.querySelector('#psp-fx-loss').value,fxGain:box.querySelector('#psp-fx-gain').value,createdAt:new Date().toISOString()};
     const reference='REGLEMENT FOURNISSEUR '+String(invoice.number||invoice.id)+' #'+String(payment.id), existing=(store.entries||[]).find(entry=>entry.reference===reference);
-    if(existing){invoice.payments||=[];invoice.payments.push({...payment,status:'posted',entryId:existing.id});p.nextPaymentId++;persist('Règlement existant réconcilié.');box.closest('dialog').close();renderList();return;}
+    if(existing){
+      const expectedDebt=round(num(payment.amount)*num(invoice.accounting?.exchangeRate));
+      const expectedCash=round(num(payment.amount)*num(payment.exchangeRate));
+      const lines=existing.lines||[];
+      const debtLine=lines.find(line=>String(line.account)===String(invoice.accounting?.accounts?.supplier)&&round(line.debit)===expectedDebt);
+      const cashLine=lines.find(line=>String(line.account)===String(payment.treasury)&&round(line.credit)===expectedCash);
+      if(existing.date!==payment.date || existing.journal!==(payment.method==="cash"?"CAI":"BAN") || !debtLine || !cashLine){
+        box.querySelector("#psp-error").textContent="Une écriture porte déjà cette référence, mais ses montants ou ses comptes diffèrent. Aucune réconciliation automatique n'a été effectuée.";
+        return;
+      }
+      invoice.payments||=[];invoice.payments.push({...payment,status:"posted",entryId:existing.id});p.nextPaymentId++;persist("Règlement déjà comptabilisé : historique réconcilié après vérification des montants.");box.closest("dialog").close();renderList();return;
+    }
     const proposal=buildSupplierPaymentJournalEntry(store,invoice,payment,payment);if(!proposal.ok){box.querySelector('#psp-error').textContent=proposal.errors.join(' ');return;}
     const posted=postSupplierPaymentJournalEntry(store,invoice,payment,payment);if(!posted.ok){box.querySelector('#psp-error').textContent=(posted.errors||['Règlement refusé.']).join(' ');return;}
     payment.status='posted';payment.entryId=(store.entries||[]).find(entry=>entry.reference===reference)?.id||null;invoice.payments||=[];invoice.payments.push(payment);p.nextPaymentId++;persist('Règlement fournisseur comptabilisé.');box.closest('dialog').close();renderList();
@@ -154,7 +165,7 @@ function accountOptions(type, selected = "", purpose = "") {
     if (purpose === "supplier") return code.startsWith("4") && /fournisseur/.test(label);
     if (purpose === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
     if (purpose === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
-    if (purpose === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
+    if (purpose === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);\n    if (purpose === "treasury") return code.startsWith("5") && /(banque|caisse|trésorerie)/.test(label);
     return true;
   };
   const unique = [...new Map(accounts.filter(account => account.type === type && validPurpose(account)).map(account => [String(account.code), account])).values()];

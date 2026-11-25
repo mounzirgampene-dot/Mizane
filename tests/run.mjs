@@ -2131,6 +2131,8 @@ test("achats : règlements fournisseurs partiels, change, plafonnement et idempo
   assert.equal(fxGain.ok,true,fxGain.errors?.join(" "));
   assert.deepEqual(fxGain.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["778",0,1],["512",0,19]]);
   assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:4,date:"2026-02-30"},{...partial}).ok,false,"une date impossible doit être refusée");
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:5,treasury:"411"},{...partial,treasury:"411"}).ok,false,"un compte client de classe 4 ne peut pas être utilisé comme trésorerie");
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:6,method:"cash",treasury:"512"},{...partial,method:"cash",treasury:"512"}).ok,false,"un règlement en espèces doit utiliser un compte de caisse");
   assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,accountingPostedAt:null},partial,partial).ok,false,"une facture non comptabilisée ne peut pas être réglée");
 });
 

@@ -213,7 +213,7 @@ export function buildMoroccoTaxCalendar({
   if (includePayrollAnnual) {
     const payrollDue = date(validYear, 2, lastDay(validYear, 2));
     items.push({
-      id: "PAYROLL_ANNUAL_" + (validYear - 1), taxType: "IR", title: "État annuel des traitements et salaires",
+      id: "PAYROLL_ANNUAL_" + validYear, taxType: "IR", title: "État annuel des traitements et salaires",
       period: String(validYear - 1), dueDate: payrollDue, legalReference: "CGI 2026, article 79-I",
       confidence: "statutory_review", channel: "SIMPL",
       requiredDocuments: ["État nominatif des salariés", "Récapitulatif annuel des rémunérations", "Retenues IR opérées et versées", "Justificatifs des avantages et exonérations"],

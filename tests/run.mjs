@@ -1,3 +1,4 @@
+import "./customer-followups.test.js";
 import "./fixed-assets.test.js";
 import "./asset-disposals.test.js";
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs

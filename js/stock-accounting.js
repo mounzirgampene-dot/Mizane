@@ -252,7 +252,8 @@ export function buildPeriodicStockClosingJournalEntry(targetStore,valuation,mapp
   const closing=Number(valuation.closing_value??valuation.closingValue);
   const openingNegative=Number(valuation.opening_negative_positions??valuation.openingNegativePositions)||0;
   const closingNegative=Number(valuation.closing_negative_positions??valuation.closingNegativePositions)||0;
-  const activeCounts=Number(valuation.active_count_sessions??valuation.activeCountSessions)||0;\n  const negativeMovements=Number(valuation.negative_movements??valuation.negativeMovements)||0;
+  const activeCounts=Number(valuation.active_count_sessions??valuation.activeCountSessions)||0;
+  const negativeMovements=Number(valuation.negative_movements??valuation.negativeMovements)||0;
   if(!Number.isFinite(opening)||!Number.isFinite(closing)||opening < -0.01||closing < -0.01)return {ok:false,entries:[],errors:["La valorisation historique du stock est négative ou invalide ; clôture refusée."]};
   if(openingNegative>0||closingNegative>0||negativeMovements>0)return {ok:false,entries:[],errors:["Des stocks négatifs existent au début, à la fin ou pendant la période ; régularisez-les avant la clôture périodique."]};
   if(activeCounts>0)return {ok:false,entries:[],errors:["Un inventaire physique est encore en cours ; terminez-le avant la clôture périodique."]};

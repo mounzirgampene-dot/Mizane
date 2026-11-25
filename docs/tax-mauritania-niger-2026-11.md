@@ -4,7 +4,7 @@
 
 - Devise : MRU.
 - Taux normal de TVA : 16 %.
-- Taux majoré de 18 % pour les services de téléphonie, conformément à la loi de finances rectificative 2023.
+- Le taux de 18 % autrefois appliqué à la téléphonie a été supprimé par la loi de finances 2022 ; les opérations de téléphonie relèvent désormais du taux de 16 %.
 - Taux zéro : exportations de biens et services réalisées par un assujetti.
 - La loi de finances 2026 prévoit un traitement douanier distinct pour les téléphones utilitaires (0 %) et les smartphones (16 %) ; ce traitement à l'importation n'est pas généralisé aux ventes intérieures.
 - Déclaration et paiement de TVA : mensuels, au plus tard le 15 du mois suivant. Seuil d'assujettissement documenté par la DGI : 3 000 000 MRU de chiffre d'affaires annuel.
@@ -12,7 +12,7 @@
 - IBAPP : 30 % du bénéfice net ou 2,5 % du chiffre d'affaires, et 3 % du CA au forfait.
 - Seul le moteur TVA est activé. IS, IBAPP, paie, retenues, minimums et calendrier déclaratif restent désactivés.
 
-Sources principales : DGI et Ministère des Finances — CGI officiel, art. 230 ; LFR 2023, art. 3.1 ; DGI — régimes d'imposition ; DGI — calendrier des obligations ; loi de finances 2026.
+Sources principales : DGI et Ministère des Finances — CGI officiel, art. 230 ; loi de finances 2022 et circulaire DGI de février 2022 ; DGI — régimes d'imposition ; DGI — calendrier des obligations ; loi de finances 2026.
 
 ## Niger (NE) — recherche requise maintenue
 

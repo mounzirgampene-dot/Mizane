@@ -13,6 +13,7 @@ on:
       - feat/lot9-supplier-credit-note-line-allocation
       - feat/lot10-supplier-auto-account-mapping
       - feat/lot11-supplier-purchase-controls
+      - feat/lot12-supplier-payment-schedule
   workflow_dispatch:
 
 permissions:

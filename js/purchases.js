@@ -7,6 +7,7 @@ import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
 import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, postSupplierMultiInvoicePaymentJournalEntry } from "./purchase-credit-notes.js";
+import { supplierInvoiceTaxBreakdown } from "./purchase-tax.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -52,7 +53,7 @@ function modal(html) {
 function supplierName(id) {
   return data().suppliers.find(item => String(item.id) === String(id))?.name || "Fournisseur inconnu";
 }
-function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
+function supplierInvoicePayable(invoice) { const tax=supplierInvoiceTaxBreakdown(invoice); return tax.ok ? tax.payable : round(num(invoice?.total)); }
 function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
 function supplierInvoiceBalance(invoice) { const credited=round((invoice?.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0)); return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice)-credited)); }
 function openSupplierMultiInvoiceReconciliation() {
@@ -231,6 +232,7 @@ function lineRow(index, source = {}) {
     <td><select class="pa-unit">${units}</select></td>
     <td><input class="pa-quantity" type="number" min="0.0001" step="0.0001" value="${source.quantity ?? 1}"></td>
     <td><input class="pa-cost" type="number" min="0" step="0.0001" value="${source.unitCost ?? 0}"></td>
+    <td><input class="pa-tax" type="number" min="0" max="100" step="0.01" value="${source.taxRate ?? ""}" placeholder="Défaut"></td>
     <td><input class="pa-trace" maxlength="500" value="${esc(source.trace || "")}" placeholder="Lot ou séries"></td>
     <td><button type="button" class="secondary pa-remove" aria-label="Supprimer la ligne">×</button></td>
   </tr>`;
@@ -240,6 +242,7 @@ function extraLineRow(index, source = {}) {
     '<td><input class="pa-extra-description" maxlength="240" value="' + esc(source.description || "") + '" placeholder="Désignation de la prestation ou du bien"></td>' +
     '<td><input class="pa-extra-quantity" type="number" min="0.0001" step="0.0001" value="' + (source.quantity ?? 1) + '"></td>' +
     '<td><input class="pa-extra-cost" type="number" min="0.01" step="0.01" value="' + (source.unitCost ?? 0) + '"></td>' +
+    '<td><input class="pa-tax" type="number" min="0" max="100" step="0.01" value="' + (source.taxRate ?? "") + '" placeholder="Défaut"></td>' +
     '<td><button type="button" class="secondary pa-extra-remove" aria-label="Supprimer la ligne">×</button></td></tr>';
 }
 function refreshLineUnits(row, unit = "") {
@@ -248,18 +251,15 @@ function refreshLineUnits(row, unit = "") {
 }
 function readLines(box) {
   const goods = [...box.querySelectorAll("[data-purchase-line]")].map(row => {
-    const item = product(row.querySelector(".pa-product").value);
-    const unit = row.querySelector(".pa-unit").value;
+    const item = product(row.querySelector(".pa-product").value), unit = row.querySelector(".pa-unit").value;
     const factor = Number(row.querySelector(".pa-unit").selectedOptions[0]?.dataset.factor || 1);
-    const quantity = num(row.querySelector(".pa-quantity").value);
-    const unitCost = num(row.querySelector(".pa-cost").value);
-    return { lineType:"goods", productId:item?.id, warehouseId:row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity:round(quantity*factor), baseUnitCost:factor>0?round(unitCost/factor):0 };
+    const quantity = num(row.querySelector(".pa-quantity").value), unitCost = num(row.querySelector(".pa-cost").value), taxValue = row.querySelector(".pa-tax").value.trim();
+    return { lineType:"goods", productId:item?.id, warehouseId:row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, taxRate:taxValue===""?null:num(taxValue), trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity:round(quantity*factor), baseUnitCost:factor>0?round(unitCost/factor):0 };
   });
-  const extras = [...box.querySelectorAll("[data-extra-line]")].filter(row => row.querySelector(".pa-extra-description").value.trim() || num(row.querySelector(".pa-extra-cost").value) > 0 || num(row.querySelector(".pa-extra-quantity").value) !== 1).map(row => ({
-    lineType:row.querySelector(".pa-extra-type").value, description:row.querySelector(".pa-extra-description").value.trim(),
-    quantity:num(row.querySelector(".pa-extra-quantity").value), unitCost:num(row.querySelector(".pa-extra-cost").value), factor:1,
-    baseQuantity:num(row.querySelector(".pa-extra-quantity").value), baseUnitCost:num(row.querySelector(".pa-extra-cost").value),
-  }));
+  const extras = [...box.querySelectorAll("[data-extra-line]")].filter(row => row.querySelector(".pa-extra-description").value.trim() || num(row.querySelector(".pa-extra-cost").value)>0 || num(row.querySelector(".pa-extra-quantity").value)!==1).map(row => {
+    const taxValue=row.querySelector(".pa-tax").value.trim();
+    return { lineType:row.querySelector(".pa-extra-type").value, description:row.querySelector(".pa-extra-description").value.trim(), quantity:num(row.querySelector(".pa-extra-quantity").value), unitCost:num(row.querySelector(".pa-extra-cost").value), taxRate:taxValue===""?null:num(taxValue), factor:1, baseQuantity:num(row.querySelector(".pa-extra-quantity").value), baseUnitCost:num(row.querySelector(".pa-extra-cost").value) };
+  });
   return goods.concat(extras);
 }
 function accountOptions(type, selected = "", purpose = "") {
@@ -280,9 +280,10 @@ function accountOptions(type, selected = "", purpose = "") {
 }
 function validateLines(lines) {
   if (!lines.length) return "Ajoutez au moins une ligne d'achat.";
-  if (lines.some(line => line.lineType === "service" || line.lineType === "fixed_asset"
-    ? (!line.description || !(line.quantity > 0) || !(line.unitCost > 0) || !Number.isFinite(line.quantity * line.unitCost))
-    : (!line.productId || !line.warehouseId || !(line.quantity > 0) || !(line.factor > 0) || line.unitCost < 0 || !Number.isFinite(line.baseQuantity)))) return "Une ligne comporte une nature, une désignation, un article, un entrepôt, une quantité ou un coût invalide."; 
+  if (lines.some(line => (line.taxRate !== null && (!Number.isFinite(line.taxRate) || line.taxRate < 0 || line.taxRate > 100))
+    || (line.lineType === "service" || line.lineType === "fixed_asset"
+      ? (!line.description || !(line.quantity > 0) || !(line.unitCost > 0) || !Number.isFinite(line.quantity * line.unitCost))
+      : (!line.productId || !line.warehouseId || !(line.quantity > 0) || !(line.factor > 0) || line.unitCost < 0 || !Number.isFinite(line.baseQuantity))))) return "Une ligne comporte une nature, une désignation, un article, un entrepôt, une quantité, un coût ou un taux de taxe invalide.";
   return "";
 }
 function totals(lines) {
@@ -365,9 +366,9 @@ function openDocument(type) {
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
     ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable obligatoire</h3><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
-    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
+    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire HT</th><th>TVA % (défaut)</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
     <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne de marchandise</button>
-    ${type === "invoice" ? '<h3>Services et immobilisations</h3><div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Quantité</th><th>Coût unitaire HT</th><th></th></tr></thead><tbody id="pd-extra-lines">' + extraLineRow(0) + '</tbody></table></div><button type="button" class="secondary" id="pd-add-extra-line">Ajouter une prestation ou immobilisation</button>' : ""}
+    ${type === "invoice" ? '<h3>Services et immobilisations</h3><div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Quantité</th><th>Coût unitaire HT</th><th>TVA % (défaut)</th><th></th></tr></thead><tbody id="pd-extra-lines">' + extraLineRow(0) + '</tbody></table></div><button type="button" class="secondary" id="pd-add-extra-line">Ajouter une prestation ou immobilisation</button>' : ""}
     <p id="pd-total" class="calculator-result">Total : 0,00</p><div id="pd-error" class="errors"></div>
     <div class="actions"><button id="pd-save">Enregistrer ${type === "order" ? "la commande" : "la facture"}</button><button class="secondary" data-close>Annuler</button></div>`);
   const tbody = box.querySelector("#pd-lines");
@@ -383,8 +384,9 @@ function openDocument(type) {
       row.querySelectorAll("input,select").forEach(el => el.addEventListener("input", updateTotal));
     });
   };
-  const updateTotal = () => { const lines = readLines(box); box.querySelector("#pd-total").textContent = "Total : " + money(totals(lines)) + " " + box.querySelector("#pd-currency").value; };
+  const updateTotal = () => { const lines=readLines(box), ht=totals(lines), fallback=num(box.querySelector("#pd-tax-rate")?.value), vat=round(lines.reduce((sum,line)=>sum+Math.round((line.quantity*line.unitCost*(line.taxRate===null?fallback:line.taxRate)/100+Number.EPSILON)*100)/100,0)); box.querySelector("#pd-total").textContent="HT : "+money(ht)+" | TVA : "+money(vat)+" | TTC : "+money(round(ht+vat))+" "+box.querySelector("#pd-currency").value; };
   bindRows(); bindExtraRows(); updateTotal();
+  box.querySelector("#pd-tax-rate")?.addEventListener("input", updateTotal);
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
   box.querySelector("#pd-add-extra-line")?.addEventListener("click", () => { extraTbody.insertAdjacentHTML("beforeend", extraLineRow(extraTbody.children.length)); bindExtraRows(); updateTotal(); });
   box.querySelector("#pd-currency").addEventListener("input", () => {

@@ -1,6 +1,7 @@
 // MIZANE — Avoirs fournisseurs et rapprochement multi-factures.
 import { validateEntry } from "./accounting.js";
 import { postBillingJournalEntriesAtomically } from "./billing-accounting.js";
+import { supplierInvoiceTaxBreakdown } from "./purchase-tax.js";
 
 const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -14,8 +15,8 @@ function accountsFor(store) {
 }
 
 function invoiceBalance(invoice) {
-  const taxRate = number(invoice.accounting?.taxRate);
-  const gross = round2(number(invoice.total) * (1 + taxRate / 100));
+  const tax = supplierInvoiceTaxBreakdown(invoice);
+  const gross = tax.ok ? tax.payable : round2(number(invoice.total));
   const paid = round2((invoice.payments || []).reduce((sum, payment) => sum + number(payment.amount), 0));
   const credited = round2((invoice.creditNotes || []).reduce((sum, note) => sum + number(note.payableAmount ?? note.total), 0));
   return round2(gross - paid - credited);
@@ -36,12 +37,15 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
     if(date.getUTCFullYear()!==+dateMatch[1]||date.getUTCMonth()!==+dateMatch[2]-1||date.getUTCDate()!==+dateMatch[3]) errors.push("Date de l'avoir invalide.");
   }
   const amount = number(creditNote?.total);
-  const taxRate = number(invoice.accounting?.taxRate);
+  const taxBreakdown = supplierInvoiceTaxBreakdown(invoice);
+  const taxRate = taxBreakdown.uniformTaxRate;
   const exchangeRate = number(invoice.accounting?.exchangeRate);
+  if (!taxBreakdown.ok) errors.push(...taxBreakdown.errors);
+  if (taxRate === null) errors.push("Avoir bloqué : les factures à taux de taxe multiples exigent une ventilation de l'avoir par ligne.");
   if (!(amount > 0)) errors.push("Le montant HT de l'avoir doit être positif.");
   if (!(taxRate >= 0 && taxRate <= 100)) errors.push("Taux de taxe de la facture d'origine invalide.");
   if (!(exchangeRate > 0)) errors.push("Taux de conversion de la facture d'origine invalide.");
-  const payableAmount = round2(amount * (1 + taxRate / 100));
+  const payableAmount = taxRate === null ? 0 : round2(amount * (1 + taxRate / 100));
   if (payableAmount > invoiceBalance(invoice) + 0.001) errors.push("L'avoir dépasse le solde restant dû de la facture.");
   const accounts = accountsFor(store);
   const mapping = invoice.accounting?.accounts || {};
@@ -156,7 +160,8 @@ export function buildSupplierMultiInvoicePaymentJournalEntry(store, invoices, al
     const supplier=requireAccount(invoice.accounting?.accounts?.supplier,"liability","fournisseur");
     const priorPaid=round2((invoice.payments||[]).reduce((sum,item)=>sum+number(item.amount),0));
     const priorCredit=round2((invoice.creditNotes||[]).reduce((sum,item)=>sum+number(item.payableAmount??item.total),0));
-    const gross=round2(number(invoice.total)*(1+number(invoice.accounting?.taxRate)/100));
+    const invoiceTax=supplierInvoiceTaxBreakdown(invoice);
+    const gross=invoiceTax.ok?invoiceTax.payable:round2(number(invoice.total));
     if(round2(priorPaid+priorCredit+allocation.amount)>gross+0.001) errors.push("Le règlement dépasse le solde restant dû de "+String(invoice.number)+".");
     const debt=round2(allocation.amount*invoiceRate);
     baseDebt=round2(baseDebt+debt);

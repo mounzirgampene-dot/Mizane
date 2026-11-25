@@ -42,11 +42,14 @@ export function buildCommercialMarginReport({
     const docs = (invoice.stockDocuments || []).filter(doc => doc?.documentId != null);
     const invoiceMovements = docs.flatMap(doc => movementsByDocument.get(String(doc.documentId)) || []);
     const costsByProduct = new Map();
+    const quantitiesByProduct = new Map();
     for (const movement of invoiceMovements) {
       const productId = String(movement.product_id ?? movement.productId ?? "");
       const cost = Math.abs(Number(movement.value_delta ?? movement.valueDelta ?? 0));
       if (!productId || !Number.isFinite(cost)) continue;
       costsByProduct.set(productId, round((costsByProduct.get(productId) || 0) + cost));
+      const movedQuantity = Math.abs(Number(movement.quantity_delta ?? movement.quantityDelta ?? 0));
+      quantitiesByProduct.set(productId, round((quantitiesByProduct.get(productId) || 0) + movedQuantity));
     }
     const creditedLines = (notesByInvoice.get(String(invoice.id)) || []).flatMap(note => note.lines || []);
     const groupedLines = new Map();
@@ -77,13 +80,13 @@ export function buildCommercialMarginReport({
       row.cost = round(row.cost + cost);
       row.margin = round(row.revenue - row.cost);
       row.invoices.add(String(invoice.id));
-      if (!costsByProduct.has(productId)) row.missingCostLines += 1;
+      if ((quantitiesByProduct.get(productId) || 0) + 0.0001 < group.quantity) row.missingCostLines += 1;
       rows.set(key, row);
     }
     if (groupedLines.size) includedInvoices.add(String(invoice.id));
   }
   const resultRows = [...rows.values()].map(row => {
-    const marginRate = row.revenue > 0 ? round(row.margin / row.revenue * 100) : null;
+    const marginRate = row.missingCostLines === 0 && row.revenue > 0 ? round(row.margin / row.revenue * 100) : null;
     const currencyTotals = totals.byCurrency[row.currency] || { revenue: 0, cost: 0, margin: 0 };
     currencyTotals.revenue = round(currencyTotals.revenue + row.revenue);
     currencyTotals.cost = round(currencyTotals.cost + row.cost);

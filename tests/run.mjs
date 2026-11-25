@@ -2511,12 +2511,12 @@ test("tableau de bord stratégique : agrège les ventes, achats et retards sans 
     settings: { currency: "MAD" },
     billing: {
       documents: [
-        { id: 1, type: "invoice", status: "validated", currency: "MAD", date: "2026-11-01", dueDate: "2026-11-10", totals: { ttc: 120 }, payments: [{ amount: 20 }] },
+        { id: 1, type: "invoice", status: "validated", currency: "MAD", date: "2026-11-01", dueDate: "2026-11-10", totals: { ttc: 120 }, payments: [{ amount: 20 }], stockDocuments: [{ documentId: "sale-1" }], lines: [{ stockProductId: 1, quantity: 1, unitPrice: 100 }] },
         { id: 2, type: "invoice", status: "validated", currency: "EUR", date: "2026-11-02", dueDate: "2026-12-02", totals: { ttc: 50 } },
       ],
       purchases: { documents: [{ id: 3, type: "invoice", status: "validated", currency: "MAD", totals: { ttc: 75 } }] },
     },
-    stock: { products: [{ id: 1, name: "Article", active: true, type: "goods", minimumStock: 5, unit: "unité" }], warehouses: [{ id: "main" }], movements: [{ productId: 1, warehouseId: "main", quantityDelta: 2 }] },
+    stock: { products: [{ id: 1, name: "Article", active: true, type: "goods", minimumStock: 5, unit: "unité" }], warehouses: [{ id: "main" }], movements: [{ productId: 1, warehouseId: "main", quantityDelta: 2 }, { document_id: "sale-1", product_id: 1, quantity_delta: -1, value_delta: -60 }] },
   }, "2026-11-25");
   assert.equal(snapshot.sales.invoices, 2);
   assert.equal(snapshot.sales.amountByCurrency.MAD, 120);
@@ -2526,6 +2526,7 @@ test("tableau de bord stratégique : agrège les ventes, achats et retards sans 
   assert.equal(snapshot.receivables.overdueByCurrency.MAD, 100);
   assert.equal(snapshot.inventory.products, 1);
   assert.equal(snapshot.inventory.lowStock[0].quantity, 2);
+  assert.equal(snapshot.profitability.MAD.margin, 40);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

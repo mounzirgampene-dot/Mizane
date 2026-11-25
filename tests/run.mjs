@@ -12,13 +12,13 @@ import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
-import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
+import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestStockAccounts } from "../js/billing-accounting.js";
 import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
-import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry } from "../js/stock-accounting.js";
+import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -50,7 +50,7 @@ const stockProductCatalogMigration = readFileSync(new URL("../supabase/migration
 const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migrations/20261123164907_stock_catalog_indexes_and_read_policy.sql", import.meta.url), "utf8");
 const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165146_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
 const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20261123172036_stock_product_price_units.sql", import.meta.url), "utf8");
-const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");\nconst opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");\nconst stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125080000_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
@@ -1919,7 +1919,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v40/);
+  assert.match(serviceWorkerSource,/mizane-v41/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
@@ -1997,6 +1997,87 @@ test("stock : file d’attente comptable synchronisée, motif obligatoire et rep
   assert.match(billingUiSource,/stockAdjustmentGain/);
   assert.match(billingUiSource,/stockAdjustmentLoss/);
   assert.match(billingUiSource,/retryPendingStockAccountingOperations/);
+});
+
+
+test("stock intermittent : valorisation locale historique, transferts neutres et contrôles de positions", () => {
+  const stock={
+    settings:{accountingMode:"periodic"},
+    movements:[
+      {kind:"receipt",productId:1,warehouseId:1,quantity:10,quantityDelta:10,totalCost:100,date:"2026-01-01"},
+      {kind:"issue",productId:1,warehouseId:1,quantity:2,quantityDelta:-2,totalCost:20,date:"2026-02-05"},
+      {kind:"transfer",productId:1,warehouseId:1,destinationWarehouseId:2,quantity:1,quantityDelta:-1,totalCost:10,date:"2026-02-10"},
+    ],
+    countSessions:[],
+  };
+  const valuation=calculateLocalStockPeriodValuation(stock,"2026-02-01","2026-02-28");
+  assert.equal(valuation.ok,true);
+  assert.equal(valuation.accounting_mode,"periodic");
+  assert.equal(valuation.opening_value,100);
+  assert.equal(valuation.closing_value,80);
+  assert.equal(valuation.opening_negative_positions,0);
+  assert.equal(valuation.closing_negative_positions,0);
+  assert.equal(valuation.movement_count,2);
+  const blocked=calculateLocalStockPeriodValuation({...stock,countSessions:[{status:"counting"}]},"2026-02-01","2026-02-28");
+  assert.equal(blocked.active_count_sessions,1);
+});
+
+test("stock intermittent : comptes automatiques par plan comptable", () => {
+  const syscohada=suggestStockAccounts("syscohada",allAccounts("syscohada"));
+  assert.deepEqual([syscohada.inventory,syscohada.stockVariation,syscohada.stockVariationType],["31","603","expense"]);
+  const pcg=suggestStockAccounts("pcg",allAccounts("pcg"));
+  assert.deepEqual([pcg.inventory,pcg.stockVariation,pcg.stockVariationType],["37","713","income"]);
+  const nct=suggestStockAccounts("nct",allAccounts("nct"));
+  assert.deepEqual([nct.inventory,nct.stockVariation,nct.stockVariationType],["34","713","income"]);
+  const cgnc=suggestStockAccounts("cgnc",allAccounts("cgnc"));
+  assert.deepEqual([cgnc.inventory,cgnc.stockVariation,cgnc.stockVariationType],["314","713","income"]);
+});
+
+test("stock intermittent : variation de clôture, sens débit/crédit, idempotence et garde-fous", () => {
+  const store=newStore();
+  store.settings.plan="syscohada";
+  buildAccountCache(store,allAccounts("syscohada"));
+  const mapping=suggestStockAccounts("syscohada",allAccounts("syscohada"));
+  const positive={ok:true,accounting_mode:"periodic",period_start:"2026-01-01",period_end:"2026-12-31",opening_value:1000,closing_value:1350,opening_negative_positions:0,closing_negative_positions:0,active_count_sessions:0};
+  const proposal=buildPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",350,0],["603",0,350]]);
+  const posted=postPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  const duplicate=postPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(duplicate.ok,true);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(store.entries.length,1);
+  const decreasing={...positive,period_start:"2025-01-01",period_end:"2025-12-31",opening_value:1000,closing_value:700};
+  const down=buildPeriodicStockClosingJournalEntry(store,decreasing,mapping);
+  assert.equal(down.ok,true);
+  assert.deepEqual(down.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["603",300,0],["31",0,300]]);
+  const unchanged=buildPeriodicStockClosingJournalEntry(store,{...positive,period_start:"2024-01-01",period_end:"2024-12-31",closing_value:1000},mapping);
+  assert.equal(unchanged.skipped,true);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,opening_negative_positions:1},mapping).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,active_count_sessions:1},mapping).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,accounting_mode:"perpetual"},mapping).skipped,true);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,positive,{...mapping,inventory:"603"}).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,positive,{...mapping,stockVariation:"31"}).ok,false);
+});
+
+test("stock intermittent : valorisation serveur exhaustive et intégration dans la clôture d'exercice", () => {
+  assert.match(stockPeriodicValuationMigration,/stock_period_valuation/);
+  assert.match(stockPeriodicValuationMigration,/private\.stock_assert_writer/);
+  assert.match(stockPeriodicValuationMigration,/sum\(m\.value_delta\)/);
+  assert.match(stockPeriodicValuationMigration,/movement_date < p_start_date/);
+  assert.match(stockPeriodicValuationMigration,/movement_date <= p_end_date/);
+  assert.match(stockPeriodicValuationMigration,/stock_count_sessions/);
+  assert.match(stockPeriodicValuationMigration,/grant execute[\s\S]*to authenticated/i);
+  assert.doesNotMatch(stockPeriodicValuationMigration,/limit\s+500/i);
+  assert.match(stockCloudSource,/stock_period_valuation/);
+  assert.match(opsUiSource,/postPeriodicStockAdjustment/);
+  assert.match(opsUiSource,/readCloudStockPeriodValuation/);
+  assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
+  assert.match(billingUiSource,/suggestStockAccounts/);
+  assert.match(billingUiSource,/stockVariation/);
+  assert.match(serviceWorkerSource,/mizane-v41/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

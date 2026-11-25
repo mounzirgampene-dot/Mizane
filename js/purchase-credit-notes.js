@@ -58,9 +58,8 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
   ];
   // An avoir réduit la dette : débit du fournisseur, crédit du compte de coût et de la TVA.
   lines[0].debit = round2(baseHT + baseTax);
-  lines.push({account:cost,label:"Annulation achat / stock — "+String(invoice.number),third:"",debit:0,credit:baseHT});
+  lines.push({account:cost,label:"Annulation achat / stock — "+String(invoice.number),third:"",debit:0,credit:recoverable ? baseHT : round2(baseHT + baseTax)});
   if (recoverable) lines.push({account:vat,label:"Régularisation TVA récupérable — "+String(invoice.number),third:"",debit:0,credit:baseTax});
-  else lines[0].debit = round2(baseHT + baseTax);
   const entry = {date:creditNote.date,journal:"ACH",reference,lines};
   const validation = validateEntry(store,entry);
   if (!validation.ok) return {ok:false,errors:validation.errors,entries:[]};

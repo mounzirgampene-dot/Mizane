@@ -34,7 +34,7 @@ assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_NONRESIDENT_10", ba
 
 const calendar = buildMoroccoTaxCalendar({ fiscalEnd: "2025-12-31", year: 2026, withholdingMonths: ["2026-01", "2026-12"] });
 assert.equal(calendar.ok, true);
-assert.equal(calendar.items.find(x => x.id === "IS_ANNUAL_2026").dueDate, "2026-03-31");
+assert.equal(calendar.items.find(x => x.id === "IS_ANNUAL_2025").dueDate, "2026-03-31");
 assert.equal(calendar.items.find(x => x.id === "PAYROLL_ANNUAL_2026").dueDate, "2026-02-28");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-01").dueDate, "2026-02-28");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-12").dueDate, "2027-01-31");

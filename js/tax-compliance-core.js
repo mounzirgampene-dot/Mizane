@@ -118,6 +118,7 @@ export function buildMoroccoTaxCalendar({ fiscalEnd, year, withholdingMonths = [
   if (errors.length) return { ok: false, errors, items: [] };
   const nextDate = (date, months, day) => {
     const d = new Date(date + "T00:00:00Z");
+    d.setUTCDate(1);
     d.setUTCMonth(d.getUTCMonth() + months);
     const y = d.getUTCFullYear(), m = d.getUTCMonth();
     const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();

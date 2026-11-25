@@ -18,6 +18,9 @@ for(const [code,spec] of Object.entries(expected)){
 }
 
 const newEastAfricanProfiles={
+ NA:{currency:"NAD",name:"Namibie",vat:"15 % standard ; 0 % pour opérations légalement éligibles",is:"30 % non-mining ; 37,5 % autres mines ; 55 % mines de diamants"},
+ ZM:{currency:"ZMW",name:"Zambie",vat:"16 % standard ; 0 % pour opérations éligibles",is:"30 % taux général ; 10 % agriculture pour les activités éligibles"},
+ TZ:{currency:"TZS",name:"Tanzanie (continentale)",selectorName:"Tanzanie",vat:"18 % standard ; 0 % exportations ; 16 % conditionnel sous désignation de la Commissioner General",is:"30 % sociétés résidentes et établissements stables ; régimes préférentiels distincts"},
  KE:{currency:"KES",name:"Kenya",vat:"16 % standard ; 0 % zero-rated supplies",is:"30 % sociétés résidentes ; 37,5 % sociétés non-résidentes"},
  RW:{currency:"RWF",name:"Rwanda",vat:"18 % standard ; 0 % pour opérations légalement éligibles",is:"28 %"},
  UG:{currency:"UGX",name:"Uganda",vat:"18 % standard ; 0 % pour fournitures éligibles",is:"30 % du revenu imposable"}
@@ -36,7 +39,7 @@ for(const [code,spec] of Object.entries(newEastAfricanProfiles)){
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS activée");
  assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul TVA bloqué");
  const selector=getCountry(code);
- assert.equal(selector.name,spec.name,code+" : pays disponible dans le sélecteur");
+ assert.equal(selector.name,spec.selectorName||spec.name,code+" : pays disponible dans le sélecteur");
  assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
  assert.deepEqual(selector.vatRates,[],code+" : pas de taux par défaut non activés");
 }
@@ -44,6 +47,13 @@ assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("seuil
 assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("PAYE")).value,/335 000 UGX/);
 assert.match(getTaxCountryProfile("RW").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/20 000 000 RWF/);
 assert.match(getTaxCountryProfile("KE").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/5 000 000 KES/);
+assert.match(getTaxCountryProfile("NA").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/500 000 NAD/);
+assert.match(getTaxCountryProfile("NA").taxFacts.find(x=>x.taxType==="IS").detail,/28 %/);
+assert.match(getTaxCountryProfile("ZM").taxFacts.find(x=>x.label.includes("Turnover Tax")).value,/5 000 000 ZMW/);
+assert.match(getTaxCountryProfile("ZM").taxFacts.find(x=>x.taxType==="IR").value,/37 %/);
+assert.match(getTaxCountryProfile("TZ").taxFacts.find(x=>x.taxType==="VAT").detail,/Zanzibar/);
+assert.match(getTaxCountryProfile("TZ").taxFacts.find(x=>x.label.includes("Withholding VAT")).value,/3 % sur les biens ; 6 % sur les services/);
+
 assert.equal(getActiveTaxRules("CI","VAT","2026-01-16").some(x=>x.rate===9),false);
 assert.equal(getActiveTaxRules("CI","VAT","2026-01-17").some(x=>x.rate===9),true);
 assert.equal(calculateTaxLine({countryCode:"FR",taxCode:"FR_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).taxAmount,20);

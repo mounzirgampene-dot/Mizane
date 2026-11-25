@@ -3,11 +3,12 @@
 // des écritures comptables selon les comptes configurés par l'entreprise.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
-import { postEntry, reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
+import { reverseEntry } from "./accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts, suggestStockAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
-import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { postSalesStockCostJournalEntry, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -35,7 +36,12 @@ const getBilling = () => {
   if (!Array.isArray(store.billing.documents)) store.billing.documents = [];
   if (!store.billing.settings) store.billing.settings = {};
   store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
+  store.billing.nextRefundId = Math.max(1, Number(store.billing.nextRefundId) || 1);
   for (const doc of store.billing.documents) {
+    if (doc.type === "credit_note") {
+      for (const refund of doc.refunds || []) store.billing.nextRefundId = Math.max(store.billing.nextRefundId, number(refund.id) + 1);
+      continue;
+    }
     if (doc.type !== "invoice") continue;
     const migrated = migrateLegacyInvoicePayment(doc, store.billing.nextPaymentId);
     doc.payments = migrated.payments;
@@ -46,11 +52,12 @@ const getBilling = () => {
   const settings = store.billing.settings;
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
-  if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"]) {
+  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
+  if (!settings.accountingAccounts) settings.accountingAccounts = { ...suggestedAccounts, inventory:suggestedStockAccounts.inventory, stockVariation:suggestedStockAccounts.stockVariation };
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" ? "expense" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && (key === "stockVariation" ? ["expense","income"].includes(account.type) : account.type === type))) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -72,13 +79,145 @@ function postInvoiceAccounting(invoice) {
   const mapping = getBilling().settings.accountingAccounts || {};
   const proposal = buildBillingJournalEntries(store, invoice, mapping);
   if (!proposal.ok) return proposal;
-  let created = 0;
-  for (const entry of proposal.entries) {
-    const result = postEntry(store, entry);
-    if (!result.ok) return { ok: false, errors: result.errors, created };
-    created++;
+  return postBillingJournalEntriesAtomically(store, proposal.entries);
+}
+
+function canIssueFullCreditNote(invoice) {
+  if (!invoice || invoice.type !== "invoice" || ["cancelled","credited"].includes(invoice.status)) return false;
+  if (number(invoice.paidAmount) > 0 || (invoice.payments || []).some(payment => number(payment.amount) > 0)) return false;
+  if (invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending) return false;
+  if ((invoice.stockDocuments || []).length || (invoice.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status))) return false;
+  if ((invoice.lines || []).some(line => number(line.stockFulfilledQuantity) > 0)) return false;
+  if (getBilling().documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(invoice.id))) return false;
+  const source = (store.entries || []).find(entry => entry.reference === "FACTURE " + String(invoice.number || invoice.id));
+  return Boolean(source && !source.reversed);
+}
+function issueFullCreditNote(invoiceId) {
+  const billing = getBilling();
+  const invoice = billing.documents.find(doc => doc.type === "invoice" && Number(doc.id) === Number(invoiceId));
+  if (!canIssueFullCreditNote(invoice)) return toast("Avoir impossible : vérifiez les règlements, les mouvements de stock et la comptabilisation de la facture.", 6000);
+  if (!window.confirm("Confirmer l’émission d’un avoir TOTAL de " + fmt(invoice.totals?.ttc || totals(invoice.lines || []).ttc, invoice.currency, store.settings.locale) + " pour la facture " + invoice.number + " ? Cette opération comptabilisera l’avoir et clôturera la facture d’origine.")) return;
+  const date = today();
+  const numberValue = Number(billing.settings.nextCreditNote) || 1;
+  billing.settings.nextCreditNote = numberValue + 1;
+  const creditNote = {
+    id: billing.nextId++,
+    type: "credit_note",
+    number: (billing.settings.prefixCreditNote || "AVO") + "-" + new Date().getFullYear() + "-" + String(numberValue).padStart(4,"0"),
+    date,
+    dueDate: "",
+    customerName: invoice.customerName,
+    customerAddress: invoice.customerAddress,
+    customerCountry: invoice.customerCountry,
+    currency: invoice.currency,
+    baseCurrency: invoice.baseCurrency,
+    exchangeRate: invoice.exchangeRate,
+    taxLabel: invoice.taxLabel,
+    paymentTerms: "",
+    notes: "Avoir total de la facture " + invoice.number + ".",
+    lines: structuredClone(invoice.lines || []),
+    totals: structuredClone(invoice.totals || totals(invoice.lines || [])),
+    paidAmount: 0,
+    payments: [],
+    sourceInvoiceId: invoice.id,
+    sourceInvoiceNumber: invoice.number,
+    status: "issued",
+    createdAt: new Date().toISOString(),
+  };
+  const proposal = buildFullCreditNoteJournalEntry(store, invoice, creditNote, billing.settings.accountingAccounts || {});
+  if (!proposal.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + proposal.errors[0], 6000);
   }
-  return { ok: true, errors: [], created };
+  const posted = postBillingJournalEntriesAtomically(store, proposal.entries);
+  if (!posted.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + posted.errors[0], 6000);
+  }
+  billing.documents.push(creditNote);
+  invoice.status = "credited";
+  invoice.creditedBy = creditNote.id;
+  invoice.creditedAt = new Date().toISOString();
+  saveBilling();
+  renderList();
+  toast("Avoir total émis et comptabilisé. La facture d'origine reste conservée dans l'historique.");
+}
+
+function creditNoteTotals(note) {
+  const amount=number(note?.totals?.ttc || totals(note?.lines || []).ttc);
+  const refunded=round((note?.refunds || []).reduce((sum,item)=>sum+number(item.amount),0));
+  const invoice=getBilling().documents.find(doc=>doc.type==="invoice" && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!invoice) return {amount,refunded,refundable:0};
+  const related=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice.id));
+  const issued=round(related.reduce((sum,item)=>sum+number(item.totals?.ttc || totals(item.lines||[]).ttc),0));
+  const refundedAll=round(related.reduce((sum,item)=>sum+(item.refunds||[]).reduce((subtotal,refund)=>subtotal+number(refund.amount),0),0));
+  const paid=round((invoice.payments||[]).reduce((sum,item)=>sum+number(item.amount),0) || number(invoice.paidAmount));
+  const customerCredit= Math.max(0,round(paid-Math.max(0,round(number(invoice.totals?.ttc)-issued))));
+  const availableRefundTotal=Math.max(0,round(customerCredit-refundedAll));
+  const noteIndex=related.findIndex(item=>Number(item.id)===Number(note.id));
+  const priorCapacity=related.slice(0,Math.max(0,noteIndex)).reduce((sum,item)=>{const itemAmount=number(item.totals?.ttc || totals(item.lines||[]).ttc);const itemRefunded=round((item.refunds||[]).reduce((subtotal,refundItem)=>subtotal+number(refundItem.amount),0));return sum+Math.max(0,round(itemAmount-itemRefunded));},0);
+  const availableForThisNote=Math.max(0,round(availableRefundTotal-priorCapacity));
+  return {amount,refunded,refundable:Math.min(Math.max(0,round(amount-refunded)),availableForThisNote)};
+}
+function creditedQuantity(invoice,index) {
+  return round(getBilling().documents.filter(doc=>doc.type==='credit_note' && Number(doc.sourceInvoiceId)===Number(invoice.id)).reduce((sum,note)=>sum+(note.lines||[]).reduce((subtotal,line,i)=>{const sourceIndex=Number.isInteger(Number(line.sourceLineIndex))?Number(line.sourceLineIndex):i;return subtotal+(sourceIndex===index?number(line.quantity):0);},0),0));
+}
+function canIssuePartialCreditNote(invoice) {
+  if(!invoice || invoice.type!=='invoice' || ['cancelled','credited'].includes(invoice.status)) return false;
+  if(invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending || (invoice.stockDocuments||[]).length || (invoice.stockReservationOperations||[]).some(op=>['pending','done'].includes(op.status)) || (invoice.lines||[]).some(line=>number(line.stockFulfilledQuantity)>0)) return false;
+  const source=(store.entries||[]).find(entry=>entry.reference==='FACTURE '+String(invoice.number||invoice.id));
+  return Boolean(source && !source.reversed && (invoice.lines||[]).some((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)>0.000001));
+}
+function openPartialCreditNote(invoiceId) {
+  const billing=getBilling(),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(invoiceId));
+  if(!canIssuePartialCreditNote(invoice)) return toast('Avoir partiel impossible : vérifiez la comptabilisation et les mouvements de stock.',6000);
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  const rows=(invoice.lines||[]).map((line,index)=>({line,index,remaining:Math.max(0,round(number(line.quantity)-creditedQuantity(invoice,index)))})).filter(row=>row.remaining>0.000001);
+  content.innerHTML='<h2>Avoir partiel — '+esc(invoice.number)+'</h2><p class="muted">Saisissez les quantités à créditer. Les prix et taxes sont repris de la facture. Les quantités déjà créditées sont déduites.</p><div class="table-wrap"><table><thead><tr><th>Désignation</th><th>Facturée</th><th>Déjà créditée</th><th>Reste</th><th>À créditer</th></tr></thead><tbody>'+rows.map(row=>'<tr data-credit-line="'+row.index+'"><td>'+esc(row.line.description)+'</td><td>'+number(row.line.quantity)+'</td><td>'+creditedQuantity(invoice,row.index)+'</td><td>'+row.remaining+'</td><td><input data-credit-quantity type="number" min="0" max="'+row.remaining+'" step="0.0001" value="0"></td></tr>').join('')+'</tbody></table></div><p id="bill-credit-total">Total de l’avoir : '+fmt(0,invoice.currency,store.settings.locale)+'</p><div id="bill-credit-error" class="errors"></div><div class="actions"><button id="bill-credit-submit">Émettre et comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  const calculate=()=>{const lines=[];for(const tr of content.querySelectorAll('[data-credit-line]')){const index=Number(tr.dataset.creditLine),quantity=number(tr.querySelector('[data-credit-quantity]').value);if(quantity>0)lines.push({...invoice.lines[index],sourceLineIndex:index,quantity});}const value=totals(lines).ttc;content.querySelector('#bill-credit-total').textContent='Total de l’avoir : '+fmt(value,invoice.currency,store.settings.locale);return {lines,value};};
+  content.querySelectorAll('[data-credit-quantity]').forEach(input=>input.addEventListener('input',calculate));
+  content.querySelector('#bill-credit-submit').addEventListener('click',()=>{
+    const selection=calculate();if(!selection.lines.length || !(selection.value>0)){content.querySelector('#bill-credit-error').textContent='Sélectionnez au moins une quantité.';return;}
+    for(const line of selection.lines){if(line.quantity>number(invoice.lines[line.sourceLineIndex].quantity)-creditedQuantity(invoice,line.sourceLineIndex)+0.000001){content.querySelector('#bill-credit-error').textContent='Une quantité dépasse le reliquat créditable.';return;}}
+    if(!window.confirm('Confirmer l’avoir de '+fmt(selection.value,invoice.currency,store.settings.locale)+' ?'))return;
+    const sequence=Number(billing.settings.nextCreditNote)||1;
+    const note={id:billing.nextId++,type:'credit_note',number:(billing.settings.prefixCreditNote||'AVO')+'-'+new Date().getFullYear()+'-'+String(sequence).padStart(4,'0'),date:today(),dueDate:'',customerName:invoice.customerName,customerAddress:invoice.customerAddress,customerCountry:invoice.customerCountry,currency:invoice.currency,baseCurrency:invoice.baseCurrency,exchangeRate:invoice.exchangeRate,taxLabel:invoice.taxLabel,paymentTerms:'',notes:'Avoir partiel de la facture '+invoice.number+'.',lines:selection.lines,totals:totals(selection.lines),paidAmount:0,payments:[],refunds:[],sourceInvoiceId:invoice.id,sourceInvoiceNumber:invoice.number,status:'issued',createdAt:new Date().toISOString()};
+    const proposal=buildCreditNoteJournalEntry(store,invoice,note,billing.settings.accountingAccounts||{});if(!proposal.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=proposal.errors[0];return;}
+    const posted=postBillingJournalEntriesAtomically(store,proposal.entries);if(!posted.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=posted.errors[0];return;}
+    billing.settings.nextCreditNote=sequence+1;billing.documents.push(note);
+    const allCredited=(invoice.lines||[]).every((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)<=0.000001);invoice.status=allCredited?'credited':'partially_credited';invoice.creditedAt=new Date().toISOString();
+    saveBilling();modal.close();renderList();toast('Avoir partiel émis et comptabilisé.');
+  });modal.showModal();
+}
+function openCreditNoteRefund(noteId) {
+  const billing=getBilling(),note=billing.documents.find(doc=>doc.type==='credit_note' && Number(doc.id)===Number(noteId)),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!note || !invoice)return;const balance=creditNoteTotals(note).refundable;if(balance<=0.000001)return toast('Cet avoir a déjà été intégralement remboursé.');
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  content.innerHTML='<h2>Remboursement — '+esc(note.number)+'</h2><p>Solde remboursable : <strong>'+fmt(balance,note.currency,store.settings.locale)+'</strong></p><div class="grid cols-2"><div><label>Date</label><input id="bill-refund-date" type="date" value="'+today()+'"></div><div><label>Montant</label><input id="bill-refund-amount" type="number" min="0.01" max="'+balance+'" step="0.01" value="'+balance+'"></div><div><label>Mode</label><select id="bill-refund-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option></select></div><div><label>Taux de change</label><input id="bill-refund-rate" type="number" min="0.00000001" step="0.00000001" value="'+number(invoice.exchangeRate)+'"></div></div><div id="bill-refund-error" class="errors"></div><div class="actions"><button id="bill-refund-submit">Comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  content.querySelector('#bill-refund-submit').addEventListener('click',()=>{
+    const refund={id:billing.nextRefundId++,date:content.querySelector('#bill-refund-date').value,amount:number(content.querySelector('#bill-refund-amount').value),method:content.querySelector('#bill-refund-method').value,exchangeRate:number(content.querySelector('#bill-refund-rate').value),currency:note.currency};
+    if(refund.amount>balance+0.001){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent='Le remboursement dépasse le solde de l’avoir.';return;}
+    const reference='REMBOURSEMENT AVOIR '+String(note.number)+' #'+String(refund.id);
+    const alreadyPosted=(store.entries||[]).find(entry=>entry.reference===reference);
+    if(alreadyPosted){note.refunds||=[];if(!note.refunds.some(item=>Number(item.id)===refund.id))note.refunds.push({...refund,status:'posted',createdAt:new Date().toISOString()});saveBilling();modal.close();renderList();toast('Remboursement déjà comptabilisé : état réconcilié.');return;}
+    const proposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,billing.settings.accountingAccounts||{});
+    if(!proposal.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=proposal.errors[0];return;}
+    const posted=postBillingJournalEntriesAtomically(store,proposal.entries);
+    if(!posted.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=posted.errors[0];return;}
+    note.refunds||=[];note.refunds.push({...refund,status:'posted',createdAt:new Date().toISOString()});saveBilling();modal.close();renderList();toast('Remboursement comptabilisé dans le journal de trésorerie.');
+  });modal.showModal();
+}
+function invoiceHasAccountingEntries(invoice) {
+  const number = String(invoice?.number || invoice?.id || "");
+  const invoiceReference = "FACTURE " + number;
+  const paymentPrefix = "REGLEMENT " + number + " #";
+  return (store.entries || []).some(entry =>
+    entry.reference === invoiceReference || String(entry.reference || "").startsWith(paymentPrefix)
+  );
 }
 
 function invoiceHasStockLines(invoice) {
@@ -139,6 +278,18 @@ async function submitInvoiceStockOperation(invoice, operation) {
       reference:invoice.number, note:operation.note, lines:operation.lines,
       sourceType:operation.sourceType, sourceId:operation.sourceId,
     });
+    const stockState=await readCloudStock();
+    const accountingMode=stockState?.settings?.accounting_mode || "perpetual";
+    if(accountingMode==="perpetual"){
+      const accountingResult=postSalesStockCostJournalEntry(
+        store,
+        {document_id:result?.document_id,operation_uid:operation.operationUid,document_date:operation.documentDate,reference:invoice.number},
+        stockState.movements || [],
+        getBilling().settings.accountingAccounts || {},
+        accountingMode
+      );
+      if(!accountingResult.ok) throw new Error("Sortie de stock enregistrée, mais coût des ventes non comptabilisé : "+(accountingResult.errors||["erreur inconnue"]).join(" "));
+    }
     for (const item of operation.fulfilled) {
       const line=invoice.lines[item.lineIndex];
       if (line) { line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity); if(operation.kind==="delivery") line.stockSerialNumbers=""; }
@@ -156,6 +307,35 @@ async function submitInvoiceStockOperation(invoice, operation) {
 async function retryInvoiceStock(invoice) {
   if (!invoice?.stockPendingOperation) return {ok:false,error:new Error("Aucun mouvement de stock en attente.")};
   return submitInvoiceStockOperation(invoice,invoice.stockPendingOperation);
+}
+
+let pendingStockRetryPromise = null;
+async function retryPendingInvoiceStockOperations() {
+  if (pendingStockRetryPromise) return pendingStockRetryPromise;
+  const billing = getBilling();
+  const mapping = billing.settings.accountingAccounts || {};
+  const accounts = [...planAccounts, ...(store.settings.customAccounts || [])];
+  const hasInventoryAccount = accounts.some(account => String(account.code) === String(mapping.inventory || "") && account.type === "asset");
+  const hasCogsAccount = accounts.some(account => String(account.code) === String(mapping.cogs || "") && account.type === "expense");
+  const pending = billing.documents.filter(invoice => invoice.type === "invoice" && invoice.stockPendingOperation);
+  if (!pending.length || !hasInventoryAccount || !hasCogsAccount) return {attempted:0,succeeded:0,skipped:true};
+  pendingStockRetryPromise = (async () => {
+    let succeeded = 0;
+    const failures = [];
+    for (const invoice of pending) {
+      const result = await retryInvoiceStock(invoice);
+      if (result.ok) succeeded += 1;
+      else failures.push(invoice.number + " : " + (result.error?.message || "erreur inconnue"));
+    }
+    if (succeeded) {
+      renderList();
+      toast(succeeded + " opération(s) de stock en attente reprise(s) automatiquement.");
+    }
+    if (failures.length) toast("Certaines opérations de stock restent en attente : " + failures.join(" ; "), 7000);
+    return {attempted:pending.length,succeeded,failures};
+  })();
+  try { return await pendingStockRetryPromise; }
+  finally { pendingStockRetryPromise = null; }
 }
 
 const nextNumber = (kind, settings) => {
@@ -189,8 +369,8 @@ function documentHTML(doc) {
     const lineTax = round(lineHT * number(line.taxRate) / 100);
     return `<tr><td>${esc(line.description)}</td><td class="num">${number(line.quantity)}</td><td class="num">${fmt(line.unitPrice,currency,locale)}</td><td class="num">${number(line.taxRate)} %</td><td class="num">${fmt(lineHT+lineTax,currency,locale)}</td></tr>`;
   }).join("");
-  const title = doc.type === "quote" ? "DEVIS" : "FACTURE";
-  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
+  const title = doc.type === "quote" ? "DEVIS" : doc.type === "credit_note" ? "AVOIR" : "FACTURE";
+  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "credit_note" ? `<p>Avoir relatif à la facture : ${esc(doc.sourceInvoiceNumber || "—")}</p>` : ""}${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
   ${paymentSummary}
@@ -202,18 +382,19 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
-  const openAmount = calculateOutstandingBase(invoices);
+  const openAmount = calculateOutstandingBase(billing.documents);
   const row = (doc) => {
     const paid = number(doc.paidAmount);
-    const balance = Math.max(0, number(doc.totals?.ttc) - paid);
-    const status = doc.type === "invoice" && doc.status !== "cancelled"
-      ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
-      : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
-    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+    const balance = Math.max(0, netInvoiceReceivable(doc) - paid);
+    const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis" : doc.type === "invoice" && doc.status === "partially_credited" ? "Partiellement créditée"
+      : doc.type === "invoice" && doc.status !== "cancelled"
+        ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
+        : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : doc.type === "credit_note" ? "Avoir" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
-      (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
+      (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && doc.status !== "partially_credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
-      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") + (canIssuePartialCreditNote(doc) ? '<button class="secondary small" data-bill-partial-credit="' + doc.id + '">Avoir partiel</button>' : "") : "") + (doc.type === "credit_note" && creditNoteTotals(doc).refundable > 0.000001 ? '<button class="secondary small" data-bill-refund-credit="' + doc.id + '">Rembourser</button>' : "") +
       (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockReservationsCreated && !doc.stockPendingOperation && (doc.lines || []).some(line => line.stockProductId && number(line.quantity) - number(line.stockFulfilledQuantity) > 0.000001) ? '<button class="secondary small" data-bill-reserve-stock="' + doc.id + '">Réserver le stock</button>' : "") +
       (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
@@ -237,6 +418,9 @@ function renderList() {
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
   $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
+  $app.querySelectorAll("[data-bill-credit-note]").forEach(button => button.addEventListener("click", () => issueFullCreditNote(Number(button.dataset.billCreditNote))));
+  $app.querySelectorAll("[data-bill-partial-credit]").forEach(button => button.addEventListener("click", () => openPartialCreditNote(Number(button.dataset.billPartialCredit))));
+  $app.querySelectorAll("[data-bill-refund-credit]").forEach(button => button.addEventListener("click", () => openCreditNoteRefund(Number(button.dataset.billRefundCredit))));
   $app.querySelectorAll("[data-bill-post]").forEach((button) => button.addEventListener("click", () => {
     const invoice = billing.documents.find(item => item.id === Number(button.dataset.billPost) && item.type === "invoice");
     if (!invoice) return;
@@ -387,6 +571,7 @@ async function openEditor(type, source = null) {
     try { stockState = await readCloudStock(); }
     catch (error) { toast("Impossible de charger les articles du stock : " + error.message, 6000); return; }
   }
+  if (source && type === "invoice" && billing.documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(source.id))) { toast("Cette facture possède déjà un avoir. Sa modification est bloquée pour préserver les écritures et les reliquats crédités."); return; }
   if (source?.stockPendingOperation || source?.stockReservationsCreated || source?.stockReservationPending || (source?.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status)) || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
     toast("Cette facture possède déjà des mouvements de stock. Sa modification est bloquée pour préserver l’historique.");
     return;
@@ -507,8 +692,8 @@ async function openEditor(type, source = null) {
   content.querySelector("#bill-save").addEventListener("click", async () => {
     const lines = readLines();
     const errors = [];
-    if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
-      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Sa modification est bloquée pour préserver la cohérence entre le document et les journaux. Une procédure de rectification ou d'avoir sera nécessaire.";
+    if (source && type === "invoice" && invoiceHasAccountingEntries(source)) {
+      content.querySelector("#bill-error").textContent = "Cette facture possède déjà au moins une écriture comptable (vente ou règlement). Sa modification est bloquée pour préserver la cohérence des journaux. Utilisez une procédure de rectification ou un avoir.";
       return;
     }
     if (!content.querySelector("#bill-customer").value.trim()) errors.push("Le nom du client est obligatoire.");
@@ -614,6 +799,11 @@ async function openEditor(type, source = null) {
 }
 
 
+function netInvoiceReceivable(invoice) {
+  const credits=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice?.id)).reduce((sum,note)=>sum+number(note.totals?.ttc || totals(note.lines||[]).ttc),0);
+  return Math.max(0,round(number(invoice?.totals?.ttc)-credits));
+}
+
 function openPaymentManager(invoiceId) {
   const billing = getBilling();
   const invoice = billing.documents.find((doc) => doc.id === invoiceId && doc.type === "invoice");
@@ -623,7 +813,8 @@ function openPaymentManager(invoiceId) {
   const modal = document.getElementById("modal");
   const total = number(invoice.totals?.ttc);
   const paid = round(invoice.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
-  const balance = calculatePaymentBalance(total, invoice.payments);
+  const netTotal = netInvoiceReceivable(invoice);
+  const balance = calculatePaymentBalance(netTotal, invoice.payments);
   const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
   const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
   const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button> <button type=\"button\" class=\"danger small\" data-bill-payment-cancel=\"" + Number(payment.id) + "\">Annuler le règlement</button></td></tr>").join("");
@@ -667,7 +858,7 @@ function openPaymentManager(invoiceId) {
         currency: invoice.currency,
       };
       const otherPayments = invoice.payments.filter((item) => Number(item.id) !== paymentId);
-      const validation = validateBillingPayment(updated, invoice, otherPayments);
+      const validation = validateBillingPayment(updated, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, otherPayments);
       if (!(updated.exchangeRate > 0) || !Number.isFinite(updated.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
       if (!validation.ok) { content.querySelector("#bill-edit-payment-error").textContent = [...new Set(validation.errors)].join(" "); return; }
 
@@ -695,8 +886,22 @@ function openPaymentManager(invoiceId) {
       }
       const accountingResult = postInvoiceAccounting(invoice);
       if (!accountingResult.ok) {
-        invoice.payments[index] = original;
-        content.querySelector("#bill-edit-payment-error").textContent = "L'écriture corrigée n'a pas pu être générée : " + accountingResult.errors[0] + ". L'ancienne écriture a été contrepassée ; demandez une vérification comptable avant toute nouvelle correction.";
+        // L'ancienne écriture est déjà contrepassée : conserver le règlement corrigé
+        // dans le document afin que le bouton « Comptabiliser » puisse reprendre la génération.
+        invoice.paymentHistory ||= [];
+        invoice.paymentHistory.push({
+          eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+          action: "modification",
+          date: today(),
+          paymentId,
+          previous: { ...original },
+          updated: { ...replacement },
+          note: "Ancienne écriture contrepassée ; nouvelle écriture en attente de comptabilisation.",
+          createdAt: new Date().toISOString(),
+        });
+        invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+        invoice.status = calculatePaymentBalance(netTotal, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+        content.querySelector("#bill-edit-payment-error").textContent = "Le règlement corrigé est conservé, mais sa nouvelle écriture reste à générer : " + accountingResult.errors[0] + ". Fermez cette fenêtre puis utilisez « Comptabiliser » sur la facture après correction du problème.";
         saveBilling();
         return;
       }
@@ -758,7 +963,7 @@ function openPaymentManager(invoiceId) {
       currency: invoice.currency,
       exchangeRate: number(content.querySelector("#bill-payment-rate").value),
     };
-    const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    const validation = validateBillingPayment(payment, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, invoice.payments);
     if (!(payment.exchangeRate > 0) || !Number.isFinite(payment.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
     if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
     invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
@@ -821,7 +1026,8 @@ function openSettings() {
   const billingAccounts = [...new Map([...planAccounts, ...(companySettings.customAccounts || [])].map(account => [String(account.code), account])).values()];
   const accountSelect = (key, type, label) => {
     const selected = settings.accountingAccounts?.[key] || "";
-    const options = billingAccounts.filter(account => account.type === type)
+    const acceptedTypes = Array.isArray(type) ? type : [type];
+    const options = billingAccounts.filter(account => acceptedTypes.includes(account.type))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), "fr", { numeric: true }))
       .map(account => `<option value="${esc(account.code)}" ${String(account.code) === String(selected) ? "selected" : ""}>${esc(account.code)} — ${esc(account.label)}</option>`).join("");
     return `<div><label for="bill-account-${key}">${label}</label><select id="bill-account-${key}"><option value="">— Choisir un compte —</option>${options}</select></div>`;
@@ -841,7 +1047,7 @@ function openSettings() {
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
     <h3>Comptabilisation automatique</h3>
-    <p class="muted">Choisissez les comptes de votre plan comptable. Une facture génère une écriture de vente ; chaque règlement génère une écriture de trésorerie. Le compte de taxe n'est exigé que si la facture comporte une taxe.</p>
+    <p class="muted">Choisissez les comptes de votre plan comptable. Les ventes et règlements sont comptabilisés automatiquement. En inventaire permanent, les sorties commerciales et les opérations manuelles admissibles sont comptabilisées à leur valeur réelle ; les écarts d’inventaire sont ventilés entre gains et pertes. En inventaire intermittent, les écritures par mouvement ne sont pas générées.</p>
     <div class="grid cols-2">
       ${accountSelect("customer", "asset", "Compte client (créance)")}
       ${accountSelect("revenue", "income", "Compte de ventes / produits")}
@@ -850,6 +1056,13 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}
+      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
+      ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
+      ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
+      ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}
+      ${accountSelect("stockAdjustmentGain", "income", "Compte de gains d’inventaire (produit)")}
+      ${accountSelect("stockAdjustmentLoss", "expense", "Compte de pertes d’inventaire (charge)") }
     </div>
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
@@ -899,13 +1112,15 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveBilling();
     document.getElementById("modal").close();
     renderList();
     toast("Paramètres de facturation enregistrés.");
+    void retryPendingInvoiceStockOperations();
+    void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
   });
   document.getElementById("modal").showModal();
 }
@@ -913,4 +1128,6 @@ function openSettings() {
 export function viewBilling() {
   getBilling();
   renderList();
+  void retryPendingInvoiceStockOperations();
+  void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
 }

@@ -61,7 +61,7 @@ export function buildCommercialMarginReport({
       groupedLines.set(productId, group);
     }
     for (const [productId, group] of groupedLines) {
-      invoiceProductIds.add(productId);
+
       const creditHT = creditedLines.filter(item => String(item.stockProductId || "") === productId)
         .reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)), 0);
       const revenue = Math.max(0, round(group.revenue - creditHT * rate));
@@ -80,14 +80,15 @@ export function buildCommercialMarginReport({
       if (!costsByProduct.has(productId)) row.missingCostLines += 1;
       rows.set(key, row);
     }
-    if (invoiceProductIds.size) includedInvoices.add(String(invoice.id));
+    if (groupedLines.size) includedInvoices.add(String(invoice.id));
   }
   const resultRows = [...rows.values()].map(row => {
     const marginRate = row.revenue > 0 ? round(row.margin / row.revenue * 100) : null;
-    totals.revenue = round(totals.revenue + row.revenue);
-    totals.cost = round(totals.cost + row.cost);
-    totals.units = round(totals.units + row.units);
-    totals.invoices += row.invoices.size;
+    const currencyTotals = totals.byCurrency[row.currency] || { revenue: 0, cost: 0, margin: 0 };
+    currencyTotals.revenue = round(currencyTotals.revenue + row.revenue);
+    currencyTotals.cost = round(currencyTotals.cost + row.cost);
+    currencyTotals.margin = round(currencyTotals.revenue - currencyTotals.cost);
+    totals.byCurrency[row.currency] = currencyTotals;
     totals.missingCostLines += row.missingCostLines;
     return { ...row, invoices: row.invoices.size, marginRate };
   }).sort((a, b) => b.margin - a.margin || a.productName.localeCompare(b.productName, "fr"));

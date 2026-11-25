@@ -145,6 +145,11 @@ document.addEventListener("click", (e) => {
   }
 });
 
+$app.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-route]");
+  if (btn) go(btn.dataset.route);
+});
+
 $nav.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-route]");
   if (btn) go(btn.dataset.route);

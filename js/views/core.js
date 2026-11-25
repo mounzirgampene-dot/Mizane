@@ -4,6 +4,7 @@ import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { notifyDetectedAnomalies } from "../notifications.js";
+import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -15,32 +16,63 @@ export function viewDashboard(readOnly = false) {
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
   const anomalies = checkAnomalies(store);
   if (anomalies.length) notifyDetectedAnomalies(anomalies).catch(error => console.warn("Signalement des anomalies comptables impossible :", error?.message || error));
-  const cash = cashBalance(store, exerciceStart, exerciceEnd);
-  const balanced = tb.totals.debit === tb.totals.credit;
+  const cash = cashBalance(store, "", new Date().toISOString().slice(0, 10));
+  const balanced = Math.abs(tb.totals.debit - tb.totals.credit) < 0.001;
+  const overview = buildStrategicDashboardSnapshot(store);
+  const currencyRows = values => Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, amount]) => `<div class="dashboard-currency"><strong>${esc(code)}</strong><span>${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(amount)}</span></div>`).join("") || '<p class="muted">Aucune donnée disponible.</p>';
+  const alertItems = [
+    ...overview.receivables.overdue.map(item => `<li>Facture client ${esc(item.number)} — ${esc(item.customer)} : ${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: item.currency, maximumFractionDigits: 2 }).format(item.balance)} (échéance ${esc(item.dueDate)})</li>`),
+    ...overview.inventory.lowStock.map(item => `<li>Stock bas : ${esc(item.name)} — ${item.quantity} ${esc(item.unit)} (seuil : ${item.threshold})</li>`),
+    ...anomalies.slice(0, 8).map(item => `<li>${esc(item.message)}</li>`),
+  ];
   $app.innerHTML = `
-    <h1>Tableau de bord</h1>
+    <h1>Tableau de bord stratégique</h1>
+    <p class="muted">Vue de synthèse au ${esc(overview.asOf)} · Exercice du ${esc(exerciceStart)} au ${esc(exerciceEnd)}</p>
     <div class="grid cols-3">
-      <div class="card kpi"><div class="value">${money(is.totProduits)}</div><div class="label">Produits (exercice)</div></div>
-      <div class="card kpi"><div class="value">${money(is.totCharges)}</div><div class="label">Charges (exercice)</div></div>
-      <div class="card kpi"><div class="value">${money(is.resultat)}</div><div class="label">Résultat (${is.resultat >= 0 ? "bénéfice" : "perte"})</div></div>
-      <div class="card kpi"><div class="value">${money(cash)}</div><div class="label">Trésorerie (classe 5)</div></div>
-      <div class="card kpi"><div class="value">${store.entries.length}</div><div class="label">Écritures</div></div>
-      <div class="card kpi"><div class="value">${anomalies.length === 0 ? "✓" : anomalies.length}</div><div class="label">${anomalies.length === 0 ? "Aucune anomalie" : "Anomalies détectées"}</div></div>
+      <div class="card kpi"><div class="value">${money(is.totProduits)}</div><div class="label">Produits comptabilisés (exercice)</div></div>
+      <div class="card kpi"><div class="value">${money(is.totCharges)}</div><div class="label">Charges comptabilisées (exercice)</div></div>
+      <div class="card kpi"><div class="value">${money(is.resultat)}</div><div class="label">Résultat comptable</div></div>
+      <div class="card kpi"><div class="value">${money(cash)}</div><div class="label">Trésorerie comptabilisée</div></div>
+      <div class="card kpi"><div class="value">${store.entries.length}</div><div class="label">Écritures comptables</div></div>
+      <div class="card kpi"><div class="value">${anomalies.length === 0 ? "✓" : anomalies.length}</div><div class="label">${anomalies.length === 0 ? "Aucune anomalie comptable" : "Anomalies comptables"}</div></div>
     </div>
+    <div class="grid cols-2">
+      <section class="card">
+        <h2>Activité commerciale</h2>
+        <p class="muted">${overview.sales.invoices} facture(s) de vente · Montants par devise</p>
+        ${currencyRows(overview.sales.amountByCurrency)}
+        <p class="muted">${overview.purchases.invoices} facture(s) fournisseur(s) · Montants par devise</p>
+        ${currencyRows(overview.purchases.amountByCurrency)}
+        <div class="actions"><button class="secondary" data-route="billing">Facturation</button><button class="secondary" data-route="purchases">Achats</button><button class="secondary" data-route="commercial-margins">Marges commerciales</button></div>
+      </section>
+      <section class="card">
+        <h2>Stocks et alertes</h2>
+        <div class="grid cols-2">
+          <div class="kpi"><div class="value">${overview.inventory.products}</div><div class="label">Articles actifs stockables</div></div>
+          <div class="kpi"><div class="value">${overview.inventory.lowStock.length}</div><div class="label">Alertes de seuil de stock</div></div>
+          <div class="kpi"><div class="value">${overview.receivables.overdueCount}</div><div class="label">Factures clients en retard</div></div>
+        </div>
+        <div class="actions"><button class="secondary" data-route="stock">Gestion de stock</button><button class="secondary" data-route="financial">Pilotage financier</button></div>
+      </section>
+    </div>
+    <section class="card">
+      <h2>Alertes de gestion</h2>
+      ${alertItems.length ? `<ul class="errors">${alertItems.slice(0, 12).join("")}</ul>` : '<p class="ok-msg">Aucune alerte détectée dans les données disponibles.</p>'}
+      <p class="muted">Les montants commerciaux restent séparés par devise. Les alertes de stock ne sont calculées que pour les articles disposant d’un seuil minimum renseigné.</p>
+    </section>
     <div class="card">
       <h2>État de la comptabilité</h2>
       <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée" : "⚠ Balance déséquilibrée : " + money(tb.totals.debit) + " / " + money(tb.totals.credit)}</p>
-      <p class="muted">Exercice du ${esc(exerciceStart)} au ${esc(exerciceEnd)} — Plan ${esc(store.settings.plan)}</p>
+      <p class="muted">Plan comptable : ${esc(store.settings.plan)} · La trésorerie affichée correspond au solde des comptes de classe 5 à la date du jour.</p>
       <div class="actions">
         ${readOnly ? "" : '<button class="secondary" data-act="go-entry">➕ Nouvelle écriture</button>'}
-        <button class="secondary" data-act="go-assistant">🤖 Ouvrir l'assistant IA</button>
-        ${!readOnly && store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
+        <button class="secondary" data-act="go-assistant">Ouvrir l’assistant IA</button>
+        ${!readOnly && store.entries.length === 0 ? '<button data-act="demo">Charger des données de démonstration</button>' : ""}
       </div>
     </div>
-    ${anomalies.length ? `<div class="card"><h2>Anomalies</h2><ul class="errors">${anomalies.slice(0, 8).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul></div>` : ""}
   `;
 }
-
 function lineRowHTML(l, i) {
   return `
     <tr>

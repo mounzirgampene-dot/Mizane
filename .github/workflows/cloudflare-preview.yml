@@ -14,6 +14,7 @@ on:
       - feat/lot10-supplier-auto-account-mapping
       - feat/lot11-supplier-purchase-controls
       - feat/lot12-supplier-payment-schedule
+      - feat/lot15-strategic-dashboard
   workflow_dispatch:
 
 permissions:

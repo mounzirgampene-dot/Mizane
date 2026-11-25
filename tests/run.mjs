@@ -20,6 +20,7 @@ import { buildSupplierInvoiceControlReport } from "../js/purchase-controls.js";
 import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "../js/supplier-payables.js";
 import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "../js/commercial-performance-core.js";
+import { buildStrategicDashboardSnapshot } from "../js/strategic-dashboard-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1932,7 +1933,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v50/);
+  assert.match(serviceWorkerSource,/mizane-v51/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2141,7 +2142,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v50/);
+  assert.match(serviceWorkerSource,/mizane-v51/);
 });
 
 
@@ -2503,6 +2504,28 @@ test("performances commerciales : refuse une période invalide", () => {
   const report = buildCommercialPerformanceReport({ startDate: "2026-02-30", endDate: "2026-03-01" });
   assert.equal(report.ok, false);
   assert.equal(report.monthly.length, 0);
+});
+
+test("tableau de bord stratégique : agrège les ventes, achats et retards sans mélanger les devises", () => {
+  const snapshot = buildStrategicDashboardSnapshot({
+    settings: { currency: "MAD" },
+    billing: {
+      documents: [
+        { id: 1, type: "invoice", status: "validated", currency: "MAD", date: "2026-11-01", dueDate: "2026-11-10", totals: { ttc: 120 }, payments: [{ amount: 20 }] },
+        { id: 2, type: "invoice", status: "validated", currency: "EUR", date: "2026-11-02", dueDate: "2026-12-02", totals: { ttc: 50 } },
+      ],
+      purchases: { documents: [{ id: 3, type: "invoice", status: "validated", currency: "MAD", totals: { ttc: 75 } }] },
+    },
+    stock: { products: [{ id: 1, name: "Article", active: true, type: "goods", minimumStock: 5, unit: "unité" }], warehouses: [{ id: "main" }], movements: [{ productId: 1, warehouseId: "main", quantityDelta: 2 }] },
+  }, "2026-11-25");
+  assert.equal(snapshot.sales.invoices, 2);
+  assert.equal(snapshot.sales.amountByCurrency.MAD, 120);
+  assert.equal(snapshot.sales.amountByCurrency.EUR, 50);
+  assert.equal(snapshot.purchases.amountByCurrency.MAD, 75);
+  assert.equal(snapshot.receivables.overdueCount, 1);
+  assert.equal(snapshot.receivables.overdueByCurrency.MAD, 100);
+  assert.equal(snapshot.inventory.products, 1);
+  assert.equal(snapshot.inventory.lowStock[0].quantity, 2);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

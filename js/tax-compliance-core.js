@@ -33,7 +33,7 @@ export function calculateMoroccoIS({
   const inputs = { accountingResult, additions, deductions, cmGeneralBase, cmReducedBase, cmRate, priorYearCredits, withholdingCredits, advancePayments };
   const errors = Object.entries(inputs).filter(([key, value]) => !Number.isFinite(Number(value)) || (key !== "accountingResult" && Number(value) < 0)).map(([key]) => key + " : montant invalide.");
   if (!["standard", "high_profit", "financial"].includes(rateCategory)) errors.push("Catégorie de taux IS invalide.");
-  if (![0.25, 0.15].includes(Number(cmRate))) errors.push("Taux de cotisation minimale non autorisé.");
+  if (Number(cmRate) !== 0.25) errors.push("Le taux général de cotisation minimale est fixé à 0,25 % ; 0,15 % est réservé aux opérations éligibles.");
   if (errors.length) return { ok: false, errors };
   const fiscalProfit = round2(Number(accountingResult) + Number(additions) - Number(deductions));
   const taxableProfit = Math.max(0, fiscalProfit);

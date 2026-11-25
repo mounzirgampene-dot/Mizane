@@ -65,7 +65,7 @@ function openSupplierMultiInvoiceReconciliation() {
       <div><label>Date du paiement</label><input id="psmr-date" type="date" value="${today()}"></div>
       <div><label>Référence bancaire / caisse</label><input id="psmr-reference" maxlength="120" required></div>
       <div><label>Montant total payé</label><input id="psmr-amount" type="number" min="0.01" step="0.01"></div>
-      <div><label>Tolérance d'ajustement</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"></div>
+      <div><label>Tolérance d'ajustement</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"><small class="muted">Si elle est utilisée, l'écart est appliqué à la dernière facture sélectionnée pour équilibrer exactement le règlement.</small></div>
       <div><label>Mode de paiement</label><select id="psmr-method"><option value="bank">Banque / virement</option><option value="cash">Caisse / espèces</option></select></div>
       <div><label>Taux de conversion du paiement</label><input id="psmr-rate" type="number" min="0.000001" step="0.000001" value="1"></div>
       <div><label>Compte bancaire / caisse</label><select id="psmr-treasury">${accountOptions("asset","","treasury")}</select></div>
@@ -114,7 +114,7 @@ function openSupplierMultiInvoiceReconciliation() {
       invoice.payments ||= [];
       invoice.payments.push({id:p.nextPaymentId++,groupId,date:payment.date,amount:allocation.amount,method:payment.method,exchangeRate:payment.exchangeRate,treasury:mapping.treasury,fxLoss:mapping.fxLoss,fxGain:mapping.fxGain,reference,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
     }
-    p.reconciliations.push({id:groupId,...plan,allocations:posted.allocations,date:payment.date,reference,amount:payment.amount,currency:payment.currency,method:payment.method,exchangeRate:payment.exchangeRate,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
+    p.reconciliations.push({id:groupId,...plan,total:posted.summary.total,difference:0,allocations:posted.allocations,date:payment.date,reference,amount:payment.amount,currency:payment.currency,method:payment.method,exchangeRate:payment.exchangeRate,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
     persist("Règlement groupé comptabilisé et affecté aux factures.");
     box.closest("dialog").close();
     renderList();

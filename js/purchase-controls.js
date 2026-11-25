@@ -55,7 +55,6 @@ export function buildSupplierInvoiceControlReport({
   } else {
     const goods = lines.filter(line => line?.lineType !== "service" && line?.lineType !== "fixed_asset");
     const invoiceTotals = new Map();
-    const invoiceLines = new Map();
     for (const line of goods) {
       const key = keyOf(line);
       if (!line?.productId || !line?.warehouseId || !key || key === "::") {
@@ -72,7 +71,6 @@ export function buildSupplierInvoiceControlReport({
         addError("price_mismatch", "Rapprochement impossible : le coût unitaire diffère de la commande.");
       }
       invoiceTotals.set(key, round((invoiceTotals.get(key) || 0) + baseQuantity(line)));
-      invoiceLines.set(key, line);
     }
     for (const [key, quantity] of invoiceTotals) {
       const orderLines = (order.lines || []).filter(item => keyOf(item) === key);

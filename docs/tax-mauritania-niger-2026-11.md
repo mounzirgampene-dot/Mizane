@@ -148,3 +148,74 @@ Les prochaines conditions préalables à toute activation sont :
 - FMI — Rapport n° 25/200, juillet 2025, mention de la signature du nouveau CGI : https://www.imf.org/en/-/media/files/publications/cr/2025/french/1nerfa2025003-source-pdf.pdf
 
 **Conclusion du Lot 40 :** l’audit a progressé de manière substantielle grâce à la découverte d’une édition de travail du nouveau CGI 2026 et à l’extraction de ses dispositions principales. Il reste toutefois juridiquement incomplet tant que l’ordonnance n° 2026-45 n’a pas été lue intégralement et que les copies du CGI n’ont pas été authentifiées. La décision de non-activation est maintenue.
+
+
+## Lot 41 — Consolidation des sources nigériennes et règles transitoires (25 novembre 2026)
+
+### 1. Publication du nouveau CGI : identification du Journal officiel
+
+Une recherche complémentaire a permis d'identifier une reproduction numérisée du *Journal officiel de la République du Niger*, 92e année, numéro spécial 24, daté du 19 décembre 2025. Le sommaire reproduit l'ordonnance n° 2025-22 du 14 juillet 2025 portant adoption du Code général des impôts et indique les livres du code, notamment le livre 1 (impôts directs), le livre 2 (impôts indirects), le livre 3 (enregistrement et timbre), le livre 4 (procédures fiscales), le livre 5 (incitations et régimes spéciaux), le livre 6 (fiscalité des collectivités territoriales) et le livre 7 (domaines).
+
+Cette pièce améliore la traçabilité de la publication et confirme que l'ordonnance n° 2025-22 a été publiée au Journal officiel spécial n° 24 du 19 décembre 2025. Toutefois, le fichier intégral retrouvé est hébergé sur Scribd, et non sur le domaine officiel du Journal officiel ou du Secrétariat général du Gouvernement. Il s'agit d'une reproduction de document officiel, pas d'une copie authentifiée par un canal institutionnel contrôlé par le projet. La référence bibliographique peut être retenue comme piste vérifiable, mais le fichier ne devient pas pour autant une source primaire authentifiée dans le coffre juridique de MIZANE.
+
+La divergence de date est maintenant documentée sans extrapolation : le texte reproduit au Journal officiel porte la date de l'ordonnance du 14 juillet 2025 ; le supplément FMI daté du 10 juillet 2025 indique que le code a été signé le 10 juillet. En l'absence de l'original institutionnel, la date portée sur l'ordonnance publiée (14 juillet 2025) est celle à citer pour désigner l'acte, tandis que la mention FMI est conservée comme discordance documentaire non résolue.
+
+### 2. Circulaire d'application du 20 février 2026 : règles transitoires et points d'attention
+
+Une copie numérisée de 38 pages présentée comme la circulaire n° 0013/ME/F/DGI/DL/CFI/Div.L du 20 février 2026, relative à l'application du nouveau CGI, a été retrouvée sur Scribd. La référence complète et le contenu OCR sont partiellement dégradés ; le document n'a pas été retrouvé sur un dépôt officiel directement consultable. Les éléments ci-dessous sont donc des indications issues de cette copie, non des instructions administratives certifiées.
+
+La copie de circulaire expose notamment les principes suivants :
+- les dispositions de l'ancien CGI adopté par la loi n° 2012-37 demeurent applicables aux faits générateurs antérieurs au 1er janvier 2026 ainsi qu'aux dossiers correspondants encore en cours d'instruction à cette date, sauf disposition expresse contraire ;
+- les conventions fiscales internationales antérieurement conclues continuent de produire leurs effets selon leurs stipulations ;
+- le nouveau CGI doit être appliqué dans le respect de la légalité fiscale, de la non-rétroactivité et de la sécurité juridique ; les faits générateurs définitivement réalisés avant son entrée en vigueur ne sont pas réimposés sous le nouveau code, sauf disposition expresse ;
+- certaines obligations documentaires et déclaratives sont précisées, notamment en matière de prix de transfert pour des personnes morales établies au Niger réalisant un chiffre d'affaires d'au moins un milliard de FCFA et liées à des entreprises étrangères ;
+- la copie mentionne des plafonds d'exonération pour certaines allocations spéciales et indemnités liées à l'emploi, ainsi que des limites concernant les cadeaux en nature aux salariés ;
+- elle indique que le barème antérieur de l'impôt sur les traitements et salaires est maintenu, tandis que les abattements pour charges de famille changent. Les tableaux OCR étant illisibles ou incomplets dans les résultats accessibles, aucun pourcentage familial n'est repris dans le moteur ni dans une fiche de taux.
+
+Ces éléments sont utiles pour préparer les futurs cas de paie et de gestion des périodes chevauchant 2025 et 2026, mais ils ne suffisent pas à établir un calculateur : il faut le texte authentifié de la circulaire, les articles précis du CGI et les règles de calcul complètes, notamment le barème, les plafonds, les justificatifs et les dates d'effet.
+
+### 3. Ordonnance n° 2026-45 : présence institutionnelle confirmée, contenu toujours non contrôlé
+
+Le document de première rectification de la loi de finances 2026 est répertorié sous le numéro 1351 sur le portail du Ministère des Finances, avec une date du 14 septembre 2026 et une taille annoncée de 21,42 MB. La même fiche est répliquée dans plusieurs rubriques et sous-domaines institutionnels, dont le portail DGI et le portail gouvernemental des démarches. Cela renforce l'identification du document et de son numéro de dépôt, mais ces pages de catalogue ne donnent pas le contenu de l'ordonnance.
+
+Les tentatives de récupération du fichier depuis les liens de téléchargement institutionnels ont échoué dans l'environnement automatisé utilisé pour ce lot. Aucun article de l'ordonnance n° 2026-45 n'a donc pu être lu à partir du fichier officiel. Il est interdit de présenter les changements annoncés par le FMI comme la transcription certaine de cette ordonnance.
+
+Le rapport FMI n° 26/74 du 2 mars 2026 reste une source de corroboration des mesures prévues : relèvement du taux TVA transport de 10 % à 19 %, relèvement de 5 % à 10 % pour les produits alimentaires visés à l'article 336, rationalisation de certaines exonérations et suppression de l'exonération d'impôt minimum attachée au Code des investissements et au régime PPP. Le rapport précise toutefois que les textes d'appui étaient en préparation et devaient être intégrés au budget révisé. Le FMI ne remplace donc ni l'ordonnance rectificative ni sa publication.
+
+### 4. État de la matrice juridique après le Lot 41
+
+| Sujet | État de la preuve | Décision pour MIZANE |
+|---|---|---|
+| Ordonnance n° 2025-22 | Reproduction du Journal officiel spécial n° 24 du 19 décembre 2025 identifiée sur une plateforme tierce ; date de l'acte et publication mieux documentées | Référence conservée ; authentification institutionnelle encore requise |
+| Nouveau CGI 2026 | Copie de travail de 398 pages portant l'en-tête DGI et mention « Mise à jour LF 2026 » | Utilisable pour recherche et extraction provisoire ; non certifiée comme source primaire |
+| Ordonnance n° 2025-44 | Fiche et téléchargement répertoriés sur le portail officiel du Ministère des Finances ; contenu intégral non extrait dans ce lot | Référence officielle conservée ; rapprochement article par article encore requis |
+| Ordonnance n° 2026-45 | Fiche officielle datée du 14 septembre 2026, fichier de 21,42 MB, répertoriée sur les portails du Ministère et de la DGI ; fichier non récupéré | Texte déterminant toujours non lu ; aucune conclusion article par article |
+| Circulaire d'application du 20 février 2026 | Copie de 38 pages retrouvée sur Scribd ; métadonnées et OCR imparfaits | Indices sur les transitions et obligations ; ne pas traiter comme instruction authentifiée |
+| Rapport FMI n° 26/74 | Rapport institutionnel daté du 2 mars 2026 ; mesures budgétaires décrites | Corroboration macro-budgétaire uniquement ; ne vaut pas texte fiscal promulgué |
+
+### 5. Comparaison avec le moteur fiscal et décision d'implémentation
+
+Le profil Niger de `js/tax-core.js` a été relu sur la branche DEV. Il conserve :
+- `status: "research_required"` ;
+- `calculationModules: []` ;
+- aucune règle fiscale active pour le Niger ;
+- aucune échelle de calcul.
+
+Les deux `taxFacts` existants — TVA à 19 % et IS à 30 % — renvoient explicitement à des références de l'ancien CGI ou à des mesures de référence à rapprocher. Ils ne constituent pas un moteur de calcul et le profil reste verrouillé. Le présent lot n'a modifié ni `js/tax-core.js`, ni les tests, ni les migrations, ni les données Supabase.
+
+Cette absence de modification est volontaire : le texte rectificatif qui doit confirmer les taux et les exonérations n'a pas été lu ; la circulaire n'est accessible que sous forme de copie non authentifiée ; les taux et barèmes de paie ne peuvent être déduits d'un OCR incomplet. Aucun taux TVA transport, produit alimentaire, hébergement/restauration, IS, impôt minimum, retenue, abattement salarial ou seuil de régime n'est activé ou remplacé.
+
+Le statut Niger demeure `research_required`, avec `calculationModules: []` et `rules: []`. Les profils Guinée et Guinée-Bissau ne sont pas modifiés.
+
+### 6. Sources supplémentaires identifiées
+
+- Reproduction du *Journal officiel de la République du Niger*, 92e année, numéro spécial 24, 19 décembre 2025, contenant l'ordonnance n° 2025-22 : https://www.scribd.com/document/1002953930/JO-Ordonnance-n-2025-22-Portant-Adoption-Du-CGI
+- Copie de la circulaire d'application du nouveau CGI, datée du 20 février 2026, présentée comme circulaire n° 0013/ME/F/DGI/DL/CFI/Div.L (support tiers, OCR à contrôler) : https://www.scribd.com/document/1042407349/Circulaire-Cgi-2026
+- Portail officiel du Ministère des Finances — fiche de l'ordonnance n° 2026-45 : https://finances.gouv.ne/index.php/component/phocadownload/file/1351-ordonnance-n-2026-45-premiere-rectification-de-la-loi-de-finances-2026
+- Portail officiel de la DGI — fiche du même document : https://www.dgi.gouv.ne/index.php/budget-1/reglementations-budgetaires/textes-portant-modalites-d-execution-du-budget-de-l-etat/file/1351-ordonnance-n-2026-45-premiere-rectification-de-la-loi-de-finances-2026
+- Portail gouvernemental — fiche du même document : https://www.demarches.gouv.ne/index.php/budget-1/reglementations-budgetaires/textes-portant-elaboration/file/1351-ordonnance-n-2026-45-premiere-rectification-de-la-loi-de-finances-2026
+- Ministère des Finances — ordonnance n° 2025-44 portant loi de finances 2026 : https://www.finances.gouv.ne/index.php/lois-de-finances/file/1303-ordonnance-n-2025-44
+- FMI — Rapport n° 26/74, 2 mars 2026, mesures budgétaires pour le Niger : https://www.imf.org/-/media/files/publications/cr/2026/english/1nerea2026001-source-pdf.pdf
+- FMI — Rapport n° 25/200, supplément du 10 juillet 2025, mention de la signature du CGI : https://www.imf.org/-/media/files/publications/cr/2025/french/1nerfa2025003-source-pdf.pdf
+
+**Conclusion du Lot 41 :** les sources de publication et d'application du nouveau CGI sont mieux cartographiées, et les règles transitoires ont été repérées. L'ordonnance rectificative n° 2026-45 reste le verrou documentaire majeur : son existence et son dépôt institutionnel sont confirmés, mais son contenu n'a pas pu être récupéré automatiquement. Le moteur fiscal reste donc volontairement inactif pour le Niger.

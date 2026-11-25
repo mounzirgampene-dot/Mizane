@@ -27,6 +27,7 @@ on:
       - fix/lot21-followup-latest-event
       - feat/lot22-international-tax
       - feat/lot22-morocco-tax-compliance
+      - feat/lot25-senegal-ivory-coast-tax
   pull_request:
     branches:
       - main

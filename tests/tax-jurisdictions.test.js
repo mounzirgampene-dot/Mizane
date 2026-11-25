@@ -1,3 +1,4 @@
+import "./african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
@@ -7,7 +8,7 @@ for(const [code,spec] of Object.entries(expected)){
  assert.equal(p.status,"active",code);
  assert.equal(p.currency,spec.currency,code);
  assert.deepEqual(p.rules.filter(x=>x.taxType==="VAT").map(x=>x.rate),spec.rates,code);
- assert.deepEqual(p.calculationModules,["VAT",...(code==="FR"||code==="BE"?["IS","IR","WITHHOLDING"]:[])],code+" : modules fiscaux activés");
+ assert.deepEqual(p.calculationModules,["VAT",...(code==="FR"||code==="BE"||code==="SN"||code==="CI"?["IS","IR","WITHHOLDING"]:[])],code+" : modules fiscaux activés");
  assert.ok(p.legalSources.length>=2,code+" : sources officielles");
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : règles IS détaillées non activées dans le moteur de lignes");
@@ -22,6 +23,6 @@ assert.equal(calculateTaxLine({countryCode:"CI",taxCode:"CI_VAT_9",baseAmount:10
 const report=buildVatReport({countryCode:"SN",startDate:"2026-01-01",endDate:"2026-12-31",salesDocuments:[{id:1,type:"invoice",status:"issued",date:"2026-03-01",currency:"XOF",lines:[{amount:100000,taxRate:18}]}]});
 assert.equal(report.ok,true);
 assert.equal(report.byCurrency.XOF.outputVat,18000);
-assert.equal(getTaxCountryProfile("CI").taxFacts.length,0);
+assert.ok(getTaxCountryProfile("CI").taxFacts.length>=2);
 assert.equal(getTaxCountryProfile("ZZ").status,"not_configured");
 console.log("Lot 23 — juridictions fiscales internationales : OK");

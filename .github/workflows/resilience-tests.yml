@@ -37,6 +37,7 @@ on:
       - feat/lot33-central-africa-tax-profiles
       - feat/lot34-drc-equatorial-guinea
       - feat/lot35-mauritania-tax-profile
+      - fix/lot36-mauritania-vat-rate
   pull_request:
     branches:
       - main
@@ -46,6 +47,7 @@ on:
       - feat/lot33-central-africa-tax-profiles
       - feat/lot34-drc-equatorial-guinea
       - feat/lot35-mauritania-tax-profile
+      - fix/lot36-mauritania-vat-rate
       - fix/lot1-security-hardening
       - fix/lot2-billing-integrity
       - feat/lot4-periodic-inventory-closing

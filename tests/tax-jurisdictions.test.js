@@ -3,7 +3,7 @@ import "./regional-african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
-const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,8,0]},GQ:{currency:"XAF",rates:[15,5,0]},MR:{currency:"MRU",rates:[16,18,0]}};
+const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,8,0]},GQ:{currency:"XAF",rates:[15,5,0]},MR:{currency:"MRU",rates:[16,0]}};
 for(const [code,spec] of Object.entries(expected)){
  const p=getTaxCountryProfile(code);
  assert.equal(p.status,"active",code);
@@ -74,7 +74,7 @@ assert.equal(getTaxCountryProfile("GQ").calculationModules.includes("IS"),false)
 assert.equal(getTaxCountryProfile("CF").status,"research_required");
 assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_16",baseAmount:1000,date:"2026-01-01"}).taxAmount,160);
 assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_18_TELEPHONY",baseAmount:1000,date:"2026-01-01"}).ok,false);
-assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_18_TELEPHONY",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,180);
+assert.equal(getTaxCountryProfile("MR").taxFacts.find(x=>x.label.includes("Téléphonie")).value,"16 % depuis la loi de finances 2022");
 assert.equal(calculateTaxLine({countryCode:"MR",taxCode:"MR_VAT_0_EXPORT",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,0);
 assert.equal(getTaxCountryProfile("MR").calculationModules.includes("IS"),false);
 console.log("Lot 23/33/34/35 — juridictions fiscales internationales et Afrique centrale : OK");

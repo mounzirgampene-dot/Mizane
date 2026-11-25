@@ -43,13 +43,13 @@ export function buildFinancialForecast({
   let excludedReceivables = 0;
   let excludedPayables = 0;
   for (const item of Array.isArray(receivables) ? receivables : []) {
-    if (!validDate(item?.dueDate) || item.dueDate < asOf || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
+    if (!validDate(item?.dueDate) || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
       if (item && Number(item?.baseAmount ?? item?.amount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedReceivables += 1;
       continue;
     }
     events.push({
       id: String(item.id || item.number || "receivable"),
-      date: item.dueDate,
+      date: item.dueDate < asOf ? asOf : item.dueDate,
       label: String(item.label || ("Encaissement client — " + (item.customer || item.number || "Facture"))),
       direction: "in",
       amount: round(item.baseAmount),

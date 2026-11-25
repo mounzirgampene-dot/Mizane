@@ -10,7 +10,7 @@
 - IBP documenté à 30 % au taux de droit commun ; barème IRPP publié par la DGI. Aucun calculateur IBP/IRPP, paie, minimum fiscal ou retenues n'est activé.
 - Les mesures de facturation normalisée et les groupes e-DEF doivent être respectés ; MIZANE ne transmet pas de déclaration à la DGI.
 
-Sources : DGI RDC (page TVA, communiqué FACNO-TVA du 25 février 2026, document des groupes de taxation du 19 mai 2026) ; Ministère du Budget (LF 2026 et LFR 2026 n°26/032, art. 13) ; DGI (IBP et IRPP).
+Sources : DGI RDC (communiqué FACNO-TVA du 25 février 2026) ; Ministère du Budget (LF 2026 et LFR 2026 n°26/032, art. 13) ; DGI (IBP et IRPP).
 
 ## Guinée équatoriale (GQ)
 

@@ -142,6 +142,11 @@ export function viewFinancial(period = null) {
       <h2>Prévisions de trésorerie — devise de référence : ${esc(store.settings.currency)}</h2>
       <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance après conversion au taux enregistré sur la facture. Les prévisions manuelles sont saisies dans la devise de référence.</p>
       <div class="grid cols-3">${forecastTotals.map(item => "<div class=\"card kpi\"><div class=\"label\">Solde projeté à " + item.days + " jours</div><div class=\"value\">" + money(item.amount) + "</div></div>").join("")}</div>
+      <p class="muted">Les projections sont exprimées dans la devise de référence de l’entreprise. Les créances sont aussi ventilées dans leur devise d’origine ; aucune somme de devises différentes n’est additionnée.</p>
+      <div class="grid cols-2">
+        <section class="table-wrap"><h3>Créances ouvertes par devise d’origine</h3><table><thead><tr><th>Devise</th><th class="num">Montant restant</th></tr></thead><tbody>${receivableCurrencyRows || '<tr><td colspan="2" class="muted">Aucune créance.</td></tr>'}</tbody></table></section>
+        <section class="table-wrap"><h3>Flux prévisionnels mensuels — 6 mois</h3><table><thead><tr><th>Mois</th><th class="num">Entrées</th><th class="num">Sorties</th><th class="num">Net</th><th class="num">Solde fin</th></tr></thead><tbody>${monthlyForecastRows}</tbody></table></section>
+      </div>
       <form id="forecast-form">
         <div class="row">
           <div><label for="forecast-date">Date prévue</label><input id="forecast-date" type="date" min="${today()}" required></div>

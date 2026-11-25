@@ -63,7 +63,7 @@ export function buildFinancialForecast({
       if (item && Number(item?.originalAmount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedPayables += 1;
       continue;
     }
-    events.push({ id: String(item.id || item.number || "payable"), date: item.dueDate,
+    events.push({ id: String(item.id || item.number || "payable"), date: item.dueDate < asOf ? asOf : item.dueDate,
       label: String(item.label || ("Décaissement fournisseur — " + (item.supplier || item.number || "Facture"))),
       direction: "out", amount: round(item.baseAmount), currency: String(item.currency || currency).toUpperCase(),
       originalAmount: round(item.originalAmount ?? item.baseAmount), automatic: true, source: "supplier" });

@@ -165,7 +165,8 @@ function accountOptions(type, selected = "", purpose = "") {
     if (purpose === "supplier") return code.startsWith("4") && /fournisseur/.test(label);
     if (purpose === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
     if (purpose === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
-    if (purpose === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);\n    if (purpose === "treasury") return code.startsWith("5") && /(banque|caisse|trésorerie)/.test(label);
+    if (purpose === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
+    if (purpose === "treasury") return code.startsWith("5") && /(banque|caisse|trésorerie)/.test(label);
     return true;
   };
   const unique = [...new Map(accounts.filter(account => account.type === type && validPurpose(account)).map(account => [String(account.code), account])).values()];

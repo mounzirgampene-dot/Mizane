@@ -33,11 +33,13 @@ on:
       - feat/lot28-west-africa-tax-validation
       - feat/lot30-tax-declaration-calendar
       - feat/lot31-tax-document-traceability
+      - feat/lot32-central-tax-document-vault
   pull_request:
     branches:
       - main
       - feat/stock-integrated-dev
       - feat/lot31-tax-document-traceability
+      - feat/lot32-central-tax-document-vault
       - fix/lot1-security-hardening
       - fix/lot2-billing-integrity
       - feat/lot4-periodic-inventory-closing

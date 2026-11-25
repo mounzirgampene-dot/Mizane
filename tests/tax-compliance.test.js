@@ -32,6 +32,7 @@ const wht = calculateMoroccoWithholding({ ruleCode: "MA_WHT_SERVICE_COMPANY_5", 
 assert.equal(wht.ok, true);
 assert.equal(wht.taxAmount, 500);
 assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_SERVICE_COMPANY_5", baseAmount: 10000, date: "2026-06-01" }).ok, false);
+assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_DIVIDENDS_EXEMPT", baseAmount: 10000, date: "2026-06-01", payerEligible: true }).taxAmount, 0);
 assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_DIVIDENDS_2025", baseAmount: 10000, date: "2025-06-01" }).taxAmount, 1250);
 assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_DIVIDENDS_2026", baseAmount: 10000, date: "2026-06-01" }).taxAmount, 1125);
 assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_DIVIDENDS_2027", baseAmount: 10000, date: "2027-06-01" }).taxAmount, 1000);

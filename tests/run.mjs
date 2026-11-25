@@ -2590,9 +2590,9 @@ test("créances clients : balance âgée, règlements, avoirs et séparation des
   const report = buildReceivablesReport({
     asOf: "2026-11-25", baseCurrency: "MAD",
     documents: [
-      { id: 1, type: "invoice", status: "validated", number: "F-001", customerName: "Client A", date: "2026-10-01", dueDate: "2026-10-10", currency: "MAD", exchangeRate: 1, totals: { ttc: 1000 }, payments: [{ amount: 200 }] },
+      { id: 1, type: "invoice", status: "validated", number: "F-001", customerName: "Client A", date: "2026-10-01", dueDate: "2026-11-01", currency: "MAD", exchangeRate: 1, totals: { ttc: 1000 }, payments: [{ amount: 200 }] },
       { id: 2, type: "invoice", status: "validated", number: "F-002", customerName: "Client A", date: "2026-11-10", dueDate: "2026-12-10", currency: "EUR", exchangeRate: 11, totals: { ttc: 100 } },
-      { id: 3, type: "invoice", status: "validated", customerName: "Client B", date: "2026-09-01", dueDate: "2026-09-20", currency: "MAD", totals: { ttc: 500 } },
+      { id: 3, type: "invoice", status: "validated", customerName: "Client B", date: "2026-09-01", dueDate: "2026-08-01", currency: "MAD", totals: { ttc: 500 } },
       { id: 4, type: "credit_note", status: "validated", sourceInvoiceId: 3, currency: "MAD", totals: { ttc: 100 } },
       { id: 5, type: "invoice", status: "draft", customerName: "Brouillon", date: "2026-11-01", dueDate: "2026-11-05", currency: "MAD", totals: { ttc: 900 } },
       { id: 6, type: "invoice", status: "validated", customerName: "Soldée", date: "2026-11-01", dueDate: "2026-11-05", currency: "MAD", totals: { ttc: 200 }, paidAmount: 200 },

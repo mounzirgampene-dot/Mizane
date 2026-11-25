@@ -2445,6 +2445,7 @@ test("marges commerciales : coût réel des sorties, conversion en devise compta
   assert.equal(report.rows[0].marginRate, 60);
   assert.equal(report.totals.invoices, 1);
   assert.equal(report.rows[0].sku, "A-01");
+  assert.equal(report.rows[0].missingCostLines, 0);
   assert.equal(report.totals.byCurrency.MAD.margin, 270);
 });
 
@@ -2460,7 +2461,7 @@ test("marges commerciales : absence de coût signalée et devises non fusionnée
   });
   assert.equal(report.rows.length, 2);
   assert.equal(report.totals.missingCostLines, 2);
-  assert.equal(report.rows.every(row => row.marginRate === 100), true);
+  assert.equal(report.rows.every(row => row.marginRate === null), true);
   assert.deepEqual(report.baseCurrencies.sort(), ["EUR", "MAD"]);
   assert.deepEqual(Object.keys(report.totals.byCurrency).sort(), ["EUR", "MAD"]);
   assert.equal(buildCommercialMarginReport({ startDate: "2026-02-30", endDate: "2026-03-01" }).ok, false);

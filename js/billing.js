@@ -57,7 +57,7 @@ const getBilling = () => {
   else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
     const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && (key === "stockVariation" ? ["expense","income"].includes(account.type) : account.type === type))) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";

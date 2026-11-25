@@ -59,7 +59,7 @@ export function buildFinancialForecast({
     });
   }
   for (const item of Array.isArray(payables) ? payables : []) {
-    if (!validDate(item?.dueDate) || item.dueDate < asOf || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
+    if (!validDate(item?.dueDate) || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
       if (item && Number(item?.originalAmount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedPayables += 1;
       continue;
     }

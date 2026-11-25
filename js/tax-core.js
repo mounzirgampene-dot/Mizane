@@ -88,8 +88,6 @@ export function buildVatReport({ countryCode, startDate, endDate, salesDocuments
   if (profile.status !== "active") {
     return { ok: false, errors: ["Le référentiel fiscal de ce pays n'est pas encore activé."], byCurrency: {}, rows: [], warnings: [] };
   }
-  const rules = getActiveTaxRules(countryCode, "VAT", endDate);
-  const rulesByRate = new Map(rules.filter(rule => rule.treatment === "taxable").map(rule => [rule.rate, rule]));
   const byCurrency = {};
   const rows = [];
   const warnings = [];
@@ -111,6 +109,8 @@ export function buildVatReport({ countryCode, startDate, endDate, salesDocuments
         continue;
       }
       documentsCount += 1;
+      const documentRules = getActiveTaxRules(countryCode, "VAT", document.date);
+      const rulesByRate = new Map(documentRules.filter(rule => rule.treatment === "taxable").map(rule => [rule.rate, rule]));
       for (const [index, line] of lines.entries()) {
         const rawBase = line?.amount !== undefined && line?.amount !== null
           ? Number(line.amount)
@@ -125,8 +125,8 @@ export function buildVatReport({ countryCode, startDate, endDate, salesDocuments
           warnings.push({ code: "missing_tax_rate", documentId: document.id ?? null, line: index + 1, message: "Taux fiscal absent ou invalide : ligne à qualifier." });
           continue;
         }
-        let rule = line?.taxCode ? rules.find(item => item.code === line.taxCode) : null;
-        if (!rule && rate > 0) rule = rulesByRate.get(rate) || null;
+        let rule = line?.taxCode ? documentRules.find(item => item.code === line.taxCode) || null : null;
+        if (!line?.taxCode && rate > 0) rule = rulesByRate.get(rate) || null;
         if (!rule) {
           warnings.push({ code: rate === 0 ? "zero_rate_unqualified" : "unsupported_rate", documentId: document.id ?? null, line: index + 1, rate, message: rate === 0 ? "Taux 0 % : distinguer exonération avec ou sans droit à déduction et opération hors champ." : "Taux non reconnu par le référentiel actif : vérifier la date et la qualification fiscale." });
         }

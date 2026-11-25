@@ -11,6 +11,7 @@ import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry
 import { supplierInvoiceTaxBreakdown } from "./purchase-tax.js";
 import { suggestSupplierInvoiceAccounts } from "./purchase-account-mapping.js";
 import { allAccounts } from "./plans.js";
+import { addSupplierPaymentTerms, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "./supplier-payables.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -297,11 +298,16 @@ function renderList() {
   const invoices = docs.filter(doc => doc.type === "invoice");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
+  const payablesSchedule=buildSupplierPayablesSchedule(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice),supplierName:supplierName(invoice.supplierId)})));
+  const forecast=supplierCashOutflowForecast(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice)})),today(),30);
+  const currencySummary=map=>Object.entries(map||{}).map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"—";
+  const bucketLabels={upcoming:"À venir",due_today:"À payer aujourd’hui",overdue_1_30:"Retard 1–30 jours",overdue_31_60:"Retard 31–60 jours",overdue_61_90:"Retard 61–90 jours",overdue_90_plus:"Retard supérieur à 90 jours",undated:"Sans échéance"};
+  const payablesRows=payablesSchedule.items.map(item=>`<tr><td>${esc(item.number)}</td><td>${esc(item.supplierName||supplierName(item.supplierId))}</td><td>${esc(item.dueDate||"Non définie")}</td><td>${esc(bucketLabels[item.bucket]||item.bucket)}</td><td class="num">${money(item.balance)} ${esc(item.currency)}</td><td><button class="secondary" data-payable-open="${esc(item.invoiceId)}">Ouvrir</button></td></tr>`).join("");
   const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   const rows = docs.map(doc => `<tr>
     <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
     <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
-    <td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
+    <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):"—")}</td><td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
     <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
   </tr>`).join("");
   $app.innerHTML = `
@@ -317,8 +323,8 @@ function renderList() {
       </div>
       <p><strong>Dettes fournisseurs comptabilisées :</strong> ${esc(outstandingSummary)}</p>
     </section>
-    <section class="card"><h2>Documents d'achat</h2>
-      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
+    <section class="card"><h2>Échéancier des dettes fournisseurs</h2><div class="grid cols-3"><div class="calculator-result"><strong>${payablesSchedule.totals.overdue}</strong><br><span class="muted">Factures en retard</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.dueToday}</strong><br><span class="muted">À payer aujourd’hui</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.upcoming}</strong><br><span class="muted">Échéances à venir</span></div></div><p><strong>Décaissements prévus sur 30 jours :</strong> ${esc(currencySummary(forecast.amountByCurrency))}</p><div class="table-wrap"><table><thead><tr><th>Facture</th><th>Fournisseur</th><th>Échéance</th><th>Situation</th><th>Solde dû</th><th>Action</th></tr></thead><tbody>${payablesRows||'<tr><td colspan=6>Aucune dette fournisseur échue ou à venir.</td></tr>'}</tbody></table></div></section><section class="card"><h2>Documents d'achat</h2>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>Échéance</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="8">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card"><h2>Rapprochements de paiements groupés</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Devise</th><th>Montant</th><th>État</th><th>Factures</th></tr></thead><tbody>${reconciliationRows||'<tr><td colspan="6">Aucun rapprochement enregistré.</td></tr>'}</tbody></table></div></section>
     <section class="card"><h2>Règle d'entrée en stock</h2><p>${stockState?.settings?.purchase_trigger === "supplier_invoice" ? "L'entrée en stock est déclenchée à la validation de la facture fournisseur." : "L'entrée en stock est déclenchée à la réception physique. Les réceptions partielles sont prises en charge."}</p><p class="muted">Les factures et commandes sont synchronisées dans l'espace professionnel. Les quantités physiques sont inscrites dans le journal serveur de stock.</p></section>`;
@@ -327,6 +333,7 @@ function renderList() {
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));
   document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
+  $app.querySelectorAll("[data-payable-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.payableOpen))));
 }
 function openSupplier() {
   const p = data();
@@ -334,14 +341,16 @@ function openSupplier() {
     <label>Nom / raison sociale</label><input id="ps-name" maxlength="180" required>
     <div class="grid cols-2"><div><label>Code fournisseur</label><input id="ps-code" maxlength="40"></div><div><label>Identifiant fiscal</label><input id="ps-tax" maxlength="80"></div></div>
     <div class="grid cols-2"><div><label>Téléphone</label><input id="ps-phone" maxlength="60"></div><div><label>E-mail</label><input id="ps-email" type="email" maxlength="180"></div></div>
-    <label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea><div id="ps-error" class="errors"></div>
+    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
     <div class="actions"><button id="ps-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#ps-save").addEventListener("click", () => {
     const name = box.querySelector("#ps-name").value.trim();
     const code = box.querySelector("#ps-code").value.trim();
     if (!name) { box.querySelector("#ps-error").textContent = "Le nom du fournisseur est obligatoire."; return; }
     if (code && p.suppliers.some(item => item.code.toLowerCase() === code.toLowerCase())) { box.querySelector("#ps-error").textContent = "Ce code fournisseur existe déjà."; return; }
-    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), active:true, createdAt:new Date().toISOString() });
+    const paymentTermsDays=Number(box.querySelector("#ps-terms").value);
+    if(!Number.isInteger(paymentTermsDays)||paymentTermsDays<0||paymentTermsDays>3650){box.querySelector("#ps-error").textContent="Le délai de paiement doit être compris entre 0 et 3 650 jours.";return;}
+    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, active:true, createdAt:new Date().toISOString() });
     box.closest("dialog").close(); persist("Fournisseur enregistré."); renderList();
   });
 }
@@ -355,7 +364,7 @@ function openDocument(type) {
   const { box } = modal(`<h2>${type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
     <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
     <div><label>Date</label><input id="pd-date" type="date" value="${today()}"></div></div>
-    ${type === "invoice" ? `<label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select>` : ""}
+    ${type === "invoice" ? `<div class="grid cols-2"><div><label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select></div><div><label>Échéance de paiement</label><input id="pd-due-date" type="date" value="${addSupplierPaymentTerms(today(),p.suppliers[0]?.paymentTermsDays ?? 30)}"></div></div>` : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
     ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable proposée automatiquement</h3><p class="muted">Les comptes sont préremplis selon le plan ' + esc(suggestedAccounts.planName) + ' ; vérifiez les suggestions et adaptez-les si nécessaire avant validation.</p><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", suggestedAccounts?.accounts.supplier || "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", suggestedAccounts?.accounts.stock || "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", suggestedAccounts?.accounts.purchases || "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", suggestedAccounts?.accounts.inputVat || "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", suggestedAccounts?.accounts.services || "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", suggestedAccounts?.accounts.fixedAssets || "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
@@ -382,6 +391,7 @@ function openDocument(type) {
   box.querySelector("#pd-tax-rate")?.addEventListener("input", updateTotal);
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
   box.querySelector("#pd-add-extra-line")?.addEventListener("click", () => { extraTbody.insertAdjacentHTML("beforeend", extraLineRow(extraTbody.children.length)); bindExtraRows(); updateTotal(); });
+  if(type==="invoice"){const dueInput=box.querySelector("#pd-due-date");const refreshDueDate=()=>{const supplier=p.suppliers.find(item=>String(item.id)===box.querySelector("#pd-supplier").value);dueInput.value=addSupplierPaymentTerms(box.querySelector("#pd-date").value||today(),supplier?.paymentTermsDays??30);};box.querySelector("#pd-date").addEventListener("change",refreshDueDate);box.querySelector("#pd-supplier").addEventListener("change",refreshDueDate);}
   box.querySelector("#pd-currency").addEventListener("input", () => {
     if (type === "invoice") {
       const currency = box.querySelector("#pd-currency").value.trim().toUpperCase();
@@ -406,6 +416,8 @@ function openDocument(type) {
     if (type === "invoice") {
       const metadata = validateSupplierInvoiceMetadata({ reference:supplierReference, date:box.querySelector("#pd-date").value || today(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD" });
       if (!metadata.ok) { box.querySelector("#pd-error").textContent = metadata.errors[0]; return; }
+      const dueDate=box.querySelector("#pd-due-date").value;
+      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate)||Number.isNaN(Date.parse(dueDate+"T00:00:00Z"))){box.querySelector("#pd-error").textContent="La date d’échéance doit être valide.";return;}
       const duplicate = findDuplicateSupplierInvoice(p.documents, supplierId, supplierReference);
       if (duplicate) {
         box.querySelector("#pd-error").textContent = "Cette référence de facture fournisseur existe déjà pour ce fournisseur (" + duplicate.number + "). Vérifiez qu'il ne s'agit pas d'une double saisie.";
@@ -418,7 +430,7 @@ function openDocument(type) {
       const matchingError = validateInvoiceAgainstOrder(order, candidate);
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(p.suppliers.find(item=>item.id===supplierId)?.paymentTermsDays??30)}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
     if (type === "invoice") {
       const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
       if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
@@ -456,6 +468,10 @@ function configureSupplierAccounting(doc) {
     openDetail(doc.id);
   });
 }
+function openSupplierDueDateEditor(invoice) {
+  const {box}=modal(`<h2>Modifier l’échéance — ${esc(invoice.number)}</h2><p class="muted">Cette modification ajuste le suivi de trésorerie sans modifier l’écriture comptable.</p><label>Nouvelle date d’échéance</label><input id="psde-date" type="date" value="${esc(invoice.dueDate||invoice.date||today())}"><div id="psde-error" class="errors"></div><div class="actions"><button id="psde-save">Enregistrer l’échéance</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||Number.isNaN(Date.parse(value+"T00:00:00Z"))){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
+}
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);
   if (!doc) return;
@@ -479,7 +495,7 @@ function openDetail(id) {
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
-    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
+    ${doc.type==="invoice"?`<p>Échéance : <strong>${esc(doc.dueDate||"Non définie")}</strong> · Délai fournisseur : ${Number.isInteger(doc.paymentTermsDays)?doc.paymentTermsDays+" jours":"Non renseigné"}</p><p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
@@ -490,6 +506,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Configurer l’imputation comptable", () => configureSupplierAccounting(doc));
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
+  if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Modifier l’échéance", () => openSupplierDueDateEditor(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));

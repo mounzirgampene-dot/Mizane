@@ -17,6 +17,7 @@ import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { buildSupplierInvoiceControlReport } from "../js/purchase-controls.js";
+import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "../js/supplier-payables.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1928,7 +1929,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v47/);
+  assert.match(serviceWorkerSource,/mizane-v48/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2137,7 +2138,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v47/);
+  assert.match(serviceWorkerSource,/mizane-v48/);
 });
 
 
@@ -2378,6 +2379,38 @@ test("achats : facture sans commande signalée sans blocage et rapport sans muta
   assert.equal(report.ok, true);
   assert.equal(report.warnings.some(item => item.code === "unlinked_order"), true);
   assert.deepEqual(invoice, before, "le contrôle ne doit jamais modifier la facture");
+});
+
+
+test("échéances fournisseurs : calcul des délais, ancienneté et tranches de retard", () => {
+  assert.equal(addSupplierPaymentTerms("2026-11-25", 30), "2026-12-25");
+  assert.equal(addSupplierPaymentTerms("2026-11-25", 0), "2026-11-25");
+  assert.equal(addSupplierPaymentTerms("date-invalide", 30), "");
+  assert.equal(addSupplierPaymentTerms("2026-11-25", -1), "");
+  assert.equal(supplierPayableAge({ dueDate: "2026-11-20" }, "2026-11-25"), 5);
+  assert.equal(classifySupplierPayable({ dueDate: "2026-11-25", balance: 50 }, "2026-11-25").bucket, "due_today");
+  assert.equal(classifySupplierPayable({ dueDate: "2026-10-25", balance: 50 }, "2026-11-25").bucket, "overdue_31_60");
+  assert.equal(classifySupplierPayable({ dueDate: "2026-12-01", balance: 50 }, "2026-11-25").bucket, "upcoming");
+  assert.equal(classifySupplierPayable({ dueDate: "2026-11-25", balance: 0 }, "2026-11-25").bucket, "settled");
+});
+
+test("échéances fournisseurs : échéancier et prévision de trésorerie par devise", () => {
+  const invoices = [
+    { id: 1, type: "invoice", status: "validated", accountingPostedAt: "x", dueDate: "2026-11-20", balance: 100, currency: "MAD", number: "F1", supplierName: "A" },
+    { id: 2, type: "invoice", status: "validated", accountingPostedAt: "x", dueDate: "2026-12-05", balance: 250, currency: "EUR", number: "F2", supplierName: "B" },
+    { id: 3, type: "invoice", status: "validated", accountingPostedAt: "x", balance: 75, currency: "MAD", number: "F3" },
+    { id: 4, type: "invoice", status: "draft", dueDate: "2026-11-25", balance: 999, currency: "MAD" },
+    { id: 5, type: "invoice", status: "validated", accountingPostedAt: "x", dueDate: "2026-11-25", balance: 0, currency: "MAD" },
+  ];
+  const schedule = buildSupplierPayablesSchedule(invoices, "2026-11-25");
+  assert.equal(schedule.totals.invoices, 3);
+  assert.equal(schedule.totals.overdue, 1);
+  assert.equal(schedule.totals.upcoming, 1);
+  assert.equal(schedule.buckets.undated.amountByCurrency.MAD, 75);
+  const forecast = supplierCashOutflowForecast(invoices, "2026-11-25", 30);
+  assert.equal(forecast.ok, true);
+  assert.deepEqual(forecast.amountByCurrency, { EUR: 250 });
+  assert.equal(supplierCashOutflowForecast(invoices, "2026-11-25", 366).ok, false);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

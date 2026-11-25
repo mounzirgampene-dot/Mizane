@@ -17,7 +17,7 @@ import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
-import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
+import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
@@ -2101,6 +2101,37 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
   assert.match(serviceWorkerSource,/mizane-v41/);
+});
+
+
+test("achats : règlements fournisseurs partiels, change, plafonnement et idempotence", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"571",label:"Caisse",type:"asset"},
+    {code:"675",label:"Pertes de change",type:"expense"},
+    {code:"778",label:"Gains de change",type:"income"},
+  ];
+  const invoice={id:70,type:"invoice",number:"FAF-2026-0070",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",date:"2026-11-20",total:100,supplierName:"Fournisseur test",accounting:{exchangeRate:2,taxRate:20,accounts:{supplier:"401"}},payments:[]};
+  const partial={id:1,date:"2026-11-25",amount:40,method:"bank",exchangeRate:2,treasury:"512"};
+  const proposal=buildSupplierPaymentJournalEntry(store,invoice,partial,partial);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.summary.remaining,80);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",80,0],["512",0,80]]);
+  const posted=postSupplierPaymentJournalEntry(store,invoice,partial,partial);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,partial,partial).ok,false,"un règlement déjà comptabilisé ne doit pas être dupliqué");
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:2,amount:81},{...partial}).ok,false,"le cumul des règlements ne doit pas dépasser la dette TTC");
+  const fxLoss=buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:2,amount:10,exchangeRate:2.1,treasury:"512",fxLoss:"675"},{...partial,fxLoss:"675"});
+  assert.equal(fxLoss.ok,true,fxLoss.errors?.join(" "));
+  assert.deepEqual(fxLoss.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["675",1,0],["512",0,21]]);
+  const fxGain=buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:3,amount:10,exchangeRate:1.9,treasury:"512",fxGain:"778"},{...partial,fxGain:"778"});
+  assert.equal(fxGain.ok,true,fxGain.errors?.join(" "));
+  assert.deepEqual(fxGain.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["778",0,1],["512",0,19]]);
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:4,date:"2026-02-30"},{...partial}).ok,false,"une date impossible doit être refusée");
+  assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,accountingPostedAt:null},partial,partial).ok,false,"une facture non comptabilisée ne peut pas être réglée");
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

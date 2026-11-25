@@ -6,6 +6,7 @@ import { chartModeControls, bindChartMode, renderHorizontalBars } from "../chart
 import { buildFinancialForecast } from "../financial-forecast-core.js";
 import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
 import { buildSupplierPayablesSchedule } from "../supplier-payables.js";
+import { supplierInvoiceTaxBreakdown } from "../purchase-tax.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -83,7 +84,8 @@ export function viewFinancial(period = null) {
   ],money);
   const purchaseInvoices = (store.billing?.purchases?.documents || []).filter(invoice => invoice?.type === "invoice" && invoice.status === "validated" && invoice.accountingPostedAt);
   const supplierBalance = invoice => {
-    const total = Number(invoice.payableAmount ?? invoice.totals?.ttc ?? invoice.total ?? 0);
+    const tax = supplierInvoiceTaxBreakdown(invoice);
+    const total = Number(invoice.payableAmount ?? (tax.ok ? tax.payable : invoice.totals?.ttc ?? invoice.total ?? 0));
     const paid = (invoice.payments || []).filter(payment => !payment.status || payment.status === "posted").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
     const credited = (invoice.creditNotes || []).filter(note => !note.status || note.status === "posted").reduce((sum, note) => sum + Number(note.payableAmount ?? note.total ?? 0), 0);
     return round(Math.max(0, total - paid - credited));

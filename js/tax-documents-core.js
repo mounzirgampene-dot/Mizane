@@ -6,7 +6,7 @@ export function createTaxEvidenceMetadata({id,declarationId,category,file,refere
  if(!name)errors.push("Fichier obligatoire.");
  if(!Number.isFinite(size)||size<=0)errors.push("Fichier vide ou taille invalide.");
  if(size>15*1024*1024)errors.push("La taille maximale par fichier est de 15 Mo.");
- if(referenceDate&&!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate))errors.push("Date du justificatif invalide.");
+ if(referenceDate){const parsed=new Date(referenceDate+"T00:00:00Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==referenceDate)errors.push("Date du justificatif invalide.");}
  if(errors.length)return {ok:false,errors};
  return {ok:true,document:{id:String(id),declarationId:String(declarationId),category:String(category).trim().slice(0,180),fileName:name.slice(0,240),mimeType:String(file.type||"application/octet-stream").slice(0,160),size,referenceDate:referenceDate||null,notes:String(notes||"").trim().slice(0,1000),uploadedAt,status:"pending_review",storage:"device_indexeddb",verifiedAt:null}};
 }

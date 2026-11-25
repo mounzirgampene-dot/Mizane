@@ -93,7 +93,7 @@ export function buildCommercialMarginReport({
     currencyTotals.margin = round(currencyTotals.revenue - currencyTotals.cost);
     totals.byCurrency[row.currency] = currencyTotals;
     totals.missingCostLines += row.missingCostLines;
-    return { ...row, invoices: row.invoices.size, marginRate };
+    return { ...row, invoiceIds: [...row.invoices], invoices: row.invoices.size, marginRate };
   }).sort((a, b) => b.margin - a.margin || a.productName.localeCompare(b.productName, "fr"));
   totals.invoices = includedInvoices.size;
   totals.products = resultRows.length;

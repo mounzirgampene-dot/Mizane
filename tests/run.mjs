@@ -2640,7 +2640,7 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
   assert.match(taxDocumentUiSource, /import\("\.\/tax-documents-cloud\.js"\)/);
   assert.match(taxDocumentUiSource, /Documents partagés sans déclaration locale/);
   assert.match(taxDocumentManageFunctionSource, /company_tax_documents/);
-  assert.match(taxDocumentManageFunctionSource, /storagePaths\.slice\([\s\S]*\.remove\(/);
+  assert.match(taxDocumentManageFunctionSource, /\.remove\(storagePaths\.slice\(/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

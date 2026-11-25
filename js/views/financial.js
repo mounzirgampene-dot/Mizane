@@ -114,13 +114,13 @@ export function viewFinancial(period = null) {
   }).join("");
   const forecastTotals = financialForecast.projections.map(item => ({ days: item.days, amount: item.amount }));
   const monthlyForecastRows = financialForecast.monthly.map(item =>
-    "<tr><td>" + esc(item.month) + "</td><td class=\\"num\\">" + money(item.inflows) + "</td><td class=\\"num\\">" + money(item.outflows) + "</td><td class=\\"num\\">" + money(item.net) + "</td><td class=\\"num\\">" + money(item.closing) + "</td></tr>"
+    '<tr><td>' + esc(item.month) + '</td><td class="num">' + money(item.inflows) + '</td><td class="num">' + money(item.outflows) + '</td><td class="num">' + money(item.net) + '</td><td class="num">' + money(item.closing) + '</td></tr>'
   ).join("");
   const receivableCurrencyRows = Object.entries(financialForecast.receivablesByCurrency).map(([currency, amount]) =>
-    "<tr><td>" + esc(currency) + "</td><td class=\\"num\\">" + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + " " + esc(currency) + "</td></tr>"
+    '<tr><td>' + esc(currency) + '</td><td class="num">' + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + esc(currency) + '</td></tr>'
   ).join("");
   const payableCurrencyRows = Object.entries(financialForecast.payablesByCurrency).map(([currency, amount]) =>
-    "<tr><td>" + esc(currency) + "</td><td class=\\"num\\">" + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + " " + esc(currency) + "</td></tr>"
+    '<tr><td>' + esc(currency) + '</td><td class="num">' + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + esc(currency) + '</td></tr>'
   ).join("");
   const agingChart = renderHorizontalBars("Ancienneté des créances",buckets.map(name=>({
     label:name,

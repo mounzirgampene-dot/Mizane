@@ -1,14 +1,28 @@
-// MIZANE — Contrôle documentaire des obligations fiscales.
+// MIZANE — Validation des métadonnées et de la complétude des justificatifs fiscaux.
+const MIME_BY_EXTENSION = {
+ pdf:"application/pdf",jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp",
+ doc:"application/msword",docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+ xls:"application/vnd.ms-excel",xlsx:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+ csv:"text/csv",txt:"text/plain",
+};
+const ALLOWED_MIME_TYPES = new Set(Object.values(MIME_BY_EXTENSION));
+export function resolveTaxEvidenceMimeType(file) {
+ const supplied=String(file?.type||"").toLowerCase().trim();
+ if(ALLOWED_MIME_TYPES.has(supplied))return supplied;
+ const ext=String(file?.name||"").split(".").pop().toLowerCase();
+ return MIME_BY_EXTENSION[ext]||"";
+}
 export function createTaxEvidenceMetadata({id,declarationId,category,file,referenceDate="",notes="",uploadedAt=new Date().toISOString()}={}) {
- const errors=[],name=String(file?.name||"").trim(),size=Number(file?.size);
+ const errors=[],name=String(file?.name||"").trim(),size=Number(file?.size),mimeType=resolveTaxEvidenceMimeType(file);
  if(!id||!declarationId)errors.push("Identifiant de pièce ou de déclaration manquant.");
  if(!String(category||"").trim())errors.push("Catégorie de justificatif obligatoire.");
  if(!name)errors.push("Fichier obligatoire.");
  if(!Number.isFinite(size)||size<=0)errors.push("Fichier vide ou taille invalide.");
  if(size>15*1024*1024)errors.push("La taille maximale par fichier est de 15 Mo.");
+ if(!mimeType)errors.push("Format non autorisé. Utilisez PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, XLSX, CSV ou TXT.");
  if(referenceDate){const parsed=new Date(referenceDate+"T00:00:00Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)||Number.isNaN(parsed.getTime())||parsed.toISOString().slice(0,10)!==referenceDate)errors.push("Date du justificatif invalide.");}
  if(errors.length)return {ok:false,errors};
- return {ok:true,document:{id:String(id),declarationId:String(declarationId),category:String(category).trim().slice(0,180),fileName:name.slice(0,240),mimeType:String(file.type||"application/octet-stream").slice(0,160),size,referenceDate:referenceDate||null,notes:String(notes||"").trim().slice(0,1000),uploadedAt,status:"pending_review",storage:"device_indexeddb",verifiedAt:null}};
+ return {ok:true,document:{id:String(id),declarationId:String(declarationId),category:String(category).trim().slice(0,180),fileName:name.slice(0,240),mimeType,size,referenceDate:referenceDate||null,notes:String(notes||"").trim().slice(0,1000),uploadedAt,status:"pending_review",storage:"device_indexeddb",verifiedAt:null}};
 }
 export function getTaxEvidenceReadiness(declaration,documents=[]) {
  const required=Array.isArray(declaration?.requiredDocuments)?declaration.requiredDocuments:[];

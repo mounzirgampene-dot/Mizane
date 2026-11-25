@@ -4,7 +4,7 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts, suggestStockAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
 import { hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
@@ -51,12 +51,12 @@ const getBilling = () => {
   }
   const settings = store.billing.settings;
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
-  const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
+  const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);\n  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
   if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss"]) {
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) ? "expense" : ["stockAdjustmentGain"].includes(key) ? "income" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = ["inventory","cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -1054,7 +1054,7 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
-      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent)")}
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}\n      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
       ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
       ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
       ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}
@@ -1109,7 +1109,7 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveBilling();

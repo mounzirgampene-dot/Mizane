@@ -11,6 +11,7 @@ import { viewFinancial } from "./views/financial.js";
 import { viewBilling } from "./billing.js";
 import { viewStock } from "./stock.js";
 import { viewPurchases } from "./purchases.js";
+import { viewCommercialMargins } from "./commercial-margins.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
 import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
@@ -30,7 +31,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "notifications"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "commercial-margins", "notifications"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -45,6 +46,7 @@ const NAV = [
   ["billing", "Facturation"],
   ["stock", "Gestion de stock"],
   ["purchases", "Achats"],
+  ["commercial-margins", "Marges commerciales"],
   ["tools", "Outils"],
   ["calculator", "Calculatrice"],
   ["assistant", "Assistant IA"],
@@ -55,7 +57,7 @@ const NAV = [
 const VIEWS = {
   dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
-  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), calculator: viewCalculator,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), "commercial-margins": viewCommercialMargins, calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork, notifications: viewNotifications,
 };

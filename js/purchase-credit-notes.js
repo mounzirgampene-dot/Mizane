@@ -26,7 +26,7 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
   if (!invoice || invoice.type !== "invoice" || invoice.status !== "validated" || !invoice.accountingPostedAt) {
     return { ok:false, errors:["La facture d'origine doit être validée et comptabilisée."], entries:[] };
   }
-  const dateMatch=String(creditNote?.date||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const dateMatch=String(creditNote?.date||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) errors.push("Date de l'avoir invalide.");
   else {
     const date=new Date(Date.UTC(+dateMatch[1],+dateMatch[2]-1,+dateMatch[3]));

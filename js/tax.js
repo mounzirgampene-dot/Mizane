@@ -114,13 +114,14 @@ async function refreshCloudTaxEvidence(){
   if(!result){const before=ws().documents.length;ws().documents=ws().documents.filter(d=>d.storage!=="supabase_storage");if(ws().documents.length!==before)saveNow();if(status)status.textContent="Mode local : aucun espace d’entreprise cloud n’est sélectionné. Les fichiers joints seront conservés sur cet appareil.";if(transfer)transfer.hidden=true;return;}
   const old=ws().documents,local=old.filter(d=>d.storage!=="supabase_storage"),cloud=result.documents||[];
   ws().documents=[...local,...cloud];saveNow();
-  if(status)status.textContent="Coffre privé connecté · "+(result.role==="reader"?"accès en lecture seule":"accès "+(result.role==="admin"?"administrateur":"comptable"))+" · "+cloud.length+" justificatif(s) partagé(s).";
+  if(tab==="declarations")viewTax();
+  const currentStatus=document.getElementById("tax-cloud-status"),currentTransfer=document.getElementById("transfer-local-tax-evidence");
+  if(currentStatus)currentStatus.textContent="Coffre privé connecté · "+(result.role==="reader"?"accès en lecture seule":"accès "+(result.role==="admin"?"administrateur":"comptable"))+" · "+cloud.length+" justificatif(s) partagé(s).";
   const localFiles=local.filter(d=>d.storage==="device_indexeddb");
-  if(transfer){transfer.hidden=!result.canWrite||localFiles.length===0;transfer.textContent="Transférer "+localFiles.length+" justificatif(s) locaux vers le coffre cloud";}
+  if(currentTransfer){currentTransfer.hidden=!result.canWrite||localFiles.length===0;currentTransfer.textContent="Transférer "+localFiles.length+" justificatif(s) locaux vers le coffre cloud";}
   document.querySelectorAll("[data-evidence-form] button[type=submit]").forEach(b=>{b.disabled=!result.canWrite;});
   document.querySelectorAll("[data-evidence-verify],[data-evidence-delete]").forEach(b=>{b.hidden=!result.canWrite;});
   document.querySelectorAll("[data-status]").forEach(b=>{b.disabled=!result.canWrite;});
-  if(tab==="declarations")viewTax();
  }catch(error){const before=ws().documents.length;ws().documents=ws().documents.filter(d=>d.storage!=="supabase_storage");if(ws().documents.length!==before)saveNow();if(status)status.textContent="Coffre partagé indisponible : "+(error?.message||"vérifiez votre connexion et vos droits.");if(transfer)transfer.hidden=true;toast(error?.message||"Impossible de charger les justificatifs partagés.");}
  finally{cloudDocsLoading=false;}
 }

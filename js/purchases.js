@@ -233,6 +233,13 @@ function lineRow(index, source = {}) {
     <td><button type="button" class="secondary pa-remove" aria-label="Supprimer la ligne">×</button></td>
   </tr>`;
 }
+function extraLineRow(index, source = {}) {
+  return '<tr data-extra-line="' + index + '"><td><select class="pa-extra-type"><option value="service" ' + (source.lineType !== "fixed_asset" ? "selected" : "") + '>Service / prestation</option><option value="fixed_asset" ' + (source.lineType === "fixed_asset" ? "selected" : "") + '>Immobilisation</option></select></td>' +
+    '<td><input class="pa-extra-description" maxlength="240" value="' + esc(source.description || "") + '" placeholder="Désignation de la prestation ou du bien"></td>' +
+    '<td><input class="pa-extra-quantity" type="number" min="0.0001" step="0.0001" value="' + (source.quantity ?? 1) + '"></td>' +
+    '<td><input class="pa-extra-cost" type="number" min="0.01" step="0.01" value="' + (source.unitCost ?? 0) + '"></td>' +
+    '<td><button type="button" class="secondary pa-extra-remove" aria-label="Supprimer la ligne">×</button></td></tr>';
+}
 function refreshLineUnits(row, unit = "") {
   const item = product(row.querySelector(".pa-product").value);
   row.querySelector(".pa-unit").innerHTML = item ? unitOptions(item, unit || item.base_unit) : "";
@@ -255,6 +262,8 @@ function accountOptions(type, selected = "", purpose = "") {
     if (purpose === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
     if (purpose === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
     if (purpose === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
+    if (purpose === "services") return code.startsWith("6") && /(service|honoraire|charge|prestation)/.test(label);
+    if (purpose === "fixedAssets") return code.startsWith("2") && /(immobil|matériel|terrain|construction|équipement)/.test(label);
     if (purpose === "treasury") return code.startsWith("5") && /(banque|caisse|trésorerie)/.test(label);
     return true;
   };
@@ -345,12 +354,18 @@ function openDocument(type) {
     ${type === "invoice" ? `<label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select>` : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
-    ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable obligatoire</h3><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", "", "inputVat") + '</select></div></div><p class="muted">Le compte de stock ou d’achats sera utilisé selon le mode d’inventaire configuré. Aucun compte n’est choisi automatiquement.</p>' : ""}
+    ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable obligatoire</h3><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
     <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
-    <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne</button>
+    <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne de marchandise</button>
+    ${type === "invoice" ? '<h3>Services et immobilisations</h3><div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Quantité</th><th>Coût unitaire HT</th><th></th></tr></thead><tbody id="pd-extra-lines">' + extraLineRow(0) + '</tbody></table></div><button type="button" class="secondary" id="pd-add-extra-line">Ajouter une prestation ou immobilisation</button>' : ""}
     <p id="pd-total" class="calculator-result">Total : 0,00</p><div id="pd-error" class="errors"></div>
     <div class="actions"><button id="pd-save">Enregistrer ${type === "order" ? "la commande" : "la facture"}</button><button class="secondary" data-close>Annuler</button></div>`);
   const tbody = box.querySelector("#pd-lines");
+  const extraTbody = box.querySelector("#pd-extra-lines");
+  const bindExtraRows = () => extraTbody?.querySelectorAll("[data-extra-line]").forEach(row => {
+    row.querySelector(".pa-extra-remove").addEventListener("click", () => { if (extraTbody.children.length > 1) row.remove(); updateTotal(); });
+    row.querySelectorAll("input,select").forEach(el => el.addEventListener("input", updateTotal));
+  });
   const bindRows = () => {
     tbody.querySelectorAll("[data-purchase-line]").forEach(row => {
       row.querySelector(".pa-product").addEventListener("change", () => refreshLineUnits(row));
@@ -359,8 +374,9 @@ function openDocument(type) {
     });
   };
   const updateTotal = () => { const lines = readLines(box); box.querySelector("#pd-total").textContent = "Total : " + money(totals(lines)) + " " + box.querySelector("#pd-currency").value; };
-  bindRows(); updateTotal();
+  bindRows(); bindExtraRows(); updateTotal();
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
+  box.querySelector("#pd-add-extra-line")?.addEventListener("click", () => { extraTbody.insertAdjacentHTML("beforeend", extraLineRow(extraTbody.children.length)); bindExtraRows(); updateTotal(); });
   box.querySelector("#pd-currency").addEventListener("input", () => {
     if (type === "invoice") {
       const currency = box.querySelector("#pd-currency").value.trim().toUpperCase();
@@ -372,8 +388,9 @@ function openDocument(type) {
     const order = p.documents.find(doc => String(doc.id) === event.target.value);
     if (!order) return;
     if (String(order.supplierId) !== box.querySelector("#pd-supplier").value) box.querySelector("#pd-supplier").value = String(order.supplierId);
-    tbody.innerHTML = order.lines.map((line,index) => lineRow(index,line)).join("");
-    bindRows(); updateTotal();
+    tbody.innerHTML = order.lines.filter(line => !line.lineType || line.lineType === "goods").map((line,index) => lineRow(index,line)).join("");
+    if (extraTbody) extraTbody.innerHTML = extraLineRow(0);
+    bindRows(); bindExtraRows(); updateTotal();
   });
   box.querySelector("#pd-save").addEventListener("click", () => {
     const lines = readLines(box), error = validateLines(lines);
@@ -401,7 +418,7 @@ function openDocument(type) {
       const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
       if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
       if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) { box.querySelector("#pd-error").textContent = "Le taux de taxe doit être compris entre 0 et 100 %."; return; }
-      doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pd-tax-recoverable").checked, accounts:{ supplier:box.querySelector("#pd-account-supplier").value, stock:box.querySelector("#pd-account-stock").value, purchases:box.querySelector("#pd-account-purchases").value, inputVat:box.querySelector("#pd-account-vat").value } };
+      doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pd-tax-recoverable").checked, accounts:{ supplier:box.querySelector("#pd-account-supplier").value, stock:box.querySelector("#pd-account-stock").value, purchases:box.querySelector("#pd-account-purchases").value, inputVat:box.querySelector("#pd-account-vat").value, services:box.querySelector("#pd-account-services").value, fixedAssets:box.querySelector("#pd-account-fixed-assets").value } };
     }
     p.documents.push(doc);
     box.closest("dialog").close(); persist(type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée."); renderList();
@@ -418,12 +435,14 @@ function configureSupplierAccounting(doc) {
     '<label>Compte de stock (actif, inventaire permanent)</label><select id="pac-stock">' + accountOptions("asset", accounts.stock, "stock") + '</select>' +
     '<label>Compte d’achats (charge, inventaire périodique)</label><select id="pac-purchases">' + accountOptions("expense", accounts.purchases, "purchases") + '</select>' +
     '<label>TVA récupérable (actif)</label><select id="pac-vat">' + accountOptions("asset", accounts.inputVat, "inputVat") + '</select>' +
+    '<label>Prestations de services (charge)</label><select id="pac-services">' + accountOptions("expense", accounts.services, "services") + '</select>' +
+    '<label>Immobilisations (actif)</label><select id="pac-fixed-assets">' + accountOptions("asset", accounts.fixedAssets, "fixedAssets") + '</select>' +
     '<div id="pac-error" class="errors"></div><div class="actions"><button id="pac-save">Enregistrer l’imputation</button><button class="secondary" data-close>Annuler</button></div>');
   box.querySelector("#pac-save").addEventListener("click", () => {
     const exchangeRate = Number(box.querySelector("#pac-rate").value), taxRate = Number(box.querySelector("#pac-tax").value);
     if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pac-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
     if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) { box.querySelector("#pac-error").textContent = "Le taux de taxe doit être compris entre 0 et 100 %."; return; }
-    doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pac-recoverable").checked, accounts:{ supplier:box.querySelector("#pac-supplier").value, stock:box.querySelector("#pac-stock").value, purchases:box.querySelector("#pac-purchases").value, inputVat:box.querySelector("#pac-vat").value } };
+    doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pac-recoverable").checked, accounts:{ supplier:box.querySelector("#pac-supplier").value, stock:box.querySelector("#pac-stock").value, purchases:box.querySelector("#pac-purchases").value, inputVat:box.querySelector("#pac-vat").value, services:box.querySelector("#pac-services").value, fixedAssets:box.querySelector("#pac-fixed-assets").value } };
     persist("Imputation comptable fournisseur enregistrée.");
     box.closest("dialog").close();
     openDetail(doc.id);

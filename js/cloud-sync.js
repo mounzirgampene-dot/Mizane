@@ -182,6 +182,9 @@ async function stockRpc(functionName, args = {}) {
 export function hasActiveStockCompany() {
   return Boolean(localStorage.getItem(ACTIVE_COMPANY_KEY));
 }
+export function readCloudStockPeriodValuation(startDate,endDate) {
+  return stockRpc("stock_period_valuation", { p_start_date:startDate, p_end_date:endDate });
+}
 export function readCloudStock() {
   return Promise.all([
     stockRpc("stock_read_state"),

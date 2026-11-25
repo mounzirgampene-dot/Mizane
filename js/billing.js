@@ -4,11 +4,11 @@
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
 import { reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts } from "./billing-accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts, suggestStockAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
-import { hasActiveStockCompany, readCloudStock, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
-import { postSalesStockCostJournalEntry } from "./stock-accounting.js";
+import { hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { postSalesStockCostJournalEntry, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -52,11 +52,12 @@ const getBilling = () => {
   const settings = store.billing.settings;
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
-  if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"]) {
+  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
+  if (!settings.accountingAccounts) settings.accountingAccounts = { ...suggestedAccounts, inventory:suggestedStockAccounts.inventory, stockVariation:suggestedStockAccounts.stockVariation };
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" || key === "cogs" ? "expense" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = ["inventory","cogs"].includes(key) ? "" : suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && (key === "stockVariation" ? ["expense","income"].includes(account.type) : account.type === type))) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -1025,7 +1026,8 @@ function openSettings() {
   const billingAccounts = [...new Map([...planAccounts, ...(companySettings.customAccounts || [])].map(account => [String(account.code), account])).values()];
   const accountSelect = (key, type, label) => {
     const selected = settings.accountingAccounts?.[key] || "";
-    const options = billingAccounts.filter(account => account.type === type)
+    const acceptedTypes = Array.isArray(type) ? type : [type];
+    const options = billingAccounts.filter(account => acceptedTypes.includes(account.type))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), "fr", { numeric: true }))
       .map(account => `<option value="${esc(account.code)}" ${String(account.code) === String(selected) ? "selected" : ""}>${esc(account.code)} — ${esc(account.label)}</option>`).join("");
     return `<div><label for="bill-account-${key}">${label}</label><select id="bill-account-${key}"><option value="">— Choisir un compte —</option>${options}</select></div>`;
@@ -1045,7 +1047,7 @@ function openSettings() {
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
     <h3>Comptabilisation automatique</h3>
-    <p class="muted">Choisissez les comptes de votre plan comptable. Les ventes et règlements sont comptabilisés automatiquement. En inventaire permanent, chaque sortie commerciale génère aussi une écriture du coût réel des marchandises sorties ; en inventaire intermittent, cette écriture périodique n’est pas générée.</p>
+    <p class="muted">Choisissez les comptes de votre plan comptable. Les ventes et règlements sont comptabilisés automatiquement. En inventaire permanent, les sorties commerciales et les opérations manuelles admissibles sont comptabilisées à leur valeur réelle ; les écarts d’inventaire sont ventilés entre gains et pertes. En inventaire intermittent, les écritures par mouvement ne sont pas générées.</p>
     <div class="grid cols-2">
       ${accountSelect("customer", "asset", "Compte client (créance)")}
       ${accountSelect("revenue", "income", "Compte de ventes / produits")}
@@ -1054,8 +1056,13 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
-      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent)")}
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}
+      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
       ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
+      ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
+      ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}
+      ${accountSelect("stockAdjustmentGain", "income", "Compte de gains d’inventaire (produit)")}
+      ${accountSelect("stockAdjustmentLoss", "expense", "Compte de pertes d’inventaire (charge)") }
     </div>
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
@@ -1105,7 +1112,7 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveBilling();
@@ -1113,6 +1120,7 @@ function openSettings() {
     renderList();
     toast("Paramètres de facturation enregistrés.");
     void retryPendingInvoiceStockOperations();
+    void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
   });
   document.getElementById("modal").showModal();
 }
@@ -1121,4 +1129,5 @@ export function viewBilling() {
   getBilling();
   renderList();
   void retryPendingInvoiceStockOperations();
+  void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
 }

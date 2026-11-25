@@ -12,13 +12,14 @@ import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
-import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically } from "../js/billing-accounting.js";
+import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestStockAccounts } from "../js/billing-accounting.js";
 import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
-import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry } from "../js/purchase-accounting.js";
-import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry } from "../js/stock-accounting.js";
+import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, buildSupplierMultiInvoicePaymentJournalEntry, postSupplierMultiInvoicePaymentJournalEntry } from "../js/purchase-credit-notes.js";
+import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
 const invitationMigration = readFileSync(new URL("../supabase/migrations/20261122100000_atomic_company_invitations.sql", import.meta.url), "utf8");
@@ -51,6 +52,10 @@ const stockCatalogIndexesMigration = readFileSync(new URL("../supabase/migration
 const stockCatalogGuardsMigration = readFileSync(new URL("../supabase/migrations/20261123165146_stock_product_catalog_unit_conversion_guard.sql", import.meta.url), "utf8");
 const stockPriceUnitsMigration = readFileSync(new URL("../supabase/migrations/20261123172036_stock_product_price_units.sql", import.meta.url), "utf8");
 const stockUiSource = readFileSync(new URL("../js/stock.js", import.meta.url), "utf8");
+const opsUiSource = readFileSync(new URL("../js/views/ops.js", import.meta.url), "utf8");
+const stockPeriodicValuationMigration = readFileSync(new URL("../supabase/migrations/20261125060451_stock_periodic_inventory_valuation.sql", import.meta.url), "utf8");
+const stockPeriodicValuationHardeningMigration = readFileSync(new URL("../supabase/migrations/20261125060559_stock_periodic_inventory_valuation_hardening.sql", import.meta.url), "utf8");
+const stockPeriodicValuationSecurityMigration = readFileSync(new URL("../supabase/migrations/20261125060730_stock_periodic_inventory_function_security.sql", import.meta.url), "utf8");
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
@@ -1597,7 +1602,7 @@ test("facturation : réservations explicites liées à la facture, converties et
 
 test("stock : les réceptions conservent la référence et l'origine fournisseur", () => {
   assert.match(stockUiSource,/sm-supplier/);
-  assert.match(stockUiSource,/sourceType:input.kind==="receipt"\?"supplier_receipt"/);
+  assert.match(stockUiSource,/const sourceType=input.kind==="receipt"\?"supplier_receipt"/);
   assert.match(stockUiSource,/Fournisseur : /);
   assert.match(stockUiSource,/Réception fournisseur/);
 });
@@ -1740,7 +1745,7 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 
 
 test("facturation : comptes de stock persistés et reprises automatiques idempotentes", () => {
-  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs"\]/);
+  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"\]/);
   assert.match(billingUiSource, /async function retryPendingInvoiceStockOperations\(\)/);
   assert.match(billingUiSource, /hasInventoryAccount/);
   assert.match(billingUiSource, /hasCogsAccount/);
@@ -1919,7 +1924,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v39/);
+  assert.match(serviceWorkerSource,/mizane-v43/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
@@ -1947,5 +1952,314 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
+
+test("achats : règlement groupé multi-factures, écriture unique, change et idempotence", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"571",label:"Caisse",type:"asset"},
+    {code:"675",label:"Pertes de change",type:"expense"},
+    {code:"778",label:"Gains de change",type:"income"},
+  ];
+  const invoices=[
+    {id:91,type:"invoice",number:"FAF-G-91",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:60,accounting:{exchangeRate:1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+    {id:92,type:"invoice",number:"FAF-G-92",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:40,accounting:{exchangeRate:1.1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+  ];
+  const allocations=[{invoiceId:91,amount:60},{invoiceId:92,amount:40}];
+  const payment={date:"2026-11-25",reference:"VIR-GROUPE-001",amount:100,currency:"MAD",method:"bank",exchangeRate:1.2};
+  const mapping={treasury:"512",fxLoss:"675",fxGain:"778"};
+  const proposal=buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.entries.length,1);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["401",60,0],["401",44,0],["675",16,0],["512",0,120],
+  ]);
+  const posted=postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping).ok,false,"un paiement groupé ne doit pas être comptabilisé deux fois");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,[{invoiceId:91,amount:61},{invoiceId:92,amount:40}],payment,mapping).ok,false,"une affectation ne peut dépasser le solde dû");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,amount:99},mapping).ok,false,"le montant payé doit correspondre aux affectations");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,method:"cash"}, {...mapping,treasury:"512"}).ok,false,"un paiement en espèces doit utiliser un compte de caisse");
+});
+
+test("stock : sorties manuelles et écarts d’inventaire sont comptabilisés selon les comptes configurés", () => {
+  const store=newStore();
+  store.settings.customAccounts=[
+    {code:"31",label:"Stock",type:"asset"},
+    {code:"65",label:"Consommation interne",type:"expense"},
+    {code:"658",label:"Pertes de stock",type:"expense"},
+    {code:"759",label:"Gains d’inventaire",type:"income"},
+    {code:"659",label:"Pertes d’inventaire",type:"expense"},
+  ];
+  const mapping={inventory:"31",stockConsumption:"65",stockLoss:"658",stockAdjustmentGain:"759",stockAdjustmentLoss:"659"};
+  const issue={id:"doc-issue",operation_uid:"uid-issue",document_type:"issue",source_type:"manual_stock",document_date:"2026-11-24",reference:"SORTIE-001"};
+  const issueMoves=[{document_id:"doc-issue",quantity_delta:-2,value_delta:-150,movement_date:"2026-11-24"}];
+  const consumption=buildStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(consumption.ok,true,consumption.errors?.join(" "));
+  assert.deepEqual(consumption.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["65",150,0],["31",0,150]]);
+  const loss=buildStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","damage");
+  assert.equal(loss.ok,true);
+  assert.equal(loss.entries[0].lines[0].account,"658");
+  assert.equal(buildStockOperationJournalEntry(store,issue,issueMoves,{...mapping,stockLoss:"31"},"perpetual","damage").ok,false);
+  const count={id:"doc-count",operation_uid:"uid-count",document_type:"adjustment",source_type:"inventory_count",document_date:"2026-11-24",reference:"INV-001"};
+  const countMoves=[
+    {document_id:"doc-count",quantity_delta:-1,value_delta:-50,movement_date:"2026-11-24"},
+    {document_id:"doc-count",quantity_delta:2,value_delta:20,movement_date:"2026-11-24"},
+  ];
+  const variance=buildStockOperationJournalEntry(store,count,countMoves,mapping,"perpetual");
+  assert.equal(variance.ok,true,variance.errors?.join(" "));
+  assert.deepEqual(variance.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["659",50,0],["31",0,50],["31",20,0],["759",0,20],
+  ]);
+  assert.equal(buildStockOperationJournalEntry(store,count,countMoves,mapping,"periodic").skipped,true);
+  const posted=postStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  const duplicate=postStockOperationJournalEntry(store,issue,issueMoves,mapping,"perpetual","internal_consumption");
+  assert.equal(duplicate.ok,true);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(store.entries.length,1);
+});
+
+test("stock : file d’attente comptable synchronisée, motif obligatoire et reprise automatique", () => {
+  assert.match(billingSyncSource,/pendingStockAccountingOperations/);
+  assert.match(billingSyncSource,/stockOperations\.set/);
+  assert.match(stockUiSource,/sm-reason/);
+  assert.match(stockUiSource,/Sélectionnez le motif de la sortie/);
+  assert.match(stockUiSource,/queueStockAccountingOperation/);
+  assert.match(stockUiSource,/retryPendingStockAccountingOperations/);
+  assert.match(billingUiSource,/stockAdjustmentGain/);
+  assert.match(billingUiSource,/stockAdjustmentLoss/);
+  assert.match(billingUiSource,/retryPendingStockAccountingOperations/);
+});
+
+
+test("stock intermittent : valorisation locale historique, transferts neutres et contrôles de positions", () => {
+  const stock={
+    settings:{accountingMode:"periodic"},
+    movements:[
+      {kind:"receipt",productId:1,warehouseId:1,quantity:10,quantityDelta:10,totalCost:100,date:"2026-01-01"},
+      {kind:"issue",productId:1,warehouseId:1,quantity:2,quantityDelta:-2,totalCost:20,date:"2026-02-05"},
+      {kind:"transfer",productId:1,warehouseId:1,destinationWarehouseId:2,quantity:1,quantityDelta:-1,totalCost:10,date:"2026-02-10"},
+    ],
+    countSessions:[],
+  };
+  const valuation=calculateLocalStockPeriodValuation(stock,"2026-02-01","2026-02-28");
+  assert.equal(valuation.ok,true);
+  assert.equal(valuation.accounting_mode,"periodic");
+  assert.equal(valuation.opening_value,100);
+  assert.equal(valuation.closing_value,80);
+  assert.equal(valuation.opening_negative_positions,0);
+  assert.equal(valuation.closing_negative_positions,0);
+  assert.equal(valuation.movement_count,2);
+  const blocked=calculateLocalStockPeriodValuation({...stock,countSessions:[{status:"counting"}]},"2026-02-01","2026-02-28");
+  assert.equal(blocked.active_count_sessions,1);
+  const transientNegative=calculateLocalStockPeriodValuation({
+    settings:{accountingMode:"periodic"},
+    movements:[
+      {kind:"receipt",productId:2,warehouseId:1,quantity:5,quantityDelta:5,totalCost:50,date:"2026-01-01"},
+      {kind:"issue",productId:2,warehouseId:1,quantity:7,quantityDelta:-7,totalCost:70,date:"2026-02-05"},
+      {kind:"receipt",productId:2,warehouseId:1,quantity:5,quantityDelta:5,totalCost:50,date:"2026-02-10"},
+    ],
+    countSessions:[],
+  },"2026-02-01","2026-02-28");
+  assert.equal(transientNegative.closing_negative_positions,0);
+  assert.equal(transientNegative.negative_movements,1);
+  const transientBlocked=buildPeriodicStockClosingJournalEntry(newStore(),{...transientNegative,period_start:"2026-02-01",period_end:"2026-02-28"},{});
+  assert.equal(transientBlocked.ok,false);
+});
+
+test("stock intermittent : comptes automatiques par plan comptable", () => {
+  const syscohada=suggestStockAccounts("syscohada",allAccounts("syscohada"));
+  assert.deepEqual([syscohada.inventory,syscohada.stockVariation,syscohada.stockVariationType],["31","603","expense"]);
+  const pcg=suggestStockAccounts("pcg",allAccounts("pcg"));
+  assert.deepEqual([pcg.inventory,pcg.stockVariation,pcg.stockVariationType],["37","713","income"]);
+  const nct=suggestStockAccounts("nct",allAccounts("nct"));
+  assert.deepEqual([nct.inventory,nct.stockVariation,nct.stockVariationType],["34","713","income"]);
+  const cgnc=suggestStockAccounts("cgnc",allAccounts("cgnc"));
+  assert.deepEqual([cgnc.inventory,cgnc.stockVariation,cgnc.stockVariationType],["314","713","income"]);
+});
+
+test("stock intermittent : variation de clôture, sens débit/crédit, idempotence et garde-fous", () => {
+  const store=newStore();
+  store.settings.plan="syscohada";
+  buildAccountCache(store,allAccounts("syscohada"));
+  const mapping=suggestStockAccounts("syscohada",allAccounts("syscohada"));
+  const positive={ok:true,accounting_mode:"periodic",period_start:"2026-01-01",period_end:"2026-12-31",opening_value:1000,closing_value:1350,opening_negative_positions:0,closing_negative_positions:0,active_count_sessions:0};
+  const proposal=buildPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",350,0],["603",0,350]]);
+  const posted=postPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  const duplicate=postPeriodicStockClosingJournalEntry(store,positive,mapping);
+  assert.equal(duplicate.ok,true);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(store.entries.length,1);
+  const decreasing={...positive,period_start:"2025-01-01",period_end:"2025-12-31",opening_value:1000,closing_value:700};
+  const down=buildPeriodicStockClosingJournalEntry(store,decreasing,mapping);
+  assert.equal(down.ok,true);
+  assert.deepEqual(down.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["603",300,0],["31",0,300]]);
+  const unchanged=buildPeriodicStockClosingJournalEntry(store,{...positive,period_start:"2024-01-01",period_end:"2024-12-31",closing_value:1000},mapping);
+  assert.equal(unchanged.skipped,true);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,opening_negative_positions:1},mapping).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,active_count_sessions:1},mapping).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,{...positive,accounting_mode:"perpetual"},mapping).skipped,true);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,positive,{...mapping,inventory:"603"}).ok,false);
+  assert.equal(buildPeriodicStockClosingJournalEntry(store,positive,{...mapping,stockVariation:"31"}).ok,false);
+});
+
+test("stock intermittent : valorisation serveur exhaustive et intégration dans la clôture d'exercice", () => {
+  assert.match(stockPeriodicValuationMigration,/stock_period_valuation/);
+  assert.match(stockPeriodicValuationMigration,/private\.stock_assert_writer/);
+  assert.match(stockPeriodicValuationMigration,/sum\(m\.value_delta\)/);
+  assert.match(stockPeriodicValuationMigration,/movement_date < p_start_date/);
+  assert.match(stockPeriodicValuationMigration,/movement_date <= p_end_date/);
+  assert.match(stockPeriodicValuationMigration,/stock_count_sessions/);
+  assert.match(stockPeriodicValuationMigration,/grant execute[\s\S]*to authenticated/i);
+  assert.doesNotMatch(stockPeriodicValuationMigration,/limit\s+500/i);
+  assert.match(stockPeriodicValuationHardeningMigration,/stock_movements_periodic_valuation_idx/);
+  assert.match(stockPeriodicValuationHardeningMigration,/sum\(m\.quantity_delta\) over/);
+  assert.match(stockPeriodicValuationHardeningMigration,/'negative_movements'/);
+  assert.match(stockPeriodicValuationSecurityMigration,/private\.stock_period_valuation_impl/);
+  assert.match(stockPeriodicValuationSecurityMigration,/security invoker/i);
+  assert.match(stockPeriodicValuationSecurityMigration,/grant execute[\s\S]*to authenticated/i);
+  assert.match(stockCloudSource,/stock_period_valuation/);
+  assert.match(opsUiSource,/postPeriodicStockAdjustment/);
+  assert.match(opsUiSource,/readCloudStockPeriodValuation/);
+  assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
+  assert.match(billingUiSource,/suggestStockAccounts/);
+  assert.match(billingUiSource,/stockVariation/);
+  assert.match(serviceWorkerSource,/mizane-v43/);
+});
+
+
+test("achats : règlements fournisseurs partiels, change, plafonnement et idempotence", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"571",label:"Caisse",type:"asset"},
+    {code:"675",label:"Pertes de change",type:"expense"},
+    {code:"778",label:"Gains de change",type:"income"},
+  ];
+  const invoice={id:70,type:"invoice",number:"FAF-2026-0070",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",date:"2026-11-20",total:100,supplierName:"Fournisseur test",accounting:{exchangeRate:2,taxRate:20,accounts:{supplier:"401"}},payments:[]};
+  const partial={id:1,date:"2026-11-25",amount:40,method:"bank",exchangeRate:2,treasury:"512"};
+  const proposal=buildSupplierPaymentJournalEntry(store,invoice,partial,partial);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.summary.remaining,80);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",80,0],["512",0,80]]);
+  const posted=postSupplierPaymentJournalEntry(store,invoice,partial,partial);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,partial,partial).ok,false,"un règlement déjà comptabilisé ne doit pas être dupliqué");
+  assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,payments:[{amount:40}]},{...partial,id:2,amount:81},{...partial}).ok,false,"le cumul des règlements ne doit pas dépasser la dette TTC");
+  const fxLoss=buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:2,amount:10,exchangeRate:2.1,treasury:"512",fxLoss:"675"},{...partial,fxLoss:"675"});
+  assert.equal(fxLoss.ok,true,fxLoss.errors?.join(" "));
+  assert.deepEqual(fxLoss.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["675",1,0],["512",0,21]]);
+  const fxGain=buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:3,amount:10,exchangeRate:1.9,treasury:"512",fxGain:"778"},{...partial,fxGain:"778"});
+  assert.equal(fxGain.ok,true,fxGain.errors?.join(" "));
+  assert.deepEqual(fxGain.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["778",0,1],["512",0,19]]);
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:4,date:"2026-02-30"},{...partial}).ok,false,"une date impossible doit être refusée");
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:5,treasury:"411"},{...partial,treasury:"411"}).ok,false,"un compte client de classe 4 ne peut pas être utilisé comme trésorerie");
+  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:6,method:"cash",treasury:"512"},{...partial,method:"cash",treasury:"512"}).ok,false,"un règlement en espèces doit utiliser un compte de caisse");
+  assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,accountingPostedAt:null},partial,partial).ok,false,"une facture non comptabilisée ne peut pas être réglée");
+});
+
+test("achats : avoirs fournisseurs équilibrés et rapprochement multi-factures avec tolérance", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"6",label:"Achats",type:"expense"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={id:81,type:"invoice",number:"FAF-2026-0081",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:100,accounting:{exchangeRate:1,taxRate:20,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"6",inputVat:"3455"}},payments:[],creditNotes:[]};
+  const credit={id:1,number:"AVF-2026-0001",date:"2026-11-25",total:30};
+  const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual");
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",36,0],["31",0,30],["3455",0,6]]);
+  assert.equal(postSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual").ok,true);
+  assert.equal(buildSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual").ok,false,"un avoir déjà comptabilisé ne doit pas être dupliqué");
+  assert.equal(buildSupplierCreditNoteJournalEntry(store,{...invoice,creditNotes:[{payableAmount:110}]},{...credit,id:2},"perpetual").ok,false,"un avoir ne peut pas dépasser le solde dû");
+  const invoices=[
+    {...invoice,id:82,number:"FAF-82",total:60,creditNotes:[]},
+    {...invoice,id:83,number:"FAF-83",total:40,creditNotes:[]},
+  ];
+  const match=planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:40}],{amount:100,currency:"MAD"},{tolerance:0});
+  assert.equal(match.ok,true,match.errors?.join(" "));
+  assert.equal(match.total,100);
+  const tolerated=planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:39.75}],{amount:100,currency:"MAD"},{tolerance:0.25});
+  assert.equal(tolerated.ok,true,tolerated.errors?.join(" "));
+  assert.equal(tolerated.status,"matched_with_tolerance");
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:39}],{amount:100,currency:"MAD"},{tolerance:0.25}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:82,amount:40}],{amount:100,currency:"MAD"},{tolerance:0}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:60},{invoiceId:83,amount:40}],{amount:100,currency:"EUR"},{tolerance:0}).ok,false);
+  assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:73},{invoiceId:83,amount:27}],{amount:100,currency:"MAD"},{tolerance:0}).ok,false);
+});
+
+test("achats : ventilation comptable des factures fournisseurs mixtes", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"607",label:"Achats de marchandises",type:"expense"},
+    {code:"613",label:"Services extérieurs",type:"expense"},
+    {code:"218",label:"Matériel et immobilisations corporelles",type:"asset"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={
+    id:901,type:"invoice",number:"FAF-MIX-901",date:"2026-11-25",status:"validated",
+    supplierName:"Fournisseur mixte",total:100,
+    lines:[
+      {lineType:"goods",quantity:2,unitCost:30},
+      {lineType:"service",description:"Installation",quantity:1,unitCost:20},
+      {lineType:"fixed_asset",description:"Équipement",quantity:1,unitCost:20},
+    ],
+    accounting:{exchangeRate:1,taxRate:10,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"607",services:"613",fixedAssets:"218",inputVat:"3455"}},
+  };
+  const perpetual=buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
+  assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["31",60,0],["613",20,0],["218",20,0],["3455",10,0],["401",0,110],
+  ]);
+  const periodic=buildSupplierInvoiceJournalEntry(store,invoice,"periodic");
+  assert.equal(periodic.ok,true,periodic.errors?.join(" "));
+  assert.equal(periodic.entries[0].lines[0].account,"607");
+  assert.equal(periodic.entries[0].lines.at(-1).credit,110);
+  const nonRecoverable=buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},"perpetual");
+  assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
+  assert.equal(nonRecoverable.entries[0].lines.reduce((sum,line)=>sum+line.debit,0),110);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,services:""}}},"perpetual").ok,false,"une ligne de service sans compte dédié doit bloquer la validation");
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,total:99},"perpetual").ok,false,"le total doit correspondre à la somme des lignes");
+});
+
+test("achats : ventilation comptable des factures mixtes marchandises, services et immobilisations", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"607",label:"Achats de marchandises",type:"expense"},
+    {code:"613",label:"Prestations de services",type:"expense"},
+    {code:"218",label:"Matériel et immobilisations corporelles",type:"asset"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={id:901,type:"invoice",number:"FAF-MIX-901",date:"2026-11-25",status:"validated",supplierName:"Fournisseur mixte",total:100,
+    lines:[{lineType:"goods",quantity:2,unitCost:30},{lineType:"service",description:"Installation",quantity:1,unitCost:20},{lineType:"fixed_asset",description:"Équipement",quantity:1,unitCost:20}],
+    accounting:{exchangeRate:1,taxRate:10,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"607",services:"613",fixedAssets:"218",inputVat:"3455"}}};
+  const perpetual=buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
+  assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",60,0],["613",20,0],["218",20,0],["3455",10,0],["401",0,110]]);
+  const periodic=buildSupplierInvoiceJournalEntry(store,invoice,"periodic");
+  assert.equal(periodic.ok,true,periodic.errors?.join(" "));
+  assert.equal(periodic.entries[0].lines[0].account,"607");
+  const nonRecoverable=buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},"perpetual");
+  assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
+  assert.equal(nonRecoverable.entries[0].lines.reduce((sum,line)=>sum+line.debit,0),110);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,services:""}}},"perpetual").ok,false);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,total:99},"perpetual").ok,false);
+});
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

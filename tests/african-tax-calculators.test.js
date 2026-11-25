@@ -39,4 +39,17 @@ assert.equal(ciWht.taxAmount,200000);
 assert.equal(ciWht.effectiveRate,20);
 assert.equal(calculateCoteIvoireWithholding({ruleCode:"CI_AIRSI",baseAmount:100000,date:"2025-12-31"}).ok,false);
 assert.ok(getAfricanWithholdingOptions("CI").length>=8);
-console.log("Lot 25 — calculateurs fiscaux Sénégal et Côte d’Ivoire : OK");
+
+const ciRirlPersonal=calculateCoteIvoireWithholding({ruleCode:"CI_RIRL_PERSONAL",baseAmount:500000,date:"2026-06-01"});
+assert.equal(ciRirlPersonal.ok,true);
+assert.equal(ciRirlPersonal.rate,12);
+assert.equal(ciRirlPersonal.taxAmount,60000);
+const ciRirlLegal=calculateCoteIvoireWithholding({ruleCode:"CI_RIRL_LEGAL",baseAmount:500000,date:"2026-06-01"});
+assert.equal(ciRirlLegal.ok,true);
+assert.equal(ciRirlLegal.rate,15);
+assert.equal(ciRirlLegal.taxAmount,75000);
+assert.equal(calculateCoteIvoireWithholding({ruleCode:"CI_RIRL",baseAmount:500000,date:"2026-06-01"}).ok,false);
+const ciRirlOptions=getAfricanWithholdingOptions("CI");
+assert.ok(ciRirlOptions.some(x=>x.code==="CI_RIRL_PERSONAL"&&x.rate===12));
+assert.ok(ciRirlOptions.some(x=>x.code==="CI_RIRL_LEGAL"&&x.rate===15));
+console.log("Lot 25/38 — calculateurs fiscaux Sénégal et Côte d’Ivoire : OK");

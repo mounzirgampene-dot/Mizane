@@ -39,6 +39,7 @@ on:
       - feat/lot35-mauritania-tax-profile
       - fix/lot36-mauritania-vat-rate
       - feat/lot37-niger-guinea-tax
+      - feat/lot38-ci-tax-audit-2026-11
   pull_request:
     branches:
       - main

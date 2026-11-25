@@ -4,6 +4,7 @@
 import { store, $app, saveNow, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from "./cloud-sync.js";
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
+import { buildSupplierInvoiceControlReport } from "./purchase-controls.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
 import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, postSupplierMultiInvoicePaymentJournalEntry } from "./purchase-credit-notes.js";
@@ -192,40 +193,19 @@ function purchaseLineKey(line) {
 function orderLinesFor(order, line) {
   return (order?.lines || []).filter(item => purchaseLineKey(item) === purchaseLineKey(line));
 }
-function orderedQuantity(order, line) {
-  return round(orderLinesFor(order, line).reduce((sum, item) => sum + num(item.baseQuantity), 0));
-}
-function invoicedQuantity(orderId, line, exceptInvoiceId = null) {
-  return round(data().documents
-    .filter(doc => doc.type === "invoice" && doc.orderId === orderId && doc.status !== "cancelled" && doc.id !== exceptInvoiceId)
-    .flatMap(doc => doc.lines || [])
-    .filter(item => item.lineType !== "service" && item.lineType !== "fixed_asset")
-    .filter(item => purchaseLineKey(item) === purchaseLineKey(line))
-    .reduce((sum, item) => sum + num(item.baseQuantity), 0));
-}
 function validateInvoiceAgainstOrder(order, invoice, { requireReceived = false } = {}) {
-  if (!order || order.type !== "order" || order.supplierId !== invoice.supplierId) return "Commande fournisseur introuvable ou fournisseur incohérent.";
-  const invoiceTotals = new Map();
-  for (const line of invoice.lines || []) {
-    if (line.lineType === "service" || line.lineType === "fixed_asset") continue;
-    const matches = orderLinesFor(order, line);
-    if (!matches.length) return "Rapprochement impossible : article ou entrepôt absent de la commande.";
-    if (matches.some(item => Math.abs(num(item.unitCost) - num(line.unitCost)) > 0.0001)) return "Rapprochement impossible : le coût unitaire diffère de la commande.";
-    const key = purchaseLineKey(line);
-    invoiceTotals.set(key, round((invoiceTotals.get(key) || 0) + num(line.baseQuantity)));
-    if (requireReceived) {
-      const received = round(matches.reduce((sum, item) => sum + num(item.receivedBase), 0));
-      if (num(line.baseQuantity) > received) return "Rapprochement bloqué : la quantité facturée dépasse la quantité physiquement reçue.";
-    }
-  }
-  for (const [key, quantity] of invoiceTotals) {
-    const line = (invoice.lines || []).find(item => purchaseLineKey(item) === key);
-    const alreadyInvoiced = invoicedQuantity(order.id, line, invoice.id);
-    if (alreadyInvoiced + quantity > orderedQuantity(order, line) + 0.0001) {
-      return "Rapprochement impossible : le cumul des factures dépasse la quantité commandée.";
-    }
-  }
-  return "";
+  const report = buildSupplierInvoiceControlReport({
+    documents: data().documents,
+    invoice: {
+      ...invoice,
+      type: invoice.type || "invoice",
+      orderId: invoice.orderId || order?.id,
+      total: invoice.total ?? totals(invoice.lines || []),
+    },
+    order,
+    requireReceived,
+  });
+  return report.errors[0]?.message || "";
 }
 function unitOptions(item, selected = "") {
   const base = item.base_unit || "unité";
@@ -625,6 +605,17 @@ async function postSupplierAccounting(doc, box) {
   box.closest("dialog")?.close(); renderList(); return true;
 }
 async function validateInvoice(doc, box) {
+  const linkedOrder = doc.orderId ? data().documents.find(item => String(item.id) === String(doc.orderId)) : null;
+  const controlReport = buildSupplierInvoiceControlReport({
+    documents: data().documents,
+    invoice: doc,
+    order: linkedOrder,
+    requireReceived: stockState?.settings?.purchase_trigger === "receipt",
+  });
+  if (!controlReport.ok) {
+    box.querySelector("#pd-detail-error").textContent = controlReport.errors[0].message;
+    return;
+  }
   const proposal = buildSupplierInvoiceJournalEntry(store, doc, stockState?.settings?.accountingMode || "perpetual");
   if (!proposal.ok) { box.querySelector("#pd-detail-error").textContent = proposal.errors.join(" "); return; }
   if (doc.orderId) {

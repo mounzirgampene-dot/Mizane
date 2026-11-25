@@ -16,6 +16,7 @@ import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCred
 import { calculateOutstandingBase } from "../js/billing-core.js";
 import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "../js/stock-core.js";
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
+import { buildSupplierInvoiceControlReport } from "../js/purchase-controls.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -61,6 +62,7 @@ const stockPeriodicValuationSecurityMigration = readFileSync(new URL("../supabas
 const reportsUiSource = readFileSync(new URL("../js/views/reports.js", import.meta.url), "utf8");
 const financialUiSource = readFileSync(new URL("../js/views/financial.js", import.meta.url), "utf8");
 const purchasesUiSource = readFileSync(new URL("../js/purchases.js", import.meta.url), "utf8");
+const purchaseControlsSource = readFileSync(new URL("../js/purchase-controls.js", import.meta.url), "utf8");
 const purchaseAccountingSource = readFileSync(new URL("../js/purchase-accounting.js", import.meta.url), "utf8");
 const serviceWorkerSource = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 const purchaseReceiptSource = readFileSync(new URL("../js/purchase-receipts.js", import.meta.url), "utf8");
@@ -1672,7 +1674,7 @@ test("achats : fournisseurs, commandes, factures et rapprochement commande/factu
   assert.match(purchasesUiSource,/Nouveau fournisseur/);
   assert.match(purchasesUiSource,/Nouvelle commande fournisseur/);
   assert.match(purchasesUiSource,/Nouvelle facture fournisseur/);
-  assert.match(purchasesUiSource,/Rapprochement impossible/);
+  assert.match(purchaseControlsSource,/Rapprochement impossible/);
   assert.match(purchasesUiSource,/purchase_trigger/);
   assert.match(purchasesUiSource,/supplier_receipt/);
   assert.match(purchasesUiSource,/supplier_invoice/);
@@ -1681,9 +1683,9 @@ test("achats : factures multiples rapprochées cumulativement par article et ent
   assert.match(purchasesUiSource,/function purchaseLineKey\(line\)/);
   assert.match(purchasesUiSource,/doc\.type === "order" && doc\.status !== "cancelled"/);
   assert.match(purchasesUiSource,/function orderLinesFor\(order, line\)/);
-  assert.match(purchasesUiSource,/function invoicedQuantity\(orderId, line, exceptInvoiceId = null\)/);
-  assert.match(purchasesUiSource,/cumul des factures dépasse la quantité commandée/);
-  assert.match(purchasesUiSource,/matches\.some\(item => Math\.abs\(num\(item\.unitCost\) - num\(line\.unitCost\)\) > 0\.0001\)/);
+  assert.match(purchaseControlsSource,/alreadyInvoiced/);
+  assert.match(purchaseControlsSource,/cumul des factures dépasse la quantité commandée/);
+  assert.match(purchaseControlsSource,/price_mismatch/);
   assert.match(purchasesUiSource,/requireReceived:stockState\?\.settings\?\.purchase_trigger === "receipt"/);
 });
 test("achats : réception d'une facture répartie avant le mouvement serveur", () => {
@@ -1926,7 +1928,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v46/);
+  assert.match(serviceWorkerSource,/mizane-v47/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2135,7 +2137,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v46/);
+  assert.match(serviceWorkerSource,/mizane-v47/);
 });
 
 
@@ -2337,5 +2339,46 @@ test("achats : une imputation personnalisée valide est prioritaire sur la sugge
   assert.equal(suggestion.accounts.supplier, "401X");
   assert.equal(suggestion.labels.supplier, "Fournisseurs personnalisés");
 });
+
+test("achats : rapport de contrôle bloque les doublons, écarts de prix et dépassements de commande/réception", () => {
+  const order = { id: 10, type: "order", supplierId: 7, lines: [
+    { productId: "P1", warehouseId: "W1", quantity: 5, factor: 1, baseQuantity: 5, unitCost: 10, baseUnitCost: 10, receivedBase: 4 },
+  ] };
+  const invoice = { id: 11, type: "invoice", orderId: 10, supplierId: 7, reference: "FAC-11", total: 20, status: "draft",
+    lines: [{ lineType: "goods", productId: "P1", warehouseId: "W1", quantity: 2, factor: 1, baseQuantity: 2, unitCost: 10, baseUnitCost: 10 }] };
+  const valid = buildSupplierInvoiceControlReport({ documents: [], invoice, order, requireReceived: true });
+  assert.equal(valid.ok, true, valid.errors.map(item => item.message).join(" "));
+  assert.equal(valid.checks.some(item => item.code === "order_match"), true);
+
+  const duplicate = buildSupplierInvoiceControlReport({
+    documents: [{ id: 12, type: "invoice", supplierId: 7, reference: " fac-11 ", number: "FAF-12", status: "validated" }],
+    invoice, order, requireReceived: false,
+  });
+  assert.equal(duplicate.ok, false);
+  assert.equal(duplicate.errors.some(item => item.code === "duplicate_invoice"), true);
+
+  const priceMismatch = buildSupplierInvoiceControlReport({ documents: [], invoice: { ...invoice, lines: [{ ...invoice.lines[0], unitCost: 11, baseUnitCost: 11 }] }, order });
+  assert.equal(priceMismatch.errors.some(item => item.code === "price_mismatch"), true);
+
+  const previousInvoice = { id: 9, type: "invoice", orderId: 10, status: "validated", lines: [{ ...invoice.lines[0], quantity: 4, baseQuantity: 4 }] };
+  const orderedExceeded = buildSupplierInvoiceControlReport({ documents: [previousInvoice], invoice, order });
+  assert.equal(orderedExceeded.errors.some(item => item.code === "ordered_quantity_exceeded"), true);
+
+  const receivedExceeded = buildSupplierInvoiceControlReport({ documents: [], invoice: { ...invoice, lines: [{ ...invoice.lines[0], quantity: 5, baseQuantity: 5 }], total: 50 }, order, requireReceived: true });
+  assert.equal(receivedExceeded.errors.some(item => item.code === "received_quantity_exceeded"), true);
+
+  const wrongTotal = buildSupplierInvoiceControlReport({ documents: [], invoice: { ...invoice, total: 19 }, order });
+  assert.equal(wrongTotal.errors.some(item => item.code === "invoice_total_mismatch"), true);
+});
+
+test("achats : facture sans commande signalée sans blocage et rapport sans mutation", () => {
+  const invoice = { id: 20, type: "invoice", supplierId: 2, reference: "FAC-20", total: 30, lines: [{ lineType: "service", description: "Conseil", quantity: 1, unitCost: 30 }] };
+  const before = structuredClone(invoice);
+  const report = buildSupplierInvoiceControlReport({ documents: [], invoice });
+  assert.equal(report.ok, true);
+  assert.equal(report.warnings.some(item => item.code === "unlinked_order"), true);
+  assert.deepEqual(invoice, before, "le contrôle ne doit jamais modifier la facture");
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

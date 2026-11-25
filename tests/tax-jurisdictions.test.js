@@ -3,7 +3,7 @@ import "./regional-african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
-const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,0]},GQ:{currency:"XAF",rates:[15,5,0]}};
+const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,8,0]},GQ:{currency:"XAF",rates:[15,5,0]}};
 for(const [code,spec] of Object.entries(expected)){
  const p=getTaxCountryProfile(code);
  assert.equal(p.status,"active",code);
@@ -65,7 +65,8 @@ assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_16",baseAmount:1
 assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_5",baseAmount:1000,date:"2026-01-01"}).ok,false);
 assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_5",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,50);
 assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_1",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,10);
-assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_8",baseAmount:1000,date:"2026-01-01"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_8",baseAmount:1000,date:"2026-08-17"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_8",baseAmount:1000,date:"2026-08-17",eligibilityConfirmed:true}).taxAmount,80);
 assert.equal(calculateTaxLine({countryCode:"GQ",taxCode:"GQ_VAT_15",baseAmount:1000,date:"2025-01-01"}).taxAmount,150);
 assert.equal(calculateTaxLine({countryCode:"GQ",taxCode:"GQ_VAT_5",baseAmount:1000,date:"2025-01-01",eligibilityConfirmed:true}).taxAmount,50);
 assert.equal(getTaxCountryProfile("CD").calculationModules.includes("IS"),false);

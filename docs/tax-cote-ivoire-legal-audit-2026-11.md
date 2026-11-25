@@ -108,7 +108,9 @@ Le formulaire officiel DGI rattache l’acompte sur les revenus locatifs aux **a
 
 Il s’agit d’un **acompte sur l’impôt sur les revenus locatifs**, et non d’un taux général de retenue sur tous les loyers ni d’un impôt autonome de 7,5 %. La base documentée est le montant brut des loyers. Les articles 168 et 169, les catégories de payeurs, les intermédiaires et la distinction entre bailleur personne physique et bailleur personne morale doivent être représentés correctement.
 
-**État :** incohérence substantielle confirmée. La règle `CI_RIRL` ne doit pas être utilisée telle quelle. La correction doit remplacer le taux unique de 7,5 % par une logique conditionnelle 12 % / 15 %, après contrôle final du CGI 2026 et de toutes les exceptions, puis ajouter des tests ciblés. Il ne suffit pas de changer uniquement le numéro d’article.
+**Correction apportée dans le Lot 38 :** la règle unique `CI_RIRL` à 7,5 % a été remplacée par deux options distinctes : `CI_RIRL_PERSONAL` à 12 % pour un propriétaire personne physique et `CI_RIRL_LEGAL` à 15 % lorsque le local appartient à une personne morale ou à une entreprise. Les deux options renvoient aux articles 168 et 169 et portent un avertissement sur les redevables légaux et les exceptions. L’ancien identifiant `CI_RIRL` renvoie désormais une erreur explicite afin d’éviter qu’une ancienne sélection applique silencieusement le mauvais taux.
+
+**Limite restante :** la sélection 12 % / 15 % dépend de la qualité du propriétaire ; le calculateur ne vérifie pas à lui seul si le payeur est soumis au régime de retenue, si un intermédiaire est seul tenu de prélever, ni les cas d’exonération. Ces conditions doivent être contrôlées avant paiement.
 
 ### 3.7. Autres retenues : AIRSI, PPSSI, RIBIC, IRVM et FIRCA
 
@@ -120,10 +122,10 @@ Le commentaire DGI de l’annexe fiscale 2025 décrit une dispense conditionnell
 
 ## 4. Décisions de sécurité fiscale
 
-1. Aucun nouveau taux n’est ajouté dans ce lot documentaire.
+1. Aucun nouvel impôt n’est introduit ; la règle RIRL erronée à 7,5 % est corrigée en deux options conditionnelles de 12 % et 15 %, conformément aux documents DGI consultés.
 2. Les règles de TVA 18 % et 9 % existantes sont conservées, sous réserve de la documentation de la période transitoire.
 3. Le champ de la retenue BNC 7,5 % de 2026 doit être explicitement conditionné.
-4. La règle `CI_RIRL` est signalée comme substantiellement incohérente : elle utilise 7,5 % et l’article 93 alors que les documents DGI consultés décrivent un acompte sur revenus locatifs régi par les articles 168 et suivants, aux taux de 12 % ou 15 % selon le propriétaire et la situation. Ne pas utiliser cette règle avant correction et tests.
+4. La règle `CI_RIRL` a été remplacée par `CI_RIRL_PERSONAL` (12 %) et `CI_RIRL_LEGAL` (15 %), avec références aux articles 168 et 169. L’ancien identifiant renvoie une erreur explicite. Les conditions relatives au payeur, à l’intermédiaire et aux exonérations restent à vérifier au moment de l’utilisation.
 5. Les retenues AIRSI, PPSSI, RIBIC, IRVM et FIRCA restent soumises à une vérification juridique individuelle.
 6. Aucun calculateur fiscal du Niger, de la Guinée ou de la Guinée-Bissau n’est activé par ce dossier.
 
@@ -133,8 +135,8 @@ Le commentaire DGI de l’annexe fiscale 2025 décrit une dispense conditionnell
 2. Rapprocher chaque retenue ivoirienne de son article exact, de son assiette, du statut du bénéficiaire et de ses exonérations.
 3. Ajouter des tests de non-régression pour les dates d’entrée en vigueur de la TVA, le taux réduit conditionnel et les retenues soumises à conditions.
 4. Corriger uniquement les écarts démontrés, dans une PR ciblant exclusivement `feat/stock-integrated-dev`.
-5. Exécuter les tests, le lint, les workflows CI et le contrôle Preview avant toute fusion dans DEV.
+5. Le fichier `tests/african-tax-calculators.test.js` est désormais exécuté par `npm test` ; les tests ciblent les deux taux RIRL, les montants calculés et le rejet de l’ancien identifiant. Exécuter le lint, les workflows CI et contrôler la disponibilité d’un Preview avant toute fusion dans DEV.
 
 ---
 
-**Conclusion :** le dossier juridique confirme plusieurs paramètres déjà présents dans MIZANE, mais met également en évidence une référence erronée pour la retenue sur revenus locatifs et des conditions de champ qui doivent être mieux reflétées par les calculateurs. Le présent lot est documentaire ; il ne modifie aucun taux fiscal et ne déclenche aucun calcul supplémentaire.
+**Conclusion :** le contrôle juridique a confirmé plusieurs paramètres déjà présents dans MIZANE et a révélé une erreur substantielle dans la retenue sur revenus locatifs : la référence à l’article 93 et le taux unique de 7,5 % ont été remplacés par deux options conditionnelles fondées sur les articles 168 et 169 et les publications officielles DGI. Les calculateurs et tests ont été adaptés sans modifier la TVA ni les autres taux fiscaux.

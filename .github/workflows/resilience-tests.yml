@@ -36,6 +36,7 @@ on:
       - feat/lot32-central-tax-document-vault
       - feat/lot33-central-africa-tax-profiles
       - feat/lot34-drc-equatorial-guinea
+      - feat/lot35-mauritania-tax-profile
   pull_request:
     branches:
       - main

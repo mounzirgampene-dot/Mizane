@@ -14,10 +14,12 @@ on:
       - feat/lot8-supplier-line-tax-rates
       - feat/lot9-supplier-credit-note-line-allocation
       - feat/lot10-supplier-auto-account-mapping
+      - feat/lot16-financial-forecast
       - feat/lot11-supplier-purchase-controls
       - feat/lot12-supplier-payment-schedule
       - feat/lot13-commercial-margins
       - feat/lot14-commercial-performance
+      - feat/lot16-financial-forecast
   pull_request:
     branches:
       - main

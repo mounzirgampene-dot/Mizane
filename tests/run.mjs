@@ -1924,7 +1924,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v42/);
+  assert.match(serviceWorkerSource,/mizane-v43/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
 
@@ -2132,7 +2132,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v42/);
+  assert.match(serviceWorkerSource,/mizane-v43/);
 });
 
 
@@ -2200,5 +2200,66 @@ test("achats : avoirs fournisseurs équilibrés et rapprochement multi-factures 
   assert.equal(planSupplierMultiInvoiceReconciliation(invoices,[{invoiceId:82,amount:73},{invoiceId:83,amount:27}],{amount:100,currency:"MAD"},{tolerance:0}).ok,false);
 });
 
+test("achats : ventilation comptable des factures fournisseurs mixtes", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"607",label:"Achats de marchandises",type:"expense"},
+    {code:"613",label:"Services extérieurs",type:"expense"},
+    {code:"218",label:"Matériel et immobilisations corporelles",type:"asset"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={
+    id:901,type:"invoice",number:"FAF-MIX-901",date:"2026-11-25",status:"validated",
+    supplierName:"Fournisseur mixte",total:100,
+    lines:[
+      {lineType:"goods",quantity:2,unitCost:30},
+      {lineType:"service",description:"Installation",quantity:1,unitCost:20},
+      {lineType:"fixed_asset",description:"Équipement",quantity:1,unitCost:20},
+    ],
+    accounting:{exchangeRate:1,taxRate:10,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"607",services:"613",fixedAssets:"218",inputVat:"3455"}},
+  };
+  const perpetual=buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
+  assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["31",60,0],["613",20,0],["218",20,0],["3455",10,0],["401",0,110],
+  ]);
+  const periodic=buildSupplierInvoiceJournalEntry(store,invoice,"periodic");
+  assert.equal(periodic.ok,true,periodic.errors?.join(" "));
+  assert.equal(periodic.entries[0].lines[0].account,"607");
+  assert.equal(periodic.entries[0].lines.at(-1).credit,110);
+  const nonRecoverable=buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},"perpetual");
+  assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
+  assert.equal(nonRecoverable.entries[0].lines.reduce((sum,line)=>sum+line.debit,0),110);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,services:""}}},"perpetual").ok,false,"une ligne de service sans compte dédié doit bloquer la validation");
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,total:99},"perpetual").ok,false,"le total doit correspondre à la somme des lignes");
+});
+
+test("achats : ventilation comptable des factures mixtes marchandises, services et immobilisations", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"607",label:"Achats de marchandises",type:"expense"},
+    {code:"613",label:"Prestations de services",type:"expense"},
+    {code:"218",label:"Matériel et immobilisations corporelles",type:"asset"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={id:901,type:"invoice",number:"FAF-MIX-901",date:"2026-11-25",status:"validated",supplierName:"Fournisseur mixte",total:100,
+    lines:[{lineType:"goods",quantity:2,unitCost:30},{lineType:"service",description:"Installation",quantity:1,unitCost:20},{lineType:"fixed_asset",description:"Équipement",quantity:1,unitCost:20}],
+    accounting:{exchangeRate:1,taxRate:10,taxRecoverable:true,accounts:{supplier:"401",stock:"31",purchases:"607",services:"613",fixedAssets:"218",inputVat:"3455"}}};
+  const perpetual=buildSupplierInvoiceJournalEntry(store,invoice,"perpetual");
+  assert.equal(perpetual.ok,true,perpetual.errors?.join(" "));
+  assert.deepEqual(perpetual.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",60,0],["613",20,0],["218",20,0],["3455",10,0],["401",0,110]]);
+  const periodic=buildSupplierInvoiceJournalEntry(store,invoice,"periodic");
+  assert.equal(periodic.ok,true,periodic.errors?.join(" "));
+  assert.equal(periodic.entries[0].lines[0].account,"607");
+  const nonRecoverable=buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},"perpetual");
+  assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
+  assert.equal(nonRecoverable.entries[0].lines.reduce((sum,line)=>sum+line.debit,0),110);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,accounting:{...invoice.accounting,accounts:{...invoice.accounting.accounts,services:""}}},"perpetual").ok,false);
+  assert.equal(buildSupplierInvoiceJournalEntry(store,{...invoice,total:99},"perpetual").ok,false);
+});
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

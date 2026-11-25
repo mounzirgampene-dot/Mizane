@@ -15,59 +15,75 @@ function accountsFor(store) {
 export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode = "perpetual") {
   const errors = [];
   if (!invoice || invoice.type !== "invoice" || invoice.status === "cancelled") {
-    return { ok: false, errors: ["Facture fournisseur absente ou annulée."], entries: [] };
+    return { ok:false, errors:["Facture fournisseur absente ou annulée."], entries:[] };
   }
-  const config = invoice.accounting || {};
-  const mapping = config.accounts || {};
+  const config = invoice.accounting || {}, mapping = config.accounts || {};
   const accounts = accountsFor(store);
-  const accountMatchesPurpose = (account, key) => {
-    const code = String(account.code || "");
-    const label = String(account.label || "").toLocaleLowerCase();
-    if (key === "supplier") return code.startsWith("4") && /fournisseur/.test(label);
-    if (key === "stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
-    if (key === "purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
-    if (key === "inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
+  const sourceTotal = Number(invoice.total);
+  const lines = Array.isArray(invoice.lines) ? invoice.lines : [];
+  const normalized = (lines.length ? lines : [{lineType:"goods",amount:sourceTotal}]).map(line => ({
+    ...line,
+    lineType: ["service","fixed_asset"].includes(line.lineType) ? line.lineType : "goods",
+    amount: Number.isFinite(Number(line.amount)) ? round2(Number(line.amount)) : round2(Number(line.quantity || 0) * Number(line.unitCost || 0)),
+  }));
+  if (!normalized.length || normalized.some(line => line.amount < 0 || !Number.isFinite(line.amount))) {
+    errors.push("Chaque ligne de facture doit avoir un montant HT strictement positif.");
+  }
+  const computedTotal = round2(normalized.reduce((sum,line)=>sum+line.amount,0));
+  if (!(sourceTotal > 0) || !Number.isFinite(sourceTotal)) errors.push("Le total HT de la facture doit être positif.");
+  else if (Math.abs(round2(sourceTotal)-computedTotal) > 0.01) errors.push("Le total HT ne correspond pas à la somme des lignes de la facture.");
+  const accountMatchesPurpose = (account,key) => {
+    const code=String(account.code||""), label=String(account.label||"").toLocaleLowerCase();
+    if (key==="supplier") return code.startsWith("4") && /fournisseur/.test(label);
+    if (key==="stock") return code.startsWith("3") && /(stock|marchandise|matière|approvisionnement|produit)/.test(label);
+    if (key==="purchases") return code.startsWith("6") && /(achat|charge)/.test(label);
+    if (key==="services") return code.startsWith("6") && /(service|honoraire|charge|prestation)/.test(label);
+    if (key==="fixedAssets") return code.startsWith("2") && /(immobil|matériel|terrain|construction|équipement)/.test(label);
+    if (key==="inputVat") return /(tva.*(récupérable|déductible|acquisition|achats)|taxe.*récupérable|impôt.*récupérable)/.test(label);
     return true;
   };
-  const requireAccount = (key, type, label) => {
-    const code = String(mapping[key] || "").trim();
-    if (!code || !accounts.some(account => String(account.code) === code && account.type === type && accountMatchesPurpose(account, key))) {
-      errors.push("Compte " + label + " absent ou incompatible avec le plan comptable.");
-      return "";
+  const requireAccount = (key,type,label) => {
+    const code=String(mapping[key]||"").trim();
+    if (!code || !accounts.some(account=>String(account.code)===code && account.type===type && accountMatchesPurpose(account,key))) {
+      errors.push("Compte "+label+" absent ou incompatible avec le plan comptable."); return "";
     }
     return code;
   };
-  const supplier = requireAccount("supplier", "liability", "fournisseur (passif)");
-  const stock = accountingMode === "periodic" ? "" : requireAccount("stock", "asset", "de stock (actif)");
-  const purchases = accountingMode === "periodic" ? requireAccount("purchases", "expense", "d'achat (charge)") : "";
-  const rate = Number(config.exchangeRate);
-  const taxRate = Number(config.taxRate);
-  if (!(rate > 0) || !Number.isFinite(rate)) errors.push("Taux de conversion fournisseur invalide.");
-  if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) errors.push("Taux de taxe fournisseur invalide (0 à 100 %).");
-  const sourceTotal = Number(invoice.total);
-  if (!(sourceTotal > 0) || !Number.isFinite(sourceTotal)) errors.push("Le total HT de la facture doit être positif.");
-  const baseHT = round2(sourceTotal * rate);
-  const baseTax = round2(baseHT * taxRate / 100);
-  const recoverable = config.taxRecoverable === true && baseTax > 0;
-  const inputVat = recoverable ? requireAccount("inputVat", "asset", "de TVA récupérable (actif)") : "";
-  const debitAmount = round2(baseHT + (recoverable ? 0 : baseTax));
-  const payable = round2(baseHT + baseTax);
-  if (errors.length) return { ok: false, errors: [...new Set(errors)], entries: [] };
-
-  const reference = "ACHAT FOURNISSEUR " + String(invoice.number || invoice.id);
-  if ((store.entries || []).some(entry => entry.reference === reference)) {
-    return { ok: false, errors: ["Cette facture fournisseur possède déjà une écriture comptable."], entries: [] };
-  }
-  const costAccount = accountingMode === "periodic" ? purchases : stock;
-  const lines = [
-    { account: costAccount, label: (accountingMode === "periodic" ? "Achats" : "Entrée en stock") + " — " + invoice.number, third: "", debit: debitAmount, credit: 0 },
-  ];
-  if (recoverable) lines.push({ account: inputVat, label: "TVA récupérable — " + invoice.number, third: "", debit: baseTax, credit: 0 });
-  lines.push({ account: supplier, label: "Dette fournisseur — " + invoice.number, third: String(invoice.supplierName || ""), debit: 0, credit: payable });
-  const entry = { date: invoice.date, journal: "ACH", reference, lines };
-  const validation = validateEntry(store, entry);
-  if (!validation.ok) return { ok: false, errors: validation.errors, entries: [] };
-  return { ok: true, errors: [], entries: [entry], summary: { baseHT, baseTax, payable, accountingMode, recoverable } };
+  const supplier=requireAccount("supplier","liability","fournisseur (passif)");
+  const groups=new Map();
+  for (const line of normalized) groups.set(line.lineType,round2((groups.get(line.lineType)||0)+line.amount));
+  const groupAccounts={};
+  if (groups.has("goods")) groupAccounts.goods=accountingMode==="periodic"
+    ? requireAccount("purchases","expense","d'achat (charge)")
+    : requireAccount("stock","asset","de stock (actif)");
+  if (groups.has("service")) groupAccounts.service=requireAccount("services","expense","de prestations de services (charge)");
+  if (groups.has("fixed_asset")) groupAccounts.fixed_asset=requireAccount("fixedAssets","asset","d'immobilisations (actif)");
+  const rate=Number(config.exchangeRate), taxRate=Number(config.taxRate);
+  if (!(rate>0) || !Number.isFinite(rate)) errors.push("Taux de conversion fournisseur invalide.");
+  if (!Number.isFinite(taxRate) || taxRate<0 || taxRate>100) errors.push("Taux de taxe fournisseur invalide (0 à 100 %).");
+  const baseHT=round2(sourceTotal*rate), baseTax=round2(baseHT*taxRate/100);
+  const recoverable=config.taxRecoverable===true && baseTax>0;
+  const inputVat=recoverable ? requireAccount("inputVat","asset","de TVA récupérable (actif)") : "";
+  if (errors.length) return {ok:false,errors:[...new Set(errors)],entries:[]};
+  const reference="ACHAT FOURNISSEUR "+String(invoice.number||invoice.id);
+  if ((store.entries||[]).some(entry=>entry.reference===reference)) return {ok:false,errors:["Cette facture fournisseur possède déjà une écriture comptable."],entries:[]};
+  const debitLines=[];
+  const categories=[...groups.keys()];
+  let allocatedTax=0, allocatedBase=0;
+  categories.forEach((category,index)=>{
+    const amount=groups.get(category);
+    const baseAmount=index===categories.length-1 ? round2(baseHT-allocatedBase) : round2(amount*rate);
+    allocatedBase=round2(allocatedBase+baseAmount);
+    const taxShare=recoverable ? 0 : index===categories.length-1 ? round2(baseTax-allocatedTax) : round2(baseTax*amount/sourceTotal);
+    allocatedTax=round2(allocatedTax+taxShare);
+    debitLines.push({account:groupAccounts[category],label:(category==="goods"?(accountingMode==="periodic"?"Achats":"Entrée en stock"):category==="service"?"Prestations de services":"Immobilisations")+" — "+invoice.number,third:"",debit:round2(baseAmount+taxShare),credit:0});
+  });
+  if (recoverable) debitLines.push({account:inputVat,label:"TVA récupérable — "+invoice.number,third:"",debit:baseTax,credit:0});
+  const payable=round2(baseHT+baseTax);
+  const entry={date:invoice.date,journal:"ACH",reference,lines:[...debitLines,{account:supplier,label:"Dette fournisseur — "+invoice.number,third:String(invoice.supplierName||""),debit:0,credit:payable}]};
+  const validation=validateEntry(store,entry);
+  if (!validation.ok) return {ok:false,errors:validation.errors,entries:[]};
+  return {ok:true,errors:[],entries:[entry],summary:{baseHT,baseTax,payable,accountingMode,recoverable,allocations:Object.fromEntries(groups)}};
 }
 
 export function postSupplierInvoiceJournalEntry(store, invoice, accountingMode = "perpetual") {

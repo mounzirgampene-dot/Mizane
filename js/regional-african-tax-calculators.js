@@ -1,7 +1,7 @@
 // MIZANE — Calculateurs fiscaux régionaux, versionnés selon les textes vérifiés.
 const round2=n=>Math.round((Number(n)+Number.EPSILON)*100)/100;
 const validAmount=n=>Number.isFinite(Number(n))&&Number(n)>=0;
-const validDate=s=>{const m=String(s||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);if(!m)return false;const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3];};
+const validDate=s=>{const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);if(!m)return false;const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3]));return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3];};
 const BENIN_WHT=[
  ["BJ_AIB_GOODS_REGISTERED","AIB — achats de biens / travaux, IFU",1,"CGI Bénin 2025, art. 130 et 132-2-a"],
  ["BJ_AIB_SERVICES_REGISTERED","AIB — prestations de services, prestataire IFU",3,"CGI Bénin 2025, art. 130 et 132-2-b"],

@@ -43,7 +43,7 @@ const existingProfiles = [
   { code: "CD", name: "Rép. Dém. du Congo", zone: "OHADA", currency: "CDF", plan: "syscohada", vatRates: [16, 0], locale: "fr-CD" },
   { code: "TD", name: "Tchad", zone: "OHADA", currency: "XAF", plan: "syscohada", vatRates: [18, 0], locale: "fr-TD" },
   { code: "CF", name: "République Centrafricaine", zone: "OHADA", currency: "XAF", plan: "syscohada", vatRates: [19, 0], locale: "fr-CF" },
-  { code: "KM", name: "Comores", zone: "OHADA", currency: "KMF", plan: "syscohada", vatRates: [17, 0], locale: "fr-KM" },
+  { code: "KM", name: "Comores", zone: "OHADA", currency: "KMF", plan: "syscohada", vatRates: [], locale: "fr-KM" },
   { code: "GQ", name: "Guinée Équatoriale", zone: "OHADA", currency: "XAF", plan: "syscohada", vatRates: [15, 0], locale: "es-GQ" },
   { code: "KE", name: "Kenya", zone: "International", currency: "KES", vatRates: [], locale: "en-KE" },
   { code: "RW", name: "Rwanda", zone: "International", currency: "RWF", vatRates: [], locale: "en-RW" },
@@ -83,7 +83,7 @@ export function getCountry(code) {
 }
 
 const CURRENCY_SYMBOLS = {
-  MAD: "DH", ZWG: "ZiG", LSL: "M", SZL: "E", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
+  MAD: "DH", AOA: "Kz", MGA: "Ar", MUR: "₨", SCR: "₨", KMF: "CF", ZWG: "ZiG", LSL: "M", SZL: "E", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
   USD: "$US", CAD: "$CA", AUD: "$AU", NZD: "$NZ",
   GNF: "FG", CDF: "FC", MRU: "UM", GMD: "D",
   NGN: "₦", GHS: "GH₵", KES: "KSh", RWF: "FRw", UGX: "USh", NAD: "N$", ZMW: "K", TZS: "TSh", BWP: "P", MZN: "MT", MWK: "MK", ZAR: "R",

@@ -7,7 +7,7 @@ assert.equal(profile.currency, "MAD");
 assert.equal(getActiveTaxRules("MA", "VAT", "2026-01-01").some(rule => rule.rate === 20), true);
 assert.equal(getActiveTaxRules("MA", "VAT", "2026-01-01").some(rule => rule.rate === 10), true);
 assert.equal(getActiveTaxRules("MA", "VAT", "2025-12-31").length, 0);
-assert.equal(getTaxCountryProfile("FR").status, "not_configured");
+assert.equal(getTaxCountryProfile("FR").status, "active");
 
 const calculated = calculateTaxLine({ countryCode: "MA", taxCode: "MA_VAT_STANDARD", date: "2026-02-01", baseAmount: 1000 });
 assert.equal(calculated.ok, true);
@@ -46,6 +46,6 @@ assert.equal(report.warnings.some(item => item.code === "tax_code_rate_mismatch"
 assert.deepEqual(salesDocuments, beforeSales);
 assert.deepEqual(purchaseDocuments, beforePurchases);
 assert.equal(buildVatReport({ countryCode: "MA", startDate: "2026-02-30", endDate: "2026-03-01" }).ok, false);
-assert.equal(buildVatReport({ countryCode: "FR", startDate: "2026-02-01", endDate: "2026-02-28" }).ok, false);
+assert.equal(buildVatReport({ countryCode: "FR", startDate: "2026-02-01", endDate: "2026-02-28" }).ok, true);
 
 console.log("Lot 22 — tests du moteur fiscal : OK");

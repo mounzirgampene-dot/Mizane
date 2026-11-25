@@ -7,7 +7,7 @@ for(const [code,spec] of Object.entries(expected)){
  assert.equal(p.status,"active",code);
  assert.equal(p.currency,spec.currency,code);
  assert.deepEqual(p.rules.filter(x=>x.taxType==="VAT").map(x=>x.rate),spec.rates,code);
- assert.deepEqual(p.calculationModules,["VAT"],code+" : modules du référentiel de TVA");
+ assert.deepEqual(p.calculationModules,["VAT",...(code==="FR"||code==="BE"?["IS","IR","WITHHOLDING"]:[])],code+" : modules fiscaux activés");
  assert.ok(p.legalSources.length>=2,code+" : sources officielles");
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : règles IS détaillées non activées dans le moteur de lignes");

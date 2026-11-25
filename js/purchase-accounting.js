@@ -115,6 +115,9 @@ export function buildSupplierPaymentJournalEntry(store, invoice, payment, mappin
   };
   const supplier = requireAccount(invoice.accounting?.accounts?.supplier, "liability", "fournisseur (passif)");
   const treasury = requireAccount(mapping.treasury, "asset", "de trésorerie (actif)");
+  const treasuryMeta = accounts.find(account => String(account.code) === treasury);
+  const treasuryLabel = String(treasuryMeta?.label || "").toLocaleLowerCase();
+  if (treasury && (!String(treasury).startsWith("5") || !/(banque|caisse|trésorerie)/.test(treasuryLabel))) errors.push("Le compte de règlement doit être un compte de banque ou de caisse de la classe 5.");
   const baseDebt = round2(amount * invoiceRate);
   const basePaid = round2(amount * paymentRate);
   const difference = round2(basePaid - baseDebt);

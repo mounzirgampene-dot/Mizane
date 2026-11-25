@@ -11,7 +11,6 @@ import { buildReceivablesReport } from "../receivables-core.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
-const dayDiff = (date, reference) => Math.floor((Date.parse(reference + "T00:00:00Z") - Date.parse(date + "T00:00:00Z")) / 86400000);
 function receivables(start, end) {
   const report = buildReceivablesReport({
     documents: store.billing?.documents || [], startDate: start || "", endDate: end || "",

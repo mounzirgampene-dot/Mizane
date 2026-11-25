@@ -255,7 +255,7 @@ function readLines(box) {
     const unitCost = num(row.querySelector(".pa-cost").value);
     return { lineType:"goods", productId:item?.id, warehouseId:row.querySelector(".pa-warehouse").value, unit, factor, quantity, unitCost, trace:row.querySelector(".pa-trace")?.value.trim() || "", baseQuantity:round(quantity*factor), baseUnitCost:factor>0?round(unitCost/factor):0 };
   });
-  const extras = [...box.querySelectorAll("[data-extra-line]")].map(row => ({
+  const extras = [...box.querySelectorAll("[data-extra-line]")].filter(row => row.querySelector(".pa-extra-description").value.trim() || num(row.querySelector(".pa-extra-cost").value) > 0 || num(row.querySelector(".pa-extra-quantity").value) !== 1).map(row => ({
     lineType:row.querySelector(".pa-extra-type").value, description:row.querySelector(".pa-extra-description").value.trim(),
     quantity:num(row.querySelector(".pa-extra-quantity").value), unitCost:num(row.querySelector(".pa-extra-cost").value), factor:1,
     baseQuantity:num(row.querySelector(".pa-extra-quantity").value), baseUnitCost:num(row.querySelector(".pa-extra-cost").value),
@@ -356,7 +356,7 @@ function openDocument(type) {
   const p = data();
   const suppliers = p.suppliers.filter(item => item.active !== false);
   if (!suppliers.length) { toast("Créez d'abord un fournisseur."); openSupplier(); return; }
-  if (!(stockState?.products || []).some(item => item.active !== false && item.product_type !== "service") || !(stockState?.warehouses || []).length) { toast("Créez d'abord au moins un article physique et un entrepôt dans Gestion de stock."); return; }
+  if (type === "order" && (!(stockState?.products || []).some(item => item.active !== false && item.product_type !== "service") || !(stockState?.warehouses || []).length)) { toast("Créez d'abord au moins un article physique et un entrepôt dans Gestion de stock."); return; }
   const orders = p.documents.filter(doc => doc.type === "order" && doc.status !== "cancelled");
   const { box } = modal(`<h2>${type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
     <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
@@ -379,7 +379,7 @@ function openDocument(type) {
   const bindRows = () => {
     tbody.querySelectorAll("[data-purchase-line]").forEach(row => {
       row.querySelector(".pa-product").addEventListener("change", () => refreshLineUnits(row));
-      row.querySelector(".pa-remove").addEventListener("click", () => { if (tbody.children.length > 1) row.remove(); updateTotal(); });
+      row.querySelector(".pa-remove").addEventListener("click", () => { if (tbody.children.length > 1 || type === "invoice") row.remove(); updateTotal(); });
       row.querySelectorAll("input,select").forEach(el => el.addEventListener("input", updateTotal));
     });
   };

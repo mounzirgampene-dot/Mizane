@@ -8,10 +8,17 @@ import { calculateRegionalIS, calculateRegionalWithholding, getRegionalWithholdi
 import { calculateMoroccoIS, calculateMoroccoIR, calculateMoroccoIRProfessional, calculateMoroccoWithholding, buildMoroccoTaxCalendar, reconcileTaxLedger, validateTaxDeclaration, MOROCCO_WITHHOLDING_RULES } from "./tax-compliance-core.js";
 import { createTaxEvidenceMetadata, canMoveTaxDeclarationToReview, getTaxEvidenceReadiness } from "./tax-documents-core.js";
 import { putTaxEvidenceFile, getTaxEvidenceFile, deleteTaxEvidenceFile } from "./tax-documents-store.js";
-import { listCloudTaxEvidence, uploadCloudTaxEvidence, downloadCloudTaxEvidence, verifyCloudTaxEvidence, deleteCloudTaxEvidence } from "./tax-documents-cloud.js";
 
 let tab="overview";
 let cloudDocsLoading=false;
+const ACTIVE_COMPANY_KEY="mizane_active_company_v1";
+let taxCloudApiPromise;
+const taxCloudApi=()=>taxCloudApiPromise||(taxCloudApiPromise=import("./tax-documents-cloud.js"));
+async function listCloudTaxEvidence(){if(!localStorage.getItem(ACTIVE_COMPANY_KEY))return null;return (await taxCloudApi()).listCloudTaxEvidence();}
+async function uploadCloudTaxEvidence(args){if(!localStorage.getItem(ACTIVE_COMPANY_KEY))return null;return (await taxCloudApi()).uploadCloudTaxEvidence(args);}
+async function downloadCloudTaxEvidence(id){return (await taxCloudApi()).downloadCloudTaxEvidence(id);}
+async function verifyCloudTaxEvidence(id){return (await taxCloudApi()).verifyCloudTaxEvidence(id);}
+async function deleteCloudTaxEvidence(id){return (await taxCloudApi()).deleteCloudTaxEvidence(id);}
 const today=()=>new Date().toISOString().slice(0,10);
 const year=()=>Number(today().slice(0,4));
 const start=()=>store.settings.exerciceStart||year()+"-01-01";

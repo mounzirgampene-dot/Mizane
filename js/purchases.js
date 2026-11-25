@@ -122,19 +122,29 @@ function openSupplierMultiInvoiceReconciliation() {
   });
 }
 function openSupplierCreditNote(invoice) {
+  const breakdown=supplierInvoiceTaxBreakdown(invoice);
+  const detailed=Array.isArray(invoice.lines)&&invoice.lines.length>0&&breakdown.ok;
+  const rows=detailed?breakdown.lines.map((line,index)=>{
+    const kind=line.lineType==="service"?"Service":line.lineType==="fixed_asset"?"Immobilisation":"Marchandise";
+    const item=product(line.productId);
+    const label=line.description||item?.name||"Article";
+    return `<tr><td>${index+1}</td><td>${kind} — ${esc(label)}</td><td>${money(line.amount)}</td><td>${line.taxRate}%</td><td><input class="pscn-line-amount" data-line-index="${index}" type="number" min="0" max="${line.amount}" step="0.01" value="0"></td></tr>`;
+  }).join(""):"";
   const {box}=modal(`<h2>Avoir fournisseur — ${esc(invoice.number)}</h2>
     <p>Fournisseur : ${esc(supplierName(invoice.supplierId))} · Solde dû : <strong>${money(supplierInvoiceBalance(invoice))} ${esc(invoice.currency||"")}</strong></p>
     <div class="grid cols-2"><div><label>Date de l'avoir</label><input id="pscn-date" type="date" value="${today()}"></div><div><label>Référence de l'avoir</label><input id="pscn-number" maxlength="80" required></div></div>
-    <label>Montant HT de l'avoir</label><input id="pscn-total" type="number" min="0.01" step="0.01" required>
+    ${detailed?'<h3>Lignes à corriger</h3><div class="table-wrap"><table><thead><tr><th>N°</th><th>Nature / désignation</th><th>HT d’origine</th><th>TVA</th><th>HT à créditer</th></tr></thead><tbody>'+rows+'</tbody></table></div><p class="muted">Saisissez le montant HT à créditer pour chaque ligne. La TVA reprend automatiquement le taux de la ligne source.</p>':'<label>Montant HT de l’avoir</label><input id="pscn-total" type="number" min="0.01" step="0.01" required>'}
     <label>Motif</label><textarea id="pscn-reason" maxlength="500"></textarea>
     <div id="pscn-error" class="errors"></div><div class="actions"><button id="pscn-save">Comptabiliser l'avoir</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#pscn-save").addEventListener("click",()=>{
-    const p=data(), number=box.querySelector("#pscn-number").value.trim(), total=num(box.querySelector("#pscn-total").value);
-    if(!number || !(total>0)){box.querySelector("#pscn-error").textContent="La référence et un montant HT positif sont obligatoires.";return;}
-    invoice.creditNotes ||= [];
+    const p=data(), number=box.querySelector("#pscn-number").value.trim();
+    const allocations=detailed?[...box.querySelectorAll(".pscn-line-amount")].map(input=>({lineIndex:Number(input.dataset.lineIndex),amount:num(input.value)})).filter(item=>item.amount>0):null;
+    const total=detailed?round(allocations.reduce((sum,item)=>sum+item.amount,0)):num(box.querySelector("#pscn-total").value);
+    if(!number||!(total>0)){box.querySelector("#pscn-error").textContent="La référence et un montant HT positif sont obligatoires.";return;}
+    invoice.creditNotes||=[];
     if(invoice.creditNotes.some(item=>String(item.number).toLowerCase()===number.toLowerCase())){box.querySelector("#pscn-error").textContent="Cette référence d'avoir existe déjà sur la facture.";return;}
-    const creditNote={id:p.nextCreditNoteId||1,number,date:box.querySelector("#pscn-date").value,total,reason:box.querySelector("#pscn-reason").value.trim(),createdAt:new Date().toISOString()};
-    const mode=stockState?.settings?.accountingMode || "perpetual";
+    const creditNote={id:p.nextCreditNoteId||1,number,date:box.querySelector("#pscn-date").value,total,reason:box.querySelector("#pscn-reason").value.trim(),createdAt:new Date().toISOString(),...(detailed?{lines:allocations}:{})};
+    const mode=stockState?.settings?.accountingMode||"perpetual";
     const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
     if(!proposal.ok){box.querySelector("#pscn-error").textContent=proposal.errors.join(" ");return;}
     const posted=postSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);

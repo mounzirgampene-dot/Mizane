@@ -27,57 +27,100 @@ export function buildSupplierCreditNoteJournalEntry(store, invoice, creditNote, 
   if (!invoice || invoice.type !== "invoice" || invoice.status !== "validated" || !invoice.accountingPostedAt) {
     return { ok:false, errors:["La facture d'origine doit être validée et comptabilisée."], entries:[] };
   }
-  if ((invoice.lines || []).some(line => line.lineType === "service" || line.lineType === "fixed_asset")) {
-    return {ok:false,errors:["Avoir bloqué : la ventilation par nature de dépense doit être fournie pour corriger une facture mixte."],entries:[]};
+  const breakdown = supplierInvoiceTaxBreakdown(invoice);
+  if (!breakdown.ok) errors.push(...breakdown.errors);
+  const originalLines = breakdown.lines.map(line => ({...line,lineType:["service","fixed_asset"].includes(line.lineType)?line.lineType:"goods"}));
+  const hasDetailedLines = Array.isArray(invoice.lines) && invoice.lines.length > 0;
+  const priorNotes = Array.isArray(invoice.creditNotes) ? invoice.creditNotes : [];
+  let allocations = [];
+  if (Array.isArray(creditNote?.lines)) {
+    if (!creditNote.lines.length) errors.push("L'avoir doit contenir au moins une ligne de correction.");
+    if (priorNotes.some(note => !Array.isArray(note.lines) || !note.lines.length) && hasDetailedLines) {
+      errors.push("Avoir bloqué : un avoir antérieur sans ventilation empêche de déterminer le reliquat de chaque ligne.");
+    }
+    const priorByLine = new Map();
+    for (const note of priorNotes) for (const item of note.lines || []) {
+      const index = Number(item.lineIndex);
+      priorByLine.set(index, round2((priorByLine.get(index)||0)+number(item.amount)));
+    }
+    const seen = new Set();
+    allocations = creditNote.lines.map(item => {
+      const index = Number(item.lineIndex), amount = number(item.amount);
+      if (!Number.isInteger(index) || index < 0 || !originalLines[index]) {
+        errors.push("Une ligne de l'avoir ne correspond à aucune ligne de la facture d'origine.");
+        return null;
+      }
+      if (seen.has(index)) errors.push("Une ligne de facture ne peut être ventilée qu'une seule fois dans un même avoir.");
+      seen.add(index);
+      const source = originalLines[index], remaining = round2(source.amount-(priorByLine.get(index)||0));
+      if (!(amount>0) || !Number.isFinite(amount)) errors.push("Chaque montant d'avoir par ligne doit être strictement positif.");
+      if (amount>remaining+0.001) errors.push("L'avoir dépasse le montant HT encore disponible à la ligne "+(index+1)+".");
+      const taxAmount=round2(amount*source.taxRate/100);
+      return {lineIndex:index,lineType:source.lineType,amount,taxRate:source.taxRate,taxAmount};
+    }).filter(Boolean);
+  } else {
+    if (hasDetailedLines && originalLines.some(line=>line.lineType!=="goods")) {
+      errors.push("Avoir bloqué : cette facture mixte exige une ventilation de l'avoir par ligne.");
+    }
+    if (breakdown.uniformTaxRate===null) errors.push("Avoir bloqué : les factures à taux de taxe multiples exigent une ventilation de l'avoir par ligne.");
+    const amount=number(creditNote?.total), taxRate=breakdown.uniformTaxRate;
+    if (!(amount>0)) errors.push("Le montant HT de l'avoir doit être positif.");
+    if (taxRate!==null) allocations=[{lineIndex:0,lineType:"goods",amount,taxRate,taxAmount:round2(amount*taxRate/100)}];
   }
+  const amount = round2(allocations.reduce((sum,item)=>sum+item.amount,0));
+  const totalTax = round2(allocations.reduce((sum,item)=>sum+item.taxAmount,0));
+  if (creditNote?.total!==undefined && Math.abs(round2(number(creditNote.total))-amount)>0.01) errors.push("Le total HT de l'avoir ne correspond pas à la somme de ses lignes.");
   const dateMatch=String(creditNote?.date||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) errors.push("Date de l'avoir invalide.");
   else {
     const date=new Date(Date.UTC(+dateMatch[1],+dateMatch[2]-1,+dateMatch[3]));
     if(date.getUTCFullYear()!==+dateMatch[1]||date.getUTCMonth()!==+dateMatch[2]-1||date.getUTCDate()!==+dateMatch[3]) errors.push("Date de l'avoir invalide.");
   }
-  const amount = number(creditNote?.total);
-  const taxBreakdown = supplierInvoiceTaxBreakdown(invoice);
-  const taxRate = taxBreakdown.uniformTaxRate;
-  const exchangeRate = number(invoice.accounting?.exchangeRate);
-  if (!taxBreakdown.ok) errors.push(...taxBreakdown.errors);
-  if (taxRate === null) errors.push("Avoir bloqué : les factures à taux de taxe multiples exigent une ventilation de l'avoir par ligne.");
-  if (!(amount > 0)) errors.push("Le montant HT de l'avoir doit être positif.");
-  if (!(taxRate >= 0 && taxRate <= 100)) errors.push("Taux de taxe de la facture d'origine invalide.");
-  if (!(exchangeRate > 0)) errors.push("Taux de conversion de la facture d'origine invalide.");
-  const payableAmount = taxRate === null ? 0 : round2(amount * (1 + taxRate / 100));
-  if (payableAmount > invoiceBalance(invoice) + 0.001) errors.push("L'avoir dépasse le solde restant dû de la facture.");
-  const accounts = accountsFor(store);
-  const mapping = invoice.accounting?.accounts || {};
-  const requireAccount = (code, type, label) => {
-    const account = accounts.find(item => String(item.code) === String(code) && item.type === type);
-    if (!account) { errors.push("Compte " + label + " absent ou incompatible."); return ""; }
+  const exchangeRate=number(invoice.accounting?.exchangeRate);
+  if (!(exchangeRate>0)) errors.push("Taux de conversion de la facture d'origine invalide.");
+  const payableAmount=round2(amount+totalTax);
+  if (payableAmount>invoiceBalance(invoice)+0.001) errors.push("L'avoir dépasse le solde restant dû de la facture.");
+  const accounts=accountsFor(store), mapping=invoice.accounting?.accounts||{};
+  const requireAccount=(code,type,label)=>{
+    const account=accounts.find(item=>String(item.code)===String(code)&&item.type===type);
+    if(!account){errors.push("Compte "+label+" absent ou incompatible.");return "";}
     return String(code);
   };
-  const supplier = requireAccount(mapping.supplier, "liability", "fournisseur");
-  const costKey = accountingMode === "periodic" ? "purchases" : "stock";
-  const costType = accountingMode === "periodic" ? "expense" : "asset";
-  const cost = requireAccount(mapping[costKey], costType, accountingMode === "periodic" ? "achats" : "stock");
-  const baseHT = round2(amount * exchangeRate);
-  const baseTax = round2(baseHT * taxRate / 100);
-  const recoverable = invoice.accounting?.taxRecoverable === true && baseTax > 0;
-  const vat = recoverable ? requireAccount(mapping.inputVat, "asset", "TVA récupérable") : "";
-  const reference = "AVOIR FOURNISSEUR " + String(creditNote.number || creditNote.id);
-  if ((store.entries || []).some(entry => entry.reference === reference)) errors.push("Cet avoir possède déjà une écriture comptable.");
-  if (errors.length) return {ok:false,errors:[...new Set(errors)],entries:[]};
-  const lines = [
-    {account:supplier,label:"Avoir fournisseur — "+String(invoice.number),third:String(invoice.supplierName || ""),debit:0,credit:0},
-  ];
-  // An avoir réduit la dette : débit du fournisseur, crédit du compte de coût et de la TVA.
-  lines[0].debit = round2(baseHT + baseTax);
-  lines.push({account:cost,label:"Annulation achat / stock — "+String(invoice.number),third:"",debit:0,credit:recoverable ? baseHT : round2(baseHT + baseTax)});
-  if (recoverable) lines.push({account:vat,label:"Régularisation TVA récupérable — "+String(invoice.number),third:"",debit:0,credit:baseTax});
-  const entry = {date:creditNote.date,journal:"ACH",reference,lines};
-  const validation = validateEntry(store,entry);
-  if (!validation.ok) return {ok:false,errors:validation.errors,entries:[]};
-  return {ok:true,errors:[],entries:[entry],summary:{baseHT,baseTax,payableAmount,accountingMode}};
+  const supplier=requireAccount(mapping.supplier,"liability","fournisseur");
+  const groups=new Map(), taxes=new Map();
+  for(const item of allocations){
+    groups.set(item.lineType,round2((groups.get(item.lineType)||0)+item.amount));
+    taxes.set(item.lineType,round2((taxes.get(item.lineType)||0)+item.taxAmount));
+  }
+  const costAccounts={};
+  if(groups.has("goods")){
+    const key=accountingMode==="periodic"?"purchases":"stock";
+    costAccounts.goods=requireAccount(mapping[key],accountingMode==="periodic"?"expense":"asset",accountingMode==="periodic"?"achats":"stock");
+  }
+  if(groups.has("service")) costAccounts.service=requireAccount(mapping.services,"expense","de prestations de services");
+  if(groups.has("fixed_asset")) costAccounts.fixed_asset=requireAccount(mapping.fixedAssets,"asset","d'immobilisations");
+  const baseHT=round2(amount*exchangeRate),baseTax=round2(totalTax*exchangeRate);
+  const recoverable=invoice.accounting?.taxRecoverable===true&&baseTax>0;
+  const vat=recoverable?requireAccount(mapping.inputVat,"asset","TVA récupérable"):"";
+  if(errors.length)return {ok:false,errors:[...new Set(errors)],entries:[]};
+  const reference="AVOIR FOURNISSEUR "+String(creditNote.number||creditNote.id);
+  if((store.entries||[]).some(entry=>entry.reference===reference))return {ok:false,errors:["Cet avoir possède déjà une écriture comptable."],entries:[]};
+  const lines=[{account:supplier,label:"Avoir fournisseur — "+String(invoice.number),third:String(invoice.supplierName||""),debit:round2(baseHT+baseTax),credit:0}];
+  const categories=[...groups.keys()];
+  let allocatedBase=0,allocatedTax=0;
+  categories.forEach((category,index)=>{
+    const baseAmount=index===categories.length-1?round2(baseHT-allocatedBase):round2(groups.get(category)*exchangeRate);
+    allocatedBase=round2(allocatedBase+baseAmount);
+    const categoryTax=index===categories.length-1?round2(baseTax-allocatedTax):round2(taxes.get(category)*exchangeRate);
+    allocatedTax=round2(allocatedTax+categoryTax);
+    lines.push({account:costAccounts[category],label:"Correction "+(category==="goods"?(accountingMode==="periodic"?"achats":"stock"):category==="service"?"prestations de services":"immobilisations")+" — "+String(invoice.number),third:"",debit:0,credit:round2(baseAmount+(recoverable?0:categoryTax))});
+  });
+  if(recoverable)lines.push({account:vat,label:"Régularisation TVA récupérable — "+String(invoice.number),third:"",debit:0,credit:baseTax});
+  const entry={date:creditNote.date,journal:"ACH",reference,lines};
+  const validation=validateEntry(store,entry);
+  if(!validation.ok)return {ok:false,errors:validation.errors,entries:[]};
+  return {ok:true,errors:[],entries:[entry],summary:{baseHT,baseTax,payableAmount,accountingMode,recoverable,allocations}};
 }
-
 export function postSupplierCreditNoteJournalEntry(store, invoice, creditNote, accountingMode = "perpetual") {
   const proposal = buildSupplierCreditNoteJournalEntry(store,invoice,creditNote,accountingMode);
   if (!proposal.ok) return {...proposal,created:0};

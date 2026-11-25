@@ -1925,7 +1925,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v44/);
+  assert.match(serviceWorkerSource,/mizane-v45/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2134,7 +2134,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v44/);
+  assert.match(serviceWorkerSource,/mizane-v45/);
 });
 
 
@@ -2276,6 +2276,28 @@ test("achats : TVA multi-taux calculée par ligne et comptabilisée sans écart"
   assert.equal(proposal.ok,true,proposal.errors?.join(" "));
   assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["31",100,0],["613",50,0],["4455",25,0],["401",0,175]]);
   assert.equal(supplierInvoiceTaxBreakdown({...invoice,lines:[{quantity:1,unitCost:100,taxRate:120}]}).ok,false);
+});
+test("achats : avoir détaillé sur facture mixte et multi-taux, TVA et ventilation par nature",()=>{
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"31",label:"Stock marchandises",type:"asset"},
+    {code:"613",label:"Services extérieurs",type:"expense"},
+    {code:"3455",label:"TVA récupérable",type:"asset"},
+  ];
+  const invoice={id:991,type:"invoice",number:"FAF-CN-991",supplierId:9,supplierName:"Fournisseur mixte",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:150,
+    lines:[{lineType:"goods",quantity:1,unitCost:100,taxRate:20},{lineType:"service",description:"Installation",quantity:1,unitCost:50,taxRate:10}],
+    accounting:{exchangeRate:1,taxRate:0,taxRecoverable:true,accounts:{supplier:"401",stock:"31",services:"613",inputVat:"3455"}},payments:[],creditNotes:[]};
+  const credit={id:2,number:"AVF-MIX-991",date:"2026-11-25",total:50,lines:[{lineIndex:0,amount:40},{lineIndex:1,amount:10}]};
+  const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,credit,"perpetual");
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.summary.baseTax,9);
+  assert.equal(proposal.summary.payableAmount,59);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",59,0],["31",0,40],["613",0,10],["3455",0,9]]);
+  assert.equal(buildSupplierCreditNoteJournalEntry(store,invoice,{...credit,id:3,number:"AVF-OVER",lines:[{lineIndex:0,amount:101}],total:101},"perpetual").ok,false);
+  const nonRecoverable=buildSupplierCreditNoteJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},{...credit,id:4,number:"AVF-NR"},"perpetual");
+  assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
+  assert.deepEqual(nonRecoverable.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",59,0],["31",0,48],["613",0,11]]);
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

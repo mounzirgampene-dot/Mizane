@@ -40,6 +40,18 @@ assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="VAT"&&x.va
 assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les opérations de l’annexe I ; 0 % exportations");
 assert.match(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").detail,/transmissions de biens et prestations de services/);
 assert.equal(getTaxCountryProfile("LR").taxFacts.find(x=>x.taxType==="IS").value,"25 %");
+const liberia=getTaxCountryProfile("LR");
+assert.equal(liberia.currency,"LRD");
+assert.equal(liberia.status,"review_required");
+assert.deepEqual(liberia.calculationModules,[]);
+assert.deepEqual(liberia.rules,[]);
+assert.equal(liberia.taxFacts.find(x=>x.label==="GST — fournitures de biens taxables").value,"13 % ; exportations : 0 %");
+assert.equal(liberia.taxFacts.find(x=>x.label==="GST — prestations de services taxables").value,"13 %");
+assert.match(liberia.taxFacts.find(x=>x.label.includes("Télécommunications")).value,/5 %/);
+assert.match(liberia.taxFacts.find(x=>x.label.includes("Télécommunications")).value,/15 %/);
+assert.match(liberia.taxFacts.find(x=>x.label.includes("réforme annoncée")).value,/1er janvier 2027/);
+assert.equal(getActiveTaxRules("LR","VAT","2026-11-25").length,0);
+assert.equal(calculateTaxLine({countryCode:"LR",taxCode:"LR_GST_13",baseAmount:100,date:"2026-11-25"}).ok,false);
 assert.equal(getTaxCountryProfile("MR").taxFacts.length,8);
 assert.equal(calculateTaxLine({countryCode:"NE",taxCode:"NE_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);
 assert.equal(calculateTaxLine({countryCode:"GW",taxCode:"GW_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);

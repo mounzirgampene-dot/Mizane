@@ -1364,7 +1364,8 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   const cloud = readFileSync(new URL("../js/cloud-sync.js", import.meta.url), "utf8");
   assert.match(app, /\["stock", "Gestion de stock"\]/);
   assert.match(app, /\["purchases", "Achats"\]/);
-  assert.match(app, /"stock", "purchases"(?:, "notifications")?\]\s*;/);
+  assert.match(app, /\["commercial-margins", "Marges commerciales"\]/);
+  assert.match(app, /"stock", "purchases", "commercial-margins"(?:, "notifications")?\]\s*;/);
   assert.match(cloud, /delete billingPayload\.stock/);
   assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);
@@ -1930,7 +1931,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v48/);
+  assert.match(serviceWorkerSource,/mizane-v49/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2139,7 +2140,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v48/);
+  assert.match(serviceWorkerSource,/mizane-v49/);
 });
 
 

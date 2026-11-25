@@ -23,6 +23,7 @@ on:
       - feat/lot18-fixed-assets
       - feat/lot19-asset-disposals
       - feat/lot20-customer-receivables
+      - feat/lot21-customer-followups
   pull_request:
     branches:
       - main

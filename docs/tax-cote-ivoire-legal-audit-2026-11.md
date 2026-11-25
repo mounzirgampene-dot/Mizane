@@ -97,7 +97,7 @@ La doctrine DGI n° 046/2024 confirme un taux de retenue de 25 % appliqué à un
 
 **État du code :** la règle `CI_RIBNC` applique 25 % à 80 % de la base brute. Le calcul arithmétique correspond à la doctrine citée. Les cas de prise en charge de la retenue par le débiteur, les réassurances, les conventions fiscales et les exceptions doivent rester signalés comme non calculés.
 
-### 3.6. Retenue sur revenus locatifs : référence juridique à corriger
+### 3.6. Retenue sur revenus locatifs : référence et taux corrigés
 
 Le calculateur `CI_RIRL` applique actuellement un taux unique de **7,5 %** et cite l’article 93 du CGI. Ces deux paramètres sont incompatibles avec les documents officiels DGI consultés.
 

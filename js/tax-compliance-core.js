@@ -132,6 +132,7 @@ export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, 
   const warnings = [];
   if (rule?.requiresTreatyReview) warnings.push("Vérifier la convention fiscale applicable, le bénéficiaire effectif et les justificatifs avant d'appliquer un taux conventionnel.");
   if (rule?.requiresEligibility) warnings.push("Vérifier le statut fiscal du bénéficiaire, la nature exacte du revenu et les conditions légales.");
+  if (rule?.code === "MA_WHT_SERVICE_COMPANY_5") warnings.push("Vérifier le seuil transitoire de chiffre d'affaires du payeur : 500 M MAD à compter du 1er juillet 2026, 350 M en 2027, puis 200 M en 2028 (CGI, art. 247-XXXVI).");
   if (applyTreaty) {
     const treaty = treatyRate === "" || treatyRate == null ? NaN : Number(treatyRate);
     if (!Number.isFinite(treaty) || treaty < 0 || treaty > rate) return { ok: false, errors: ["Taux conventionnel invalide : justificatif et taux autorisé requis."] };

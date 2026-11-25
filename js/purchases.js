@@ -207,7 +207,12 @@ function invoicedQuantity(orderId, line, exceptInvoiceId = null) {
 function validateInvoiceAgainstOrder(order, invoice, { requireReceived = false } = {}) {
   const report = buildSupplierInvoiceControlReport({
     documents: data().documents,
-    invoice: { ...invoice, orderId: invoice.orderId || order?.id },
+    invoice: {
+      ...invoice,
+      type: invoice.type || "invoice",
+      orderId: invoice.orderId || order?.id,
+      total: invoice.total ?? totals(invoice.lines || []),
+    },
     order,
     requireReceived,
   });

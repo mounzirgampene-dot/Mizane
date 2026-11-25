@@ -57,7 +57,7 @@ assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-03-31").d
 assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-06-30").dueDate, "2026-06-30");
 assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-09-30").dueDate, "2026-09-30");
 assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-12-31").dueDate, "2026-12-31");
-assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ANNUAL_2026-12-31").dueDate, "2027-03-31");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ANNUAL_2026").dueDate, "2027-03-31");
 assert.ok(monthlyCalendar.items.find(x => x.id === "VAT_MA_2026-01").requiredDocuments.length >= 3);
 const quarterlyCalendar = buildMoroccoTaxCalendar({ fiscalStart: "2026-01-01", fiscalEnd: "2026-12-31", year: 2026, vatRegime: "quarterly", includeIsAdvances: false, includePayrollAnnual: false });
 assert.equal(quarterlyCalendar.items.filter(x => x.taxType === "TVA").length, 4);

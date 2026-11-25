@@ -26,6 +26,7 @@ on:
       - feat/lot21-customer-followups
       - fix/lot21-followup-latest-event
       - feat/lot22-international-tax
+      - feat/lot22-morocco-tax-compliance
   pull_request:
     branches:
       - main

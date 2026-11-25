@@ -41,6 +41,7 @@ on:
       - feat/stock-integrated-dev
       - feat/lot31-tax-document-traceability
       - feat/lot32-central-tax-document-vault
+      - feat/lot33-central-africa-tax-profiles
       - fix/lot1-security-hardening
       - fix/lot2-billing-integrity
       - feat/lot4-periodic-inventory-closing

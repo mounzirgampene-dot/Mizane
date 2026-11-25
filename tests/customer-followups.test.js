@@ -18,6 +18,22 @@ assert.equal(queue.rows[0].outstandingAmount,1000);
 assert.equal(queue.rows[0].followupStatus,"promesse");
 assert.equal(queue.rows[0].promiseOverdue,true);
 assert.equal(queue.rows[0].actionDue,true);
+
+// Un contact plus récent sans prochaine action efface l'ancien rendez-vous.
+const rescheduled=appendCustomerFollowup(added.events,{...input,date:"2026-11-24",status:"a_relancer",promiseDate:"",nextDate:"",note:"Nouveau contact, aucun rappel planifié."});
+const rescheduledQueue=buildCustomerFollowupQueue({asOf:"2026-11-25",documents:[invoice],followups:{"12":rescheduled.events}});
+assert.equal(rescheduledQueue.rows[0].nextDate,"");
+assert.equal(rescheduledQueue.rows[0].promiseDate,"");
+assert.equal(rescheduledQueue.rows[0].actionDue,false);
+assert.equal(rescheduledQueue.rows[0].promiseOverdue,false);
+
+// Une nouvelle promesse remplace l'ancienne, même si elle est plus éloignée.
+const renewed=appendCustomerFollowup(added.events,{...input,date:"2026-11-24",promiseDate:"2026-11-30",nextDate:"",note:"Nouvelle date de paiement convenue."});
+const renewedQueue=buildCustomerFollowupQueue({asOf:"2026-11-25",documents:[invoice],followups:{"12":renewed.events}});
+assert.equal(renewedQueue.rows[0].promiseDate,"2026-11-30");
+assert.equal(renewedQueue.rows[0].promiseOverdue,false);
+assert.equal(renewedQueue.rows[0].nextDate,"");
+
 const noEvents=buildCustomerFollowupQueue({asOf:"2026-11-25",documents:[invoice]});
 assert.equal(noEvents.rows[0].followupStatus,"a_relancer");
 assert.equal(noEvents.totals.overdue,1);

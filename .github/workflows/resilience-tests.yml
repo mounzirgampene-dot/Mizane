@@ -24,6 +24,7 @@ on:
       - feat/lot19-asset-disposals
       - feat/lot20-customer-receivables
       - feat/lot21-customer-followups
+      - fix/lot21-followup-latest-event
   pull_request:
     branches:
       - main

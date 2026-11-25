@@ -40,13 +40,30 @@ assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_DIVIDENDS_2026", ba
 assert.equal(calculateMoroccoWithholding({ ruleCode: "CUSTOM", baseAmount: 1000, date: "2026-01-01", customRate: 7 }).ok, false);
 assert.equal(calculateMoroccoWithholding({ ruleCode: "MA_WHT_NONRESIDENT_10", baseAmount: 1000, date: "2026-01-01", applyTreaty: true, treatyRate: "" }).ok, false);
 
-const calendar = buildMoroccoTaxCalendar({ fiscalEnd: "2025-12-31", year: 2026, withholdingMonths: ["2026-01", "2026-12"] });
+const calendar = buildMoroccoTaxCalendar({ fiscalStart: "2025-01-01", fiscalEnd: "2025-12-31", year: 2026, vatRegime: "none", includeIsAdvances: false, withholdingMonths: ["2026-01", "2026-12"] });
 assert.equal(calendar.ok, true);
 assert.equal(calendar.items.find(x => x.id === "IS_ANNUAL_2025").dueDate, "2026-03-31");
 assert.equal(calendar.items.find(x => x.id === "PAYROLL_ANNUAL_2026").dueDate, "2026-02-28");
-assert.equal(buildMoroccoTaxCalendar({ fiscalEnd: "2026-01-31", year: 2027 }).items[0].dueDate, "2026-04-30");
+assert.equal(buildMoroccoTaxCalendar({ fiscalEnd: "2026-01-31", year: 2027, vatRegime: "none", includeIsAdvances: false, includePayrollAnnual: false }).items[0].dueDate, "2026-04-30");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-01").dueDate, "2026-02-28");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-12").dueDate, "2027-01-31");
+
+
+const monthlyCalendar = buildMoroccoTaxCalendar({ fiscalStart: "2026-01-01", fiscalEnd: "2026-12-31", year: 2026, vatRegime: "monthly" });
+assert.equal(monthlyCalendar.items.filter(x => x.taxType === "TVA").length, 12);
+assert.equal(monthlyCalendar.items.find(x => x.id === "VAT_MA_2026-01").dueDate, "2026-02-28");
+assert.equal(monthlyCalendar.items.find(x => x.id === "VAT_MA_2026-12").dueDate, "2027-01-31");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-03-31").dueDate, "2026-03-31");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-06-30").dueDate, "2026-06-30");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-09-30").dueDate, "2026-09-30");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ADVANCE_2026-12-31").dueDate, "2026-12-31");
+assert.equal(monthlyCalendar.items.find(x => x.id === "IS_ANNUAL_2026-12-31").dueDate, "2027-03-31");
+assert.ok(monthlyCalendar.items.find(x => x.id === "VAT_MA_2026-01").requiredDocuments.length >= 3);
+const quarterlyCalendar = buildMoroccoTaxCalendar({ fiscalStart: "2026-01-01", fiscalEnd: "2026-12-31", year: 2026, vatRegime: "quarterly", includeIsAdvances: false, includePayrollAnnual: false });
+assert.equal(quarterlyCalendar.items.filter(x => x.taxType === "TVA").length, 4);
+assert.equal(quarterlyCalendar.items.find(x => x.id === "VAT_MA_2026-T1").dueDate, "2026-04-30");
+assert.equal(quarterlyCalendar.items.find(x => x.id === "VAT_MA_2026-T4").dueDate, "2027-01-31");
+assert.equal(buildMoroccoTaxCalendar({ fiscalEnd: "2026-12-31", year: 2026, vatRegime: "yearly" }).ok, false);
 
 const reconciliation = reconcileTaxLedger({ entries: [{ lines: [{ account: "4455", debit: 100, credit: 500 }] }], accounts: { TVA: ["4455"] }, declared: { TVA: 400 } });
 assert.equal(reconciliation.results[0].ledgerBalance, 400);

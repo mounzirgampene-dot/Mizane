@@ -46,6 +46,34 @@ for(const [code,spec] of Object.entries(newEastAfricanProfiles)){
  assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
  assert.deepEqual(selector.vatRates,[],code+" : pas de taux par défaut non activés");
 }
+
+const newSouthernAfricanProfiles={
+ ZW:{currency:"ZWG",name:"Zimbabwe",vat:"15,5 % depuis le 1er janvier 2026",is:"25 % ; AIDS Levy additionnelle de 3 % sur l'impôt calculé"},
+ LS:{currency:"LSL",name:"Lesotho",vat:"15 % taux général et télécommunications ; 10 % électricité ; 0 % exportations et produits de base",is:"25 % autres sociétés ; 10 % activités manufacturières éligibles et agriculture commerciale"},
+ SZ:{currency:"SZL",name:"Eswatini",vat:"15 % ; exportations directes éligibles à 0 %",is:"25 % pour les déclarations 2026 selon l'avis ERS ; page de taux ERS encore affichée à 27,5 %"}
+};
+for(const [code,spec] of Object.entries(newSouthernAfricanProfiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code);
+ assert.deepEqual(p.rules,[],code);
+ assert.ok(p.legalSources.length>=3,code+" : sources institutionnelles");
+ assert.equal(p.taxFacts.find(x=>x.taxType==="VAT").value,spec.vat,code);
+ assert.equal(p.taxFacts.find(x=>x.taxType==="IS").value,spec.is,code);
+ assert.deepEqual(getActiveTaxRules(code,"VAT","2026-11-25"),[],code+" : aucune règle TVA activée");
+ assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS activée");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul TVA bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays disponible dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : pas de taux par défaut non activés");
+}
+assert.match(getTaxCountryProfile("ZW").taxFacts.find(x=>x.taxType==="PAYROLL").value,/40 %/);
+assert.match(getTaxCountryProfile("LS").taxFacts.find(x=>x.taxType==="PAYROLL").value,/1 020/);
+assert.match(getTaxCountryProfile("SZ").taxFacts.find(x=>x.taxType==="IS").detail,/divergence/);
+
 assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/300 000 000 UGX/);
 assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("PAYE")).value,/335 000 UGX/);
 assert.match(getTaxCountryProfile("RW").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/20 000 000 RWF/);

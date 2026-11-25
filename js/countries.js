@@ -54,6 +54,9 @@ const existingProfiles = [
   { code: "BW", name: "Botswana", zone: "International", currency: "BWP", vatRates: [], locale: "en-BW" },
   { code: "MZ", name: "Mozambique", zone: "International", currency: "MZN", vatRates: [], locale: "pt-MZ" },
   { code: "MW", name: "Malawi", zone: "International", currency: "MWK", vatRates: [], locale: "en-MW" },
+  { code: "ZW", name: "Zimbabwe", zone: "International", currency: "ZWG", vatRates: [], locale: "en-ZW" },
+  { code: "LS", name: "Lesotho", zone: "International", currency: "LSL", vatRates: [], locale: "en-LS" },
+  { code: "SZ", name: "Eswatini", zone: "International", currency: "SZL", vatRates: [], locale: "en-SZ" },
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
   { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [19, 13, 7, 0], locale: "fr-TN" },
   { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
@@ -80,7 +83,7 @@ export function getCountry(code) {
 }
 
 const CURRENCY_SYMBOLS = {
-  MAD: "DH", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
+  MAD: "DH", ZWG: "ZiG", LSL: "M", SZL: "E", XOF: "F CFA", XAF: "FCFA", XPF: "F CFP",
   USD: "$US", CAD: "$CA", AUD: "$AU", NZD: "$NZ",
   GNF: "FG", CDF: "FC", MRU: "UM", GMD: "D",
   NGN: "₦", GHS: "GH₵", KES: "KSh", RWF: "FRw", UGX: "USh", NAD: "N$", ZMW: "K", TZS: "TSh", BWP: "P", MZN: "MT", MWK: "MK", ZAR: "R",

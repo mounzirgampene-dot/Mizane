@@ -8,12 +8,14 @@ on:
       - fix/lot2-billing-integrity
       - feat/lot3-stock-operations-accounting
       - feat/lot4-periodic-inventory-closing
+      - feat/lot5-supplier-settlements
   pull_request:
     branches:
       - main
       - feat/stock-integrated-dev
       - fix/lot1-security-hardening
       - fix/lot2-billing-integrity
+      - feat/lot4-periodic-inventory-closing
 
 permissions:
   contents: read

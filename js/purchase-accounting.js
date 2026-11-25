@@ -26,7 +26,7 @@ export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode 
     lineType: ["service","fixed_asset"].includes(line.lineType) ? line.lineType : "goods",
     amount: Number.isFinite(Number(line.amount)) ? round2(Number(line.amount)) : round2(Number(line.quantity || 0) * Number(line.unitCost || 0)),
   }));
-  if (!normalized.length || normalized.some(line => !(line.amount > 0) || !Number.isFinite(line.amount))) {
+  if (!normalized.length || normalized.some(line => line.amount < 0 || !Number.isFinite(line.amount))) {
     errors.push("Chaque ligne de facture doit avoir un montant HT strictement positif.");
   }
   const computedTotal = round2(normalized.reduce((sum,line)=>sum+line.amount,0));

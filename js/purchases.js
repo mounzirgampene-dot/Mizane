@@ -6,7 +6,7 @@ import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from ".
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
-import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry } from "./purchase-credit-notes.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation } from "./purchase-credit-notes.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -55,6 +55,36 @@ function supplierName(id) {
 function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
 function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
 function supplierInvoiceBalance(invoice) { const credited=round((invoice?.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0)); return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice)-credited)); }
+function openSupplierMultiInvoiceReconciliation() {
+  const p=data();
+  const invoices=p.documents.filter(invoice=>invoice.type==="invoice"&&invoice.status==="validated"&&invoice.accountingPostedAt&&supplierInvoiceBalance(invoice)>0.001);
+  if(invoices.length<2) return toast("Il faut au moins deux factures fournisseurs validées avec un solde dû.");
+  const {box}=modal(`<h2>Rapprochement d'un règlement groupé</h2>
+    <p class="muted">Sélectionnez les factures concernées et répartissez le montant du paiement. Cette opération crée un rapprochement traçable sans générer une seconde écriture de trésorerie.</p>
+    <div class="grid cols-2"><div><label>Date du paiement</label><input id="psmr-date" type="date" value="${today()}"></div><div><label>Référence bancaire / caisse</label><input id="psmr-reference" maxlength="120" required></div><div><label>Montant du paiement</label><input id="psmr-amount" type="number" min="0.01" step="0.01"></div><div><label>Tolérance autorisée</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Choisir</th><th>Facture</th><th>Fournisseur</th><th>Devise</th><th>Solde dû</th><th>Affectation</th></tr></thead><tbody>${invoices.map(invoice=>`<tr data-reconcile-invoice="${invoice.id}"><td><input type="checkbox" class="psmr-check"></td><td>${esc(invoice.number)}</td><td>${esc(supplierName(invoice.supplierId))}</td><td>${esc(invoice.currency||"MAD")}</td><td>${money(supplierInvoiceBalance(invoice))}</td><td><input class="psmr-allocation" type="number" min="0" max="${supplierInvoiceBalance(invoice)}" step="0.01" value="0" disabled></td></tr>`).join("")}</tbody></table></div>
+    <div id="psmr-error" class="errors"></div><div class="actions"><button id="psmr-save">Enregistrer le rapprochement</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelectorAll("[data-reconcile-invoice]").forEach(row=>row.querySelector(".psmr-check").addEventListener("change",event=>{
+    const input=row.querySelector(".psmr-allocation");input.disabled=!event.target.checked;if(event.target.checked&&num(input.value)<=0)input.value=String(Math.min(supplierInvoiceBalance(invoices.find(item=>String(item.id)===row.dataset.reconcileInvoice)),num(box.querySelector("#psmr-amount").value)));
+  }));
+  box.querySelector("#psmr-amount").addEventListener("input",()=>{
+    const selected=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked);
+    if(selected.length===1&&num(selected[0].querySelector(".psmr-allocation").value)<=0) selected[0].querySelector(".psmr-allocation").value=box.querySelector("#psmr-amount").value;
+  });
+  box.querySelector("#psmr-save").addEventListener("click",()=>{
+    const reference=box.querySelector("#psmr-reference").value.trim();
+    if(!reference){box.querySelector("#psmr-error").textContent="La référence du paiement est obligatoire.";return;}
+    p.reconciliations ||= [];
+    if(p.reconciliations.some(item=>item.reference.toLowerCase()===reference.toLowerCase())){box.querySelector("#psmr-error").textContent="Cette référence de paiement est déjà rapprochée.";return;}
+    const allocations=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked).map(row=>({invoiceId:Number(row.dataset.reconcileInvoice),amount:num(row.querySelector(".psmr-allocation").value)}));
+    const first=allocations.length?invoices.find(item=>item.id===allocations[0].invoiceId):null;
+    const payment={date:box.querySelector("#psmr-date").value,reference,amount:num(box.querySelector("#psmr-amount").value),currency:first?.currency||"MAD"};
+    const plan=planSupplierMultiInvoiceReconciliation(invoices,allocations,payment,{tolerance:num(box.querySelector("#psmr-tolerance").value)});
+    if(!plan.ok){box.querySelector("#psmr-error").textContent=plan.errors.join(" ");return;}
+    p.reconciliations.push({id:globalThis.crypto?.randomUUID?.()||String(Date.now()),...plan,...payment,createdAt:new Date().toISOString()});
+    persist("Rapprochement multi-factures enregistré.");box.closest("dialog").close();renderList();
+  });
+}
 function openSupplierCreditNote(invoice) {
   const {box}=modal(`<h2>Avoir fournisseur — ${esc(invoice.number)}</h2>
     <p>Fournisseur : ${esc(supplierName(invoice.supplierId))} · Solde dû : <strong>${money(supplierInvoiceBalance(invoice))} ${esc(invoice.currency||"")}</strong></p>
@@ -230,7 +260,7 @@ function renderList() {
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
         <div><h2>Achats</h2><p class="muted">Fournisseurs, commandes, factures et rapprochement des réceptions.</p></div>
-        <div class="actions"><button id="pa-supplier">Nouveau fournisseur</button><button id="pa-order">Nouvelle commande</button><button id="pa-invoice">Nouvelle facture</button></div>
+        <div class="actions"><button id="pa-supplier">Nouveau fournisseur</button><button id="pa-order">Nouvelle commande</button><button id="pa-invoice">Nouvelle facture</button><button class="secondary" id="pa-reconcile">Rapprocher un paiement groupé</button></div>
       </div>
       <div class="grid cols-3">
         <div class="calculator-result"><strong>${p.suppliers.length}</strong><br><span class="muted">Fournisseurs</span></div>
@@ -246,6 +276,7 @@ function renderList() {
   document.getElementById("pa-supplier").addEventListener("click", openSupplier);
   document.getElementById("pa-order").addEventListener("click", () => openDocument("order"));
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));
+  document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
 }
 function openSupplier() {

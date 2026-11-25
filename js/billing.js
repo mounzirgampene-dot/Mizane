@@ -1027,7 +1027,8 @@ function openSettings() {
   const billingAccounts = [...new Map([...planAccounts, ...(companySettings.customAccounts || [])].map(account => [String(account.code), account])).values()];
   const accountSelect = (key, type, label) => {
     const selected = settings.accountingAccounts?.[key] || "";
-    const options = billingAccounts.filter(account => account.type === type)
+    const acceptedTypes = Array.isArray(type) ? type : [type];
+    const options = billingAccounts.filter(account => acceptedTypes.includes(account.type))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), "fr", { numeric: true }))
       .map(account => `<option value="${esc(account.code)}" ${String(account.code) === String(selected) ? "selected" : ""}>${esc(account.code)} — ${esc(account.label)}</option>`).join("");
     return `<div><label for="bill-account-${key}">${label}</label><select id="bill-account-${key}"><option value="">— Choisir un compte —</option>${options}</select></div>`;

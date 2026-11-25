@@ -31,8 +31,7 @@ export function calculateMoroccoIS({
   priorYearCredits = 0, withholdingCredits = 0, advancePayments = 0,
 } = {}) {
   const inputs = { accountingResult, additions, deductions, cmGeneralBase, cmReducedBase, cmRate, priorYearCredits, withholdingCredits, advancePayments };
-  const errors = Object.entries(inputs).filter(([, value]) => !Number.isFinite(Number(value)) || Number(value) < 0 && !["accountingResult"].includes(Object.keys(inputs).find(k => inputs[k] === value))).map(([key]) => key + " : montant invalide.");
-  if (!Number.isFinite(Number(accountingResult))) errors.push("Résultat comptable invalide.");
+  const errors = Object.entries(inputs).filter(([key, value]) => !Number.isFinite(Number(value)) || (key !== "accountingResult" && Number(value) < 0)).map(([key]) => key + " : montant invalide.");
   if (!["standard", "high_profit", "financial"].includes(rateCategory)) errors.push("Catégorie de taux IS invalide.");
   if (![0.25, 0.15].includes(Number(cmRate))) errors.push("Taux de cotisation minimale non autorisé.");
   if (errors.length) return { ok: false, errors };
@@ -128,9 +127,8 @@ export function buildMoroccoTaxCalendar({ fiscalEnd, year, withholdingMonths = [
   for (const month of withholdingMonths) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month))) continue;
     const [y, m] = month.split("-").map(Number);
-    const due = new Date(Date.UTC(y, m, 0));
-    due.setUTCMonth(due.getUTCMonth() + 1);
-    const dueDate = due.getUTCFullYear() + "-" + String(due.getUTCMonth() + 1).padStart(2, "0") + "-" + String(new Date(Date.UTC(due.getUTCFullYear(), due.getUTCMonth() + 1, 0)).getUTCDate()).padStart(2, "0");
+    const due = new Date(Date.UTC(y, m + 1, 0));
+    const dueDate = due.getUTCFullYear() + "-" + String(due.getUTCMonth() + 1).padStart(2, "0") + "-" + String(due.getUTCDate()).padStart(2, "0");
     items.push({ id: "WHT_" + month, taxType: "WITHHOLDING", title: "Déclaration / versement des retenues à la source — à confirmer selon la catégorie", period: month, dueDate, legalReference: "CGI 2026, articles 156 et 174", confidence: "review_required" });
   }
   return { ok: true, items: items.sort((a, b) => a.dueDate.localeCompare(b.dueDate)), disclaimer: "Calendrier indicatif. Les échéances TVA, acomptes IS, retenues particulières et reports liés aux jours fériés doivent être confirmés selon le régime et le calendrier DGI de l'année." };

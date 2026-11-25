@@ -1742,7 +1742,7 @@ test("notifications comptables : boîte personnelle, alertes de blocage et revue
 
 
 test("facturation : comptes de stock persistés et reprises automatiques idempotentes", () => {
-  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss"\]/);
+  assert.match(billingUiSource, /\["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"\]/);
   assert.match(billingUiSource, /async function retryPendingInvoiceStockOperations\(\)/);
   assert.match(billingUiSource, /hasInventoryAccount/);
   assert.match(billingUiSource, /hasCogsAccount/);

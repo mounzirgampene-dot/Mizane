@@ -213,12 +213,30 @@ export function calculateLocalStockPeriodValuation(stock,startDate,endDate) {
   const opening=totalsFor(new Date(Date.parse(startDate+"T00:00:00Z")-86400000).toISOString().slice(0,10));
   const closing=totalsFor(endDate);
   if(!opening.ok||!closing.ok)return {ok:false,errors:["Un mouvement local contient une quantité ou une valeur invalide."]};
+  const ordered=movements.filter(m=>validPeriodDate(m.date||m.movement_date)&&String(m.date||m.movement_date)<=endDate)
+    .slice().sort((a,b)=>String(a.date||a.movement_date).localeCompare(String(b.date||b.movement_date))||String(a.createdAt||a.created_at||a.id||"").localeCompare(String(b.createdAt||b.created_at||b.id||"")));
+  const runningBalances=new Map();
+  let negativeMovements=0;
+  for(const movement of ordered){
+    const date=String(movement.date||movement.movement_date);
+    const kind=String(movement.kind||movement.document_type||"");
+    const quantity=Number(movement.quantityDelta??movement.quantity_delta??(kind==="receipt"?movement.quantity:kind==="issue"?-Number(movement.quantity||0):0));
+    const key=String(movement.productId??movement.product_id??"")+"|"+String(movement.warehouseId??movement.warehouse_id??"");
+    const sourceBalance=(runningBalances.get(key)||0)+quantity;
+    runningBalances.set(key,sourceBalance);
+    if(date>=startDate&&sourceBalance < -0.000001)negativeMovements++;
+    const destinationId=movement.destinationWarehouseId??movement.destination_warehouse_id;
+    if(kind==="transfer"&&destinationId){
+      const destination=String(movement.productId??movement.product_id??"")+"|"+String(destinationId);
+      runningBalances.set(destination,(runningBalances.get(destination)||0)+Math.abs(Number(movement.quantity||quantity)));
+    }
+  }
   const activeCountSessions=(stock.countSessions||[]).filter(session=>["counting","submitted"].includes(session.status)).length;
   return {
     ok:true,accounting_mode:stock.settings?.accountingMode||stock.settings?.accounting_mode||"perpetual",
     opening_value:opening.value,closing_value:closing.value,
     opening_negative_positions:opening.negativePositions,closing_negative_positions:closing.negativePositions,
-    active_count_sessions:activeCountSessions,movement_count:movements.filter(m=>String(m.date||m.movement_date||"")>=startDate&&String(m.date||m.movement_date||"")<=endDate).length,
+    active_count_sessions:activeCountSessions,negative_movements:negativeMovements,movement_count:movements.filter(m=>String(m.date||m.movement_date||"")>=startDate&&String(m.date||m.movement_date||"")<=endDate).length,
     period_start:startDate,period_end:endDate,source:"local",
   };
 }
@@ -234,9 +252,9 @@ export function buildPeriodicStockClosingJournalEntry(targetStore,valuation,mapp
   const closing=Number(valuation.closing_value??valuation.closingValue);
   const openingNegative=Number(valuation.opening_negative_positions??valuation.openingNegativePositions)||0;
   const closingNegative=Number(valuation.closing_negative_positions??valuation.closingNegativePositions)||0;
-  const activeCounts=Number(valuation.active_count_sessions??valuation.activeCountSessions)||0;
+  const activeCounts=Number(valuation.active_count_sessions??valuation.activeCountSessions)||0;\n  const negativeMovements=Number(valuation.negative_movements??valuation.negativeMovements)||0;
   if(!Number.isFinite(opening)||!Number.isFinite(closing)||opening < -0.01||closing < -0.01)return {ok:false,entries:[],errors:["La valorisation historique du stock est négative ou invalide ; clôture refusée."]};
-  if(openingNegative>0||closingNegative>0)return {ok:false,entries:[],errors:["Des stocks négatifs existent dans la période ; régularisez-les avant la clôture périodique."]};
+  if(openingNegative>0||closingNegative>0||negativeMovements>0)return {ok:false,entries:[],errors:["Des stocks négatifs existent au début, à la fin ou pendant la période ; régularisez-les avant la clôture périodique."]};
   if(activeCounts>0)return {ok:false,entries:[],errors:["Un inventaire physique est encore en cours ; terminez-le avant la clôture périodique."]};
   const delta=round2(closing-opening);
   if(Math.abs(delta)<0.01)return {ok:true,skipped:true,unchanged:true,entries:[],opening,closing,delta,errors:[]};

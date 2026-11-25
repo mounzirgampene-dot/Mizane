@@ -19,16 +19,16 @@ export function buildSupplierInvoiceJournalEntry(store, invoice, accountingMode 
   }
   const config = invoice.accounting || {}, mapping = config.accounts || {};
   const accounts = accountsFor(store);
+  const sourceTotal = Number(invoice.total);
   const lines = Array.isArray(invoice.lines) ? invoice.lines : [];
-  const normalized = lines.map(line => ({
+  const normalized = (lines.length ? lines : [{lineType:"goods",amount:sourceTotal}]).map(line => ({
     ...line,
     lineType: ["service","fixed_asset"].includes(line.lineType) ? line.lineType : "goods",
-    amount: round2(Number(line.quantity || 0) * Number(line.unitCost || 0)),
+    amount: Number.isFinite(Number(line.amount)) ? round2(Number(line.amount)) : round2(Number(line.quantity || 0) * Number(line.unitCost || 0)),
   }));
   if (!normalized.length || normalized.some(line => !(line.amount > 0) || !Number.isFinite(line.amount))) {
-    errors.push("Chaque ligne de facture doit avoir une quantité et un coût unitaire strictement positifs.");
+    errors.push("Chaque ligne de facture doit avoir un montant HT strictement positif.");
   }
-  const sourceTotal = Number(invoice.total);
   const computedTotal = round2(normalized.reduce((sum,line)=>sum+line.amount,0));
   if (!(sourceTotal > 0) || !Number.isFinite(sourceTotal)) errors.push("Le total HT de la facture doit être positif.");
   else if (Math.abs(round2(sourceTotal)-computedTotal) > 0.01) errors.push("Le total HT ne correspond pas à la somme des lignes de la facture.");

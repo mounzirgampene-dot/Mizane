@@ -5,6 +5,7 @@ on:
     branches:
       - feat/stock-integrated-dev
       - feat/lot3-stock-operations-accounting
+      - feat/lot4-periodic-inventory-closing
   workflow_dispatch:
 
 permissions:
@@ -39,4 +40,4 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: 34f4aa815d65717e8f6c894ff6e9e3a4
-        run: npx --yes wrangler@3 pages deploy . --project-name=mizane-test-preview --branch=feat-lot3-stock-operations-accounting
+        run: npx --yes wrangler@3 pages deploy . --project-name=mizane-test-preview --branch=feat-lot4-periodic-inventory-closing

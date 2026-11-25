@@ -7,6 +7,7 @@ on:
       - feat/stock-integrated-dev
       - fix/lot2-billing-integrity
       - feat/lot3-stock-operations-accounting
+      - feat/lot4-periodic-inventory-closing
   pull_request:
     branches:
       - main

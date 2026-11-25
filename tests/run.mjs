@@ -19,6 +19,7 @@ import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
+import { suggestSupplierInvoiceAccounts } from "../js/purchase-account-mapping.js";
 import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, buildSupplierMultiInvoicePaymentJournalEntry, postSupplierMultiInvoicePaymentJournalEntry } from "../js/purchase-credit-notes.js";
 import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
@@ -1925,7 +1926,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v45/);
+  assert.match(serviceWorkerSource,/mizane-v46/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2134,7 +2135,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v45/);
+  assert.match(serviceWorkerSource,/mizane-v46/);
 });
 
 
@@ -2298,6 +2299,43 @@ test("achats : avoir détaillé sur facture mixte et multi-taux, TVA et ventilat
   const nonRecoverable=buildSupplierCreditNoteJournalEntry(store,{...invoice,accounting:{...invoice.accounting,taxRecoverable:false}},{...credit,id:4,number:"AVF-NR"},"perpetual");
   assert.equal(nonRecoverable.ok,true,nonRecoverable.errors?.join(" "));
   assert.deepEqual(nonRecoverable.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",59,0],["31",0,48],["613",0,11]]);
+});
+test("achats : suggestions automatiques d’imputation valides sur les quatre plans comptables", () => {
+  for (const planId of ["cgnc", "syscohada", "pcg", "nct"]) {
+    const store = newStore();
+    store.settings.plan = planId;
+    buildAccountCache(store, allAccounts(planId));
+    const suggestion = suggestSupplierInvoiceAccounts(store, "perpetual");
+    assert.equal(suggestion.complete, true, planId + " : comptes manquants " + suggestion.missing.join(", "));
+    assert.equal(suggestion.planId, planId);
+    for (const key of ["supplier", "stock", "purchases", "inputVat", "services", "fixedAssets"]) assert.ok(suggestion.accounts[key], planId + " : compte " + key + " proposé");
+    const invoice = {
+      id: 910, type: "invoice", number: "AUTO-" + planId.toUpperCase(), date: "2026-11-25", total: 160, supplierName: "Fournisseur test",
+      lines: [
+        { lineType: "goods", amount: 100, taxRate: 20 },
+        { lineType: "service", amount: 40, taxRate: 10 },
+        { lineType: "fixed_asset", amount: 20, taxRate: 20 },
+      ],
+      accounting: { exchangeRate: 1, taxRate: 0, taxRecoverable: true, accounts: suggestion.accounts },
+    };
+    for (const mode of ["perpetual", "periodic"]) {
+      const proposal = buildSupplierInvoiceJournalEntry(store, invoice, mode);
+      assert.equal(proposal.ok, true, planId + "/" + mode + " : " + proposal.errors.join(" "));
+      const debit = proposal.entries[0].lines.reduce((sum, line) => sum + line.debit, 0);
+      const credit = proposal.entries[0].lines.reduce((sum, line) => sum + line.credit, 0);
+      assert.equal(debit, credit, planId + "/" + mode + " : écriture équilibrée");
+      assert.equal(proposal.summary.baseHT, 160);
+      assert.equal(proposal.summary.baseTax, 28);
+    }
+  }
+});
+
+test("achats : une imputation personnalisée valide est prioritaire sur la suggestion du plan", () => {
+  const store = freshStore();
+  store.settings.customAccounts = [{ code: "401X", label: "Fournisseurs personnalisés", type: "liability" }];
+  const suggestion = suggestSupplierInvoiceAccounts(store);
+  assert.equal(suggestion.accounts.supplier, "401X");
+  assert.equal(suggestion.labels.supplier, "Fournisseurs personnalisés");
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

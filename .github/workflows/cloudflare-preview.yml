@@ -11,6 +11,7 @@ on:
       - feat/lot7-mixed-supplier-invoices
       - feat/lot8-supplier-line-tax-rates
       - feat/lot9-supplier-credit-note-line-allocation
+      - feat/lot10-supplier-auto-account-mapping
   workflow_dispatch:
 
 permissions:

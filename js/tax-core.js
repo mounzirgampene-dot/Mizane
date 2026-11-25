@@ -95,6 +95,48 @@ const profiles = {
   {label:"ERS — Notice for Filing Income Tax Returns 2026",url:"https://ers.org.sz/whatsnew-file/1791462650754-1784270658474_Notice_for_Filing_Income_tax_Returns_Public_Notice_Final_Aligned.pdf"}
  ],rules:[]},
 
+ AO:{countryCode:"AO",countryName:"Angola",currency:"AOA",status:"research_required",authority:"Administração Geral Tributária (AGT)",rulesVersion:"OGE 2026 / Circular AGT n.º 01/2026 — consolidation requise",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"IVA — taux général publié",value:"14 %",detail:"Taux général publié par les références fiscales consultées. Les taux réduits, le régime simplifié, les seuils et les règles propres à Cabinda doivent être contrôlés article par article avant tout calcul.",legalReference:"Código do IVA ; AGT — Portal do Contribuinte ; Circular n.º 01 GACV/GJ/AGT/2026",sourceUrl:"https://www.ucm.minfin.gov.ao/cs/groups/public/documents/document/aw41/mzux/~edisp/minfin5351435.pdf"},
+  {taxType:"IS",label:"Imposto Industrial — taux général de référence",value:"25 %",detail:"Taux de droit commun relevé dans les publications fiscales 2026. Les régimes général, simplifié, secteurs particuliers, retenues et modifications de la loi budgétaire 2026 nécessitent une consolidation légale avant activation.",legalReference:"Código do Imposto Industrial ; Lei n.º 14/25, de 30 de Dezembro ; Circular AGT n.º 01/2026",sourceUrl:"https://www.ucm.minfin.gov.ao/cs/groups/public/documents/document/aw41/mzux/~edisp/minfin5351435.pdf"}
+ ],taxScales:[],legalSources:[
+  {label:"AGT — Circular n.º 01 GACV/GJ/AGT/2026, mesures fiscales OGE 2026",url:"https://www.ucm.minfin.gov.ao/cs/groups/public/documents/document/aw41/mzux/~edisp/minfin5351435.pdf"},
+  {label:"AGT — Portal do Contribuinte",url:"https://portaldocontribuinte.minfin.gov.ao/"},
+  {label:"AGT — portail institutionnel",url:"https://agt.minfin.gov.ao/"}
+ ],rules:[]},
+ MG:{countryCode:"MG",countryName:"Madagascar",currency:"MGA",status:"research_required",authority:"Direction générale des Impôts (DGI)",rulesVersion:"Code des impôts LFI 2026 / LFR 2026 — consolidation requise",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"TVA — taux normal",value:"20 %",detail:"Le Code des impôts mis à jour suivant la loi de finances initiale 2026 indique un taux normal de 20 %, un taux réduit de 10 % pour les importations et ventes de gaz butane visées, et 0 % pour les exportations. La loi de finances rectificative 2026 doit également être intégrée.",legalReference:"Code des impôts 2026, art. 06.01.12 ; Loi n° 2025-021 portant loi de finances 2026 ; Loi n° 2026-004",sourceUrl:"https://www.impots.mg/explorer?path=%2Flegislation%2FCodes+et+Manuels"},
+  {taxType:"IS",label:"Impôt sur les revenus — régime réel",value:"20 %",detail:"Taux général documenté pour le régime réel dans les références fiscales consultées. Les seuils, minimums, régime synthétique et modifications introduites par la loi de finances rectificative 2026 doivent être consolidés avant calcul.",legalReference:"Code des impôts 2026 ; Loi n° 2025-021 portant loi de finances 2026 ; Loi n° 2026-004",sourceUrl:"https://www.impots.mg/explorer?path=%2Flegislation%2FCodes+et+Manuels"}
+ ],taxScales:[],legalSources:[
+  {label:"DGI Madagascar — Codes et manuels, CDI-LFI 2026 et CPF-LFI 2026",url:"https://www.impots.mg/explorer?path=%2Flegislation%2FCodes+et+Manuels"},
+  {label:"Ministère de l’Économie et des Finances — Loi n° 2025-021 portant loi de finances 2026",url:"https://cnlegis.gov.mg/uploads/L2025-021_VF.pdf"},
+  {label:"Ministère de l’Économie et des Finances — documents budgétaires 2026",url:"https://www.mef.gov.mg/"}
+ ],rules:[]},
+ MU:{countryCode:"MU",countryName:"Maurice",currency:"MUR",status:"research_required",authority:"Mauritius Revenue Authority (MRA)",rulesVersion:"Finance Act 2026 — analyse d'incidence en cours",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"VAT — taux standard",value:"15 %",detail:"Taux standard publié par la MRA. Les opérations à taux zéro, exonérations, seuils et modifications applicables aux prestations numériques à compter de 2026 doivent être qualifiés séparément.",legalReference:"Value Added Tax Act 1998, Fourth Schedule ; Finance Act 2026",sourceUrl:"https://mra.mu/index.php/taxes-duties/overview-of-taxes"},
+  {taxType:"IS",label:"Corporate Income Tax — taux de référence",value:"15 % en règle générale ; 3 % pour certaines sociétés exportatrices de biens",detail:"Taux publiés par la MRA. La Finance Act 2026, publiée en août 2026, modifie plusieurs dispositions fiscales ; les conditions, exemptions partielles et dates d'effet doivent être consolidées avant toute activation.",legalReference:"Income Tax Act 1995 ; Finance Act 2026",sourceUrl:"https://mra.mu/index.php/taxes-duties/corporate-taxation"}
+ ],taxScales:[],legalSources:[
+  {label:"MRA — Overview of Taxes, TVA et législation applicable",url:"https://mra.mu/index.php/taxes-duties/overview-of-taxes"},
+  {label:"MRA — Corporate Taxation, taux et régimes",url:"https://mra.mu/index.php/taxes-duties/corporate-taxation"},
+  {label:"Ministry of Finance — Finance Act 2026 et lois fiscales",url:"https://mof.govmu.org/Pages/Acts-and-Regulations.aspx"},
+  {label:"MRA — VAT Act 1998",url:"https://www.mra.mu/download/VATAct.pdf"}
+ ],rules:[]},
+ SC:{countryCode:"SC",countryName:"Seychelles",currency:"SCR",status:"research_required",authority:"Seychelles Revenue Commission (SRC)",rulesVersion:"SRC — textes consolidés et amendements 2025–2026 à vérifier",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"VAT — taux standard",value:"15 %",detail:"La SRC publie un taux standard de 15 % et un taux zéro pour les exportations et fournitures expressément visées. Les modifications des annexes du VAT Act en 2025 et leur portée doivent être contrôlées avant activation.",legalReference:"Value Added Tax Act 2010 ; Act 16 of 2024 ; SI 20 of 2025 ; SI 56 of 2025",sourceUrl:"https://src.gov.sc/seychelles-tax-system/"},
+  {taxType:"IS",label:"Business Tax — sociétés",value:"15 % sur les premiers SCR 1 000 000 ; 25 % au-delà",detail:"Barème publié par la SRC. Le régime dépend de la forme juridique, du secteur, du chiffre d'affaires et des amendements réglementaires ; il ne constitue pas un calculateur universel.",legalReference:"Business Tax Act 2009 et amendements ; SI 108 of 2021 ; SRC FAQ",sourceUrl:"https://src.gov.sc/faq/"}
+ ],taxScales:[],legalSources:[
+  {label:"SRC — Tax System, TVA et Business Tax",url:"https://src.gov.sc/seychelles-tax-system/"},
+  {label:"SRC — FAQ, taux de Business Tax et seuils",url:"https://src.gov.sc/faq/"},
+  {label:"SRC — Legislation, Business Tax Act et VAT Act, amendements 2024–2025",url:"https://src.gov.sc/legislation/"}
+ ],rules:[]},
+ KM:{countryCode:"KM",countryName:"Comores",currency:"KMF",status:"research_required",authority:"Administration Générale des Impôts et des Domaines (AGID)",rulesVersion:"CGI 2023 / loi de finances 2025 — texte 2026 non consolidé",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"TVA — validation du taux 2026 requise",value:"Non validé",detail:"Les sources officielles consultées ne permettent pas d'établir une version consolidée des taux indirects applicable en 2026. Aucun taux n'est proposé au sélecteur ni activé.",legalReference:"Code général des impôts de l'Union des Comores ; loi de finances annuelle à confirmer",sourceUrl:"https://justice.gouv.km/texte/code-general-des-impots-2023/"},
+  {taxType:"IS",label:"Impôt sur les sociétés — taux du CGI publié",value:"35 %",detail:"L'article 33 du CGI accessible fixe un taux de 35 %, avec un taux particulier de 50 % pour certaines entités publiques industrielles ou commerciales au-delà du seuil prévu. Le minimum forfaitaire de l'article 35 est de 1,5 % du chiffre d'affaires. L'absence de consolidation 2024–2026 empêche toute activation.",legalReference:"Code général des impôts 2023, art. 33 et 35 ; loi n° 11-07/AU du 3 mai 2011",sourceUrl:"https://justice.gouv.km/wp-content/uploads/2025/03/comores-cgi-2023.pdf"}
+ ],taxScales:[],legalSources:[
+  {label:"Ministère de la Justice — Code général des impôts 2023",url:"https://justice.gouv.km/texte/code-general-des-impots-2023/"},
+  {label:"Ministère de la Justice — CGI Comores, version PDF",url:"https://justice.gouv.km/wp-content/uploads/2025/03/comores-cgi-2023.pdf"},
+  {label:"Ministère de la Justice — loi de finances 2025, promulgation",url:"https://justice.gouv.km/wp-content/uploads/2025/03/decret-n-24-186pr-du-19-decembre-2024-promulgation-de-la-loi-n-24-016pr-portant-loi-de-finances-2025-1.pdf"}
+ ],rules:[]},
+
 };
 
 export function getTaxCountryProfile(countryCode) {

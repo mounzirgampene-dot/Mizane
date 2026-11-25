@@ -20,6 +20,7 @@ on:
       - feat/lot14-commercial-performance
       - feat/lot16-financial-forecast
       - feat/lot17-budget-control
+      - feat/lot18-fixed-assets
   pull_request:
     branches:
       - main

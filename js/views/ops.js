@@ -1,7 +1,8 @@
 // MIZANE — Écran Outils : clôture d'exercice, immobilisations & amortissements, rapprochement bancaire.
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
-import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
+import { AMORT_METHODS, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
+import { buildFixedAssetSchedule, fixedAssetsSummary } from "../fixed-assets-core.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
 import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady, hasActiveStockCompany, readCloudStockPeriodValuation } from "../cloud-sync.js";
@@ -52,6 +53,7 @@ async function postPeriodicStockAdjustment(startDate,endDate) {
 export function viewTools() {
   const s = store.settings;
   const assets = store.assets || [];
+  const assetSummary = fixedAssetsSummary(assets);
   const closedPeriods = Array.isArray(s.closedPeriods) ? s.closedPeriods.filter(period => period.status !== "open") : [];
   $app.innerHTML = `
     <h1>Outils comptables</h1>
@@ -86,6 +88,7 @@ export function viewTools() {
         <div><label>Méthode</label><select id="am-method">${Object.entries(AMORT_METHODS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>
         <div class="nogrow"><button id="am-add">Ajouter</button></div>
       </div>
+      <div class="grid cols-3" style="margin-top:10px"><section class="card kpi"><div class="value">${money(assetSummary.grossValue)}</div><div class="label">Valeur brute</div></section><section class="card kpi"><div class="value">${money(assetSummary.accumulated)}</div><div class="label">Amortissements cumulés</div></section><section class="card kpi"><div class="value">${money(assetSummary.netBookValue)}</div><div class="label">Valeur nette comptable</div></section></div>
       ${assets.length === 0 ? `<p class="muted">Aucune immobilisation enregistrée.</p>` : `
       <div class="table-wrap" style="margin-top:10px"><table>
         <thead><tr><th>Libellé</th><th>Compte</th><th>Valeur</th><th>Méthode</th><th>Durée</th><th class="num">Déjà amorti</th><th class="num">VNC</th><th></th></tr></thead>
@@ -253,7 +256,7 @@ export function viewTools() {
   }));
   $app.querySelectorAll("[data-sched]").forEach((b) => b.addEventListener("click", () => {
     const a = store.assets[Number(b.dataset.sched)];
-    const sched = amortizationSchedule(a.amount, a.years, a.method);
+    const sched = buildFixedAssetSchedule({ ...a, residualValue: Number(a.residualValue) || 0 }).rows;
     openModal(`
       <h2>Plan d'amortissement — ${esc(a.name)}</h2>
       <table><thead><tr><th>Année</th><th class="num">Taux</th><th class="num">Annuité</th><th class="num">Cumul</th><th class="num">VNC</th></tr></thead>

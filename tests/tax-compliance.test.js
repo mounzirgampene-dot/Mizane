@@ -36,6 +36,7 @@ const calendar = buildMoroccoTaxCalendar({ fiscalEnd: "2025-12-31", year: 2026, 
 assert.equal(calendar.ok, true);
 assert.equal(calendar.items.find(x => x.id === "IS_ANNUAL_2025").dueDate, "2026-03-31");
 assert.equal(calendar.items.find(x => x.id === "PAYROLL_ANNUAL_2026").dueDate, "2026-02-28");
+assert.equal(buildMoroccoTaxCalendar({ fiscalEnd: "2026-01-31", year: 2027 }).items[0].dueDate, "2026-04-30");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-01").dueDate, "2026-02-28");
 assert.equal(calendar.items.find(x => x.id === "WHT_2026-12").dueDate, "2027-01-31");
 

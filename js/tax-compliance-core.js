@@ -20,6 +20,7 @@ export const MOROCCO_IR_BRACKETS = [
 export const MOROCCO_WITHHOLDING_RULES = [
   { code: "MA_WHT_SERVICE_COMPANY_5", label: "Honoraires, commissions et loyers — personne morale éligible", rate: 5, taxType: "IS", legalReference: "CGI 2026, art. 19-IV-A, 15 bis et 15 ter", requiresEligibility: true },
   { code: "MA_WHT_NONRESIDENT_10", label: "Produits bruts versés à un non-résident", rate: 10, taxType: "IS_IR", legalReference: "CGI 2026, art. 19-IV-B et 73-II-B-1°", requiresTreatyReview: true },
+  { code: "MA_WHT_DIVIDENDS_EXEMPT", label: "Dividendes versés à une société marocaine soumise à l'IS — exonération sous attestation", rate: 0, taxType: "IS", legalReference: "CGI 2026, art. 6-I-C-1°", requiresEligibility: true },
   { code: "MA_WHT_DIVIDENDS_2025", label: "Dividendes et produits de participation — 2025", rate: 12.5, taxType: "IS_IR", validFrom: "2025-01-01", validTo: "2025-12-31", legalReference: "CGI, art. 247-XXXVII-C", requiresEligibility: true },
   { code: "MA_WHT_DIVIDENDS_2026", label: "Dividendes et produits de participation — 2026", rate: 11.25, taxType: "IS_IR", validFrom: "2026-01-01", validTo: "2026-12-31", legalReference: "CGI 2026, art. 247-XXXVII-C", requiresEligibility: true },
   { code: "MA_WHT_DIVIDENDS_2027", label: "Dividendes et produits de participation — à compter de 2027", rate: 10, taxType: "IS_IR", validFrom: "2027-01-01", validTo: null, legalReference: "CGI 2026, art. 247-XXXVII-C", requiresEligibility: true },

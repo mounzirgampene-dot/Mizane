@@ -18,7 +18,7 @@ import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, 
 import { planSupplierInvoiceReceiptAllocation } from "../js/purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
-import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation } from "../js/purchase-credit-notes.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, buildSupplierMultiInvoicePaymentJournalEntry, postSupplierMultiInvoicePaymentJournalEntry } from "../js/purchase-credit-notes.js";
 import { buildSalesStockCostJournalEntry, postSalesStockCostJournalEntry, buildStockOperationJournalEntry, postStockOperationJournalEntry, calculateLocalStockPeriodValuation, buildPeriodicStockClosingJournalEntry, postPeriodicStockClosingJournalEntry } from "../js/stock-accounting.js";
 
 let passed = 0, failed = 0;
@@ -1952,6 +1952,37 @@ test("achats : métadonnées obligatoires et valides pour une facture fournisseu
   assert.equal(validateSupplierInvoiceMetadata({reference:"",date:"2026-11-24",currency:"MAD"}).errors[0],"La référence de la facture fournisseur est obligatoire.");
 });
 
+
+test("achats : règlement groupé multi-factures, écriture unique, change et idempotence", () => {
+  const store=freshStore();
+  store.settings.customAccounts=[
+    {code:"401",label:"Fournisseurs",type:"liability"},
+    {code:"512",label:"Banque",type:"asset"},
+    {code:"571",label:"Caisse",type:"asset"},
+    {code:"675",label:"Pertes de change",type:"expense"},
+    {code:"778",label:"Gains de change",type:"income"},
+  ];
+  const invoices=[
+    {id:91,type:"invoice",number:"FAF-G-91",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:60,accounting:{exchangeRate:1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+    {id:92,type:"invoice",number:"FAF-G-92",supplierId:9,supplierName:"Fournisseur test",currency:"MAD",status:"validated",accountingPostedAt:"2026-11-25T10:00:00Z",total:40,accounting:{exchangeRate:1.1,taxRate:0,accounts:{supplier:"401"}},payments:[],creditNotes:[]},
+  ];
+  const allocations=[{invoiceId:91,amount:60},{invoiceId:92,amount:40}];
+  const payment={date:"2026-11-25",reference:"VIR-GROUPE-001",amount:100,currency:"MAD",method:"bank",exchangeRate:1.2};
+  const mapping={treasury:"512",fxLoss:"675",fxGain:"778"};
+  const proposal=buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(proposal.ok,true,proposal.errors?.join(" "));
+  assert.equal(proposal.entries.length,1);
+  assert.deepEqual(proposal.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[
+    ["401",60,0],["401",44,0],["675",16,0],["512",0,120],
+  ]);
+  const posted=postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping);
+  assert.equal(posted.ok,true,posted.errors?.join(" "));
+  assert.equal(store.entries.length,1);
+  assert.equal(postSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,payment,mapping).ok,false,"un paiement groupé ne doit pas être comptabilisé deux fois");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,[{invoiceId:91,amount:61},{invoiceId:92,amount:40}],payment,mapping).ok,false,"une affectation ne peut dépasser le solde dû");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,amount:99},mapping).ok,false,"le montant payé doit correspondre aux affectations");
+  assert.equal(buildSupplierMultiInvoicePaymentJournalEntry(store,invoices,allocations,{...payment,method:"cash"}, {...mapping,treasury:"512"}).ok,false,"un paiement en espèces doit utiliser un compte de caisse");
+});
 
 test("stock : sorties manuelles et écarts d’inventaire sont comptabilisés selon les comptes configurés", () => {
   const store=newStore();

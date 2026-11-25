@@ -124,7 +124,7 @@ export function buildMoroccoTaxCalendar({ fiscalEnd, year, withholdingMonths = [
     return y + "-" + String(m + 1).padStart(2, "0") + "-" + String(Math.min(day, last)).padStart(2, "0");
   };
   const items = [
-    { id: "IS_ANNUAL_" + targetYear, taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)", period: String(targetYear - 1), dueDate: nextDate(fiscalEnd, 3, Number(fiscalEnd.slice(8, 10))), legalReference: "CGI 2026, art. 20-I", confidence: "statutory" },
+    { id: "IS_ANNUAL_" + fiscalEnd.slice(0, 4), taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)", period: fiscalEnd.slice(0, 4), dueDate: nextDate(fiscalEnd, 3, Number(fiscalEnd.slice(8, 10))), legalReference: "CGI 2026, art. 20-I", confidence: "statutory" },
     { id: "PAYROLL_ANNUAL_" + targetYear, taxType: "IR", title: "État annuel des traitements et salaires", period: String(targetYear - 1), dueDate: targetYear + "-02-28", legalReference: "CGI 2026, art. 79-I", confidence: "statutory" },
   ];
   for (const month of withholdingMonths) {

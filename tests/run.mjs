@@ -2621,6 +2621,9 @@ test("créances clients : balance âgée, règlements, avoirs et séparation des
 
 const taxDocumentVaultMigration = readFileSync(new URL("../supabase/migrations/20261125172040_tax_document_vault.sql", import.meta.url), "utf8");
 const taxDocumentCloudSource = readFileSync(new URL("../js/tax-documents-cloud.js", import.meta.url), "utf8");
+const taxDocumentVaultHardeningMigration = readFileSync(new URL("../supabase/migrations/20261125172702_tax_document_vault_hardening.sql", import.meta.url), "utf8");
+const taxDocumentUiSource = readFileSync(new URL("../js/tax.js", import.meta.url), "utf8");
+const taxDocumentManageFunctionSource = readFileSync(new URL("../supabase/functions/manage-company-members/index.ts", import.meta.url), "utf8");
 test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", () => {
   assert.match(taxDocumentVaultMigration, /create table if not exists public\.company_tax_documents/);
   assert.match(taxDocumentVaultMigration, /enable row level security[\s\S]*force row level security/);
@@ -2632,6 +2635,12 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
   assert.match(taxDocumentCloudSource, /company_id/);
   assert.match(taxDocumentCloudSource, /\.download\(/);
   assert.match(taxDocumentCloudSource, /verifyCloudTaxEvidence/);
+  assert.match(taxDocumentVaultHardeningMigration, /guard_company_tax_document_update/);
+  assert.match(taxDocumentVaultHardeningMigration, /metadata structurelles/);
+  assert.match(taxDocumentUiSource, /import\("\.\/tax-documents-cloud\.js"\)/);
+  assert.match(taxDocumentUiSource, /Documents partagés sans déclaration locale/);
+  assert.match(taxDocumentManageFunctionSource, /company_tax_documents/);
+  assert.match(taxDocumentManageFunctionSource, /storagePaths\.slice\([\s\S]*\.remove\(/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

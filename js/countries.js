@@ -67,8 +67,12 @@ const existingProfiles = [
   { code: "SS", name: "Soudan du Sud", zone: "International", currency: "SSP", vatRates: [], locale: "en-SS" },
   { code: "ST", name: "São Tomé-et-Príncipe", zone: "International", currency: "STN", vatRates: [], locale: "pt-ST" },
   { code: "DZ", name: "Algérie", zone: "AFN", currency: "DZD", vatRates: [], locale: "fr-DZ" },
+  { code: "EG", name: "Égypte", zone: "International", currency: "EGP", vatRates: [], locale: "ar-EG" },
+  { code: "LY", name: "Libye", zone: "International", currency: "LYD", vatRates: [], locale: "ar-LY" },
+  { code: "JO", name: "Jordanie", zone: "International", currency: "JOD", vatRates: [], locale: "ar-JO" },
+  { code: "SA", name: "Arabie saoudite", zone: "International", currency: "SAR", vatRates: [], locale: "ar-SA" },
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
-  { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [19, 13, 7, 0], locale: "fr-TN" },
+  { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [], locale: "fr-TN" },
   { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
 ];
 const profiles = new Map(existingProfiles.map((country) => [country.code, country]));

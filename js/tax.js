@@ -1,69 +1,92 @@
-// MIZANE — Espace fiscal : référentiel pays et aperçu analytique TVA.
-import { store, $app, esc } from "./state.js";
-import { buildVatReport, getActiveTaxRules, getTaxCountryProfile } from "./tax-core.js";
+// MIZANE — Espace de conformité fiscale international, premier pays opérationnel : Maroc.
+import { store, $app, esc, saveNow, toast } from "./state.js";
+import { accountType } from "./accounting.js";
+import { buildVatReport, getTaxCountryProfile } from "./tax-core.js";
+import { calculateMoroccoIS, calculateMoroccoIR, calculateMoroccoWithholding, buildMoroccoTaxCalendar, reconcileTaxLedger, validateTaxDeclaration, MOROCCO_WITHHOLDING_RULES } from "./tax-compliance-core.js";
 
-const today = () => new Date().toISOString().slice(0, 10);
-const fiscalStart = () => store.settings.exerciceStart || today().slice(0, 4) + "-01-01";
-const fiscalEnd = () => store.settings.exerciceEnd || today().slice(0, 4) + "-12-31";
-const amount = (value, currency) => {
-  try { return new Intl.NumberFormat(store.settings.locale || "fr-MA", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value || 0)); }
-  catch { return Number(value || 0).toFixed(2) + " " + currency; }
-};
-
-export function viewTax() {
-  const countryCode = String(store.settings.country || "").toUpperCase();
-  const profile = getTaxCountryProfile(countryCode);
-  const startDate = document.getElementById("tax-start")?.value || fiscalStart();
-  const endDate = document.getElementById("tax-end")?.value || fiscalEnd();
-  const rules = getActiveTaxRules(countryCode, "VAT", endDate);
-  const sales = store.billing?.documents || [];
-  const purchases = store.billing?.purchases?.documents || [];
-  const report = buildVatReport({ countryCode, startDate, endDate, salesDocuments: sales, purchaseDocuments: purchases });
-  const currencies = report.ok ? Object.entries(report.byCurrency) : [];
-  const summaryCards = currencies.map(([currency, item]) => `
-    <section class="card kpi"><div class="label">TVA nette théorique · ${esc(currency)}</div><div class="value">${amount(item.netVatPayable, currency)}</div><div class="muted">Collectée : ${amount(item.outputVat, currency)} · Déductible qualifiée : ${amount(item.deductibleInputVat, currency)}</div></section>`).join("");
-  const rows = report.ok ? report.rows.map(row => `<tr><td>${esc(row.direction === "sales" ? "Ventes" : "Achats")}</td><td>${esc(row.label)}</td><td class="num">${row.rate.toFixed(2)} %</td><td class="num">${amount(row.baseAmount, row.currency)}</td><td class="num">${amount(row.taxAmount, row.currency)}</td><td class="num">${amount(row.deductibleTax, row.currency)}</td></tr>`).join("") : "";
-  const warnings = report.ok ? report.warnings.map(item => `<li>${esc(item.message)} ${item.documentId == null ? "" : "Document #" + esc(item.documentId)}${item.line ? " — ligne " + item.line : ""}</li>`).join("") : "";
-  const sourceLinks = profile.legalSources.map(item => `<li><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.label)}</a></li>`).join("");
-  const ruleRows = rules.map(rule => `<tr><td>${esc(rule.code)}</td><td>${esc(rule.label)}</td><td class="num">${rule.rate.toFixed(2)} %</td><td>${esc(rule.validFrom)}${rule.validTo ? " → " + esc(rule.validTo) : " → en vigueur"}</td></tr>`).join("");
-  $app.innerHTML = `
-    <h1>Gestion fiscale internationale</h1>
-    <p class="muted">Référentiel : ${esc(profile.countryName)} · ${profile.status === "active" ? "Pays activé" : "Référentiel non configuré"} · Version ${esc(profile.rulesVersion || "—")} · Devise : ${esc(profile.currency || store.settings.currency || "—")}</p>
-    ${profile.status !== "active" ? `<section class="card"><h2>Référentiel fiscal indisponible</h2><p>Le moteur international est prêt à accueillir ce pays, mais ses règles n'ont pas encore été vérifiées et activées. Aucun taux ne sera supposé.</p></section>` : `
-      <form id="tax-period-form" class="card">
-        <h2>Aperçu TVA — période fiscale</h2>
-        <div class="row">
-          <div><label for="tax-start">Du</label><input id="tax-start" type="date" value="${esc(startDate)}" required></div>
-          <div><label for="tax-end">Au</label><input id="tax-end" type="date" value="${esc(endDate)}" required></div>
-          <div class="nogrow"><button type="submit">Actualiser le calcul</button></div>
-        </div>
-        <p class="muted">Les montants sont ventilés par devise et calculés à partir des factures de vente et d'achat enregistrées. Les montants en devises différentes ne sont jamais additionnés.</p>
-      </form>
-      <div class="grid cols-3">${summaryCards || '<section class="card"><p class="muted">Aucun document fiscal exploitable sur cette période.</p></section>'}</div>
-      <section class="card table-wrap">
-        <h2>Détail par nature et taux</h2>
-        <table><thead><tr><th>Flux</th><th>Traitement</th><th class="num">Taux</th><th class="num">Base</th><th class="num">TVA</th><th class="num">TVA déductible</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">Aucune ligne de TVA à afficher.</td></tr>'}</tbody></table>
-      </section>
-      <section class="card">
-        <h2>Référentiel TVA actif</h2>
-        <p class="muted">Autorité : ${esc(profile.authority)} · Application à partir du ${esc(profile.rulesEffectiveFrom)}. Les taux réduits sont réservés aux opérations légalement éligibles ; le choix du taux doit être justifié par la nature de l'opération.</p>
-        <div class="table-wrap"><table><thead><tr><th>Code</th><th>Traitement fiscal</th><th class="num">Taux</th><th>Validité</th></tr></thead><tbody>${ruleRows}</tbody></table></div>
-        <h3>Sources juridiques</h3><ul>${sourceLinks}</ul>
-      </section>
-      <section class="card">
-        <h2>Points à vérifier</h2>
-        <p>${report.ok ? report.warnings.length + " alerte(s) de qualification." : esc(report.errors.join(" "))}</p>
-        <ul>${warnings || '<li>Aucune anomalie de taux détectée dans les lignes analysées.</li>'}</ul>
-        <p class="muted">${esc(report.disclaimer || "Les calculs restent indicatifs tant que le référentiel fiscal du pays n'est pas activé.")}</p>
-      </section>
-    `}
-    <p class="muted">Le module ne dépose aucune déclaration, n'effectue aucun paiement et ne génère aucune écriture comptable. Les règles fiscales et les justificatifs restent soumis à validation humaine.</p>
-  `;
-  document.getElementById("tax-period-form")?.addEventListener("submit", event => {
-    event.preventDefault();
-    const start = document.getElementById("tax-start").value;
-    const end = document.getElementById("tax-end").value;
-    if (!start || !end || start > end) return window.alert("La période fiscale est invalide.");
-    viewTax();
-  });
+let tab="overview";
+const today=()=>new Date().toISOString().slice(0,10);
+const year=()=>Number(today().slice(0,4));
+const start=()=>store.settings.exerciceStart||year()+"-01-01";
+const end=()=>store.settings.exerciceEnd||year()+"-12-31";
+const fmt=n=>new Intl.NumberFormat("fr-MA",{style:"currency",currency:"MAD"}).format(Number(n||0));
+const ws=()=>{store.settings.taxWorkspace ||= {declarations:[],withholdingRecords:[],taxAccountMap:{},lastCalculations:{}};const w=store.settings.taxWorkspace;w.declarations||=[];w.withholdingRecords||=[];w.taxAccountMap||={};w.lastCalculations||={};return w;};
+const incomeType=t=>["income","revenue","product"].includes(String(t||"").toLowerCase());
+const expenseType=t=>["expense","charge"].includes(String(t||"").toLowerCase());
+function accountingResult(){
+ let income=0,expense=0;
+ for(const e of store.entries||[])if(e.date>=start()&&e.date<=end())for(const l of e.lines||[]){
+  const type=accountType(store,l.account),d=Number(l.debit||0),c=Number(l.credit||0);
+  if(incomeType(type))income+=c-d;else if(expenseType(type))expense+=d-c;
+ }
+ return {income:Math.round(income*100)/100,expense:Math.round(expense*100)/100,result:Math.round((income-expense)*100)/100};
+}
+function addMonths(date,n){const d=new Date(date+"T00:00:00Z");const day=d.getUTCDate();d.setUTCDate(1);d.setUTCMonth(d.getUTCMonth()+n);const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate();return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(Math.min(day,last)).padStart(2,"0");}
+const tabs=[["overview","Vue générale"],["is","IS"],["ir","IR"],["wht","Retenues à la source"],["declarations","Déclarations"],["recon","Rapprochement"]];
+function nav(){return '<nav class="row wrap">'+tabs.map(([k,v])=>'<button type="button" data-tab="'+k+'" class="'+(tab===k?"":"secondary")+'">'+v+'</button>').join("")+'</nav>';}
+function overview(profile,vat){
+ const w=ws(),open=w.declarations.filter(x=>!["filed","paid"].includes(x.status)).length,total=w.withholdingRecords.reduce((s,x)=>s+Number(x.taxAmount||0),0);
+ const cal=buildMoroccoTaxCalendar({fiscalEnd:end(),year:year()});
+ return `<section class="grid cols-3"><article class="card kpi"><div class="label">Déclarations à suivre</div><div class="value">${open}</div></article><article class="card kpi"><div class="label">Retenues calculées</div><div class="value">${fmt(total)}</div></article><article class="card kpi"><div class="label">Écritures comptables</div><div class="value">${(store.entries||[]).length}</div></article></section>
+ <section class="card"><h2>Référentiel ${esc(profile.countryName)} — CGI 2026</h2><p>Architecture fiscale internationale versionnée par pays et date d'effet. Maroc activé en premier. Les pays non configurés restent bloqués pour éviter l'utilisation de taux supposés.</p>
+ <h3>Échéances principales</h3><div class="table-wrap"><table><thead><tr><th>Obligation</th><th>Période</th><th>Échéance indicative</th><th>Référence</th></tr></thead><tbody>${cal.items.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(x.period)+'</td><td>'+x.dueDate+'</td><td>'+esc(x.legalReference)+'</td></tr>').join("")}</tbody></table></div><p class="muted">${esc(cal.disclaimer)}</p></section>
+ <section class="card"><h3>Principes de sécurité</h3><p>Pas de dépôt automatique, de paiement, d'écriture comptable ou de clôture. Les simulations doivent être validées et les pièces justificatives conservées.</p></section>`;
+}
+function isPanel(){
+ const a=accountingResult();
+ return `<section class="card"><h2>Liquidation indicative de l'IS — ${start()} au ${end()}</h2><div class="grid cols-3"><div><label>Produits comptabilisés</label><div class="value">${fmt(a.income)}</div></div><div><label>Charges comptabilisées</label><div class="value">${fmt(a.expense)}</div></div><div><label>Résultat comptable</label><div class="value">${fmt(a.result)}</div></div></div>
+ <p class="muted">Résultat établi à partir des comptes de produits et charges. Les retraitements fiscaux sont saisis séparément et doivent être justifiés.</p>
+ <form id="is-form"><div class="grid cols-2">
+ <div><label>Réintégrations fiscales (MAD)</label><input id="is-add" type="number" min="0" step=".01" value="0" required></div><div><label>Déductions fiscales (MAD)</label><input id="is-ded" type="number" min="0" step=".01" value="0" required></div>
+ <div><label>Catégorie IS</label><select id="is-rate"><option value="standard">Droit commun — 20 %</option><option value="high_profit">Bénéfice ≥ 100 M — 35 % (conditions)</option><option value="financial">Établissements financiers / assurances — 40 %</option></select></div>
+ <div><label>Base CM générale (MAD)</label><input id="is-cm" type="number" min="0" step=".01" value="${a.income}" required></div>
+ <div><label>Base CM produits éligibles à 0,15 % (MAD)</label><input id="is-cm-low" type="number" min="0" step=".01" value="0" required></div>
+ <div><label>Taux général CM</label><select id="is-cm-rate"><option value="0.25">0,25 %</option><option value="0.15">0,15 % — ventes éligibles</option></select></div>
+ <div><label>Acomptes et crédits (MAD)</label><input id="is-credits" type="number" min="0" step=".01" value="0" required></div><div><label>Retenues imputables justifiées (MAD)</label><input id="is-wht" type="number" min="0" step=".01" value="0" required></div></div>
+ <label class="row"><input id="is-exempt" type="checkbox"> Exonération de cotisation minimale applicable (à justifier)</label><button type="submit">Calculer l'IS</button></form><div id="is-result"></div></section>
+ <section class="card"><p>IS : 20 % en droit commun, 35 % pour les bénéfices nets d'au moins 100 M MAD sous conditions et exceptions, 40 % pour les catégories expressément visées. Cotisation minimale : 0,25 % ou 0,15 % pour les ventes légalement éligibles, plancher de 3 000 MAD, sous réserve des exonérations. CGI 2026, articles 19 et 144.</p></section>`;
+}
+function irPanel(){return `<section class="card"><h2>Calculateur IR — barème annuel 2026</h2><p>Indiquer le revenu net imposable après déductions légales. Ce module ne remplace pas le calcul complet d'une paie (CNSS, AMO, retraite, avantages et exonérations).</p><form id="ir-form"><div class="grid cols-2"><div><label>Revenu annuel net imposable (MAD)</label><input id="ir-income" type="number" min="0" step=".01" value="120000" required></div><div><label>Personnes à charge reconnues</label><input id="ir-dep" type="number" min="0" max="100" step="1" value="0" required></div></div><button type="submit">Calculer l'IR</button></form><div id="ir-result"></div></section>
+ <section class="card"><h3>Barème progressif</h3><div class="table-wrap"><table><tbody><tr><td>0–40 000 MAD</td><td>0 %</td></tr><tr><td>40 001–60 000</td><td>10 %</td></tr><tr><td>60 001–80 000</td><td>20 %</td></tr><tr><td>80 001–100 000</td><td>30 %</td></tr><tr><td>100 001–180 000</td><td>34 %</td></tr><tr><td>Au-delà de 180 000</td><td>37 %</td></tr></tbody></table></div><p>Réduction familiale : 600 MAD par personne, plafonnée à 3 600 MAD par an. CGI 2026, articles 73-I et 74.</p></section>`;}
+function whtPanel(){
+ const rows=ws().withholdingRecords.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(x=>'<tr><td>'+x.date+'</td><td>'+esc(x.beneficiary)+'</td><td>'+esc(x.label)+'</td><td>'+fmt(x.baseAmount)+'</td><td>'+x.rate+' %</td><td>'+fmt(x.taxAmount)+'</td></tr>').join("");
+ return `<section class="card"><h2>Calcul des retenues à la source</h2><form id="wht-form"><div class="grid cols-2">
+ <div><label>Date de paiement / mise à disposition</label><input id="wht-date" type="date" value="${today()}" required></div><div><label>Bénéficiaire</label><input id="wht-benef" maxlength="180" required></div>
+ <div><label>Catégorie</label><select id="wht-rule">${MOROCCO_WITHHOLDING_RULES.map(x=>'<option value="'+x.code+'">'+esc(x.label)+' — '+x.rate+' %</option>').join("")}<option value="CUSTOM">Taux personnalisé justifié</option></select></div>
+ <div><label>Base HT (MAD)</label><input id="wht-base" type="number" min="0" step=".01" required></div><div><label>Taux personnalisé (%)</label><input id="wht-custom" type="number" min="0" max="100" step=".01" value="0"></div><div><label>Référence légale du taux personnalisé</label><input id="wht-ref" maxlength="250"></div><div><label>Taux conventionnel éventuel (%)</label><input id="wht-treaty" type="number" min="0" max="100" step=".01"></div></div>
+ <label class="row"><input id="wht-eligible" type="checkbox"> Conditions légales d'éligibilité vérifiées</label><label class="row"><input id="wht-apply-treaty" type="checkbox"> Appliquer le taux conventionnel (certificat de résidence disponible)</label><button type="submit">Calculer et enregistrer</button></form><div id="wht-result"></div></section>
+ <section class="card"><h3>Historique</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Bénéficiaire</th><th>Nature</th><th>Base</th><th>Taux</th><th>Retenue</th></tr></thead><tbody>${rows||'<tr><td colspan="6">Aucune opération.</td></tr>'}</tbody></table></div></section>
+ <section class="card"><p class="muted">Taux intégrés : 5 % pour certaines rémunérations et locations à des personnes morales soumises à l'IS lorsque le payeur est éligible ; 10 % pour certains produits bruts de non-résidents ; 11,25 % pour dividendes en 2026 ; 20 % pour certains placements à revenu fixe ; 30 % pour certaines rémunérations occasionnelles hors personnel. La qualification et les conventions fiscales sont déterminantes.</p></section>`;
+}
+function declarationsPanel(){
+ const rows=ws().declarations.map(x=>'<tr><td>'+esc(x.taxType)+'</td><td>'+esc(x.period)+'</td><td>'+x.dueDate+'</td><td>'+fmt(x.amount)+'</td><td><select data-status="'+esc(x.id)+'"><option value="draft" '+(x.status==="draft"?"selected":"")+'>Brouillon</option><option value="reviewed" '+(x.status==="reviewed"?"selected":"")+'>À valider</option><option value="filed" '+(x.status==="filed"?"selected":"")+'>Déclarée</option><option value="paid" '+(x.status==="paid"?"selected":"")+'>Payée</option></select></td></tr>').join("");
+ const cal=buildMoroccoTaxCalendar({fiscalEnd:end(),year:year()});
+ return `<section class="card"><h2>Registre des déclarations</h2><form id="dec-form"><div class="grid cols-2"><div><label>Impôt</label><select id="dec-type"><option>TVA</option><option>IS</option><option>IR</option><option>Retenue à la source</option><option>Autre</option></select></div><div><label>Période</label><input id="dec-period" placeholder="2026 ou 2026-01" required></div><div><label>Échéance</label><input id="dec-due" type="date" required></div><div><label>Montant (MAD)</label><input id="dec-amount" type="number" min="0" step=".01" value="0"></div><div><label>Référence / récépissé</label><input id="dec-ref" maxlength="180"></div><div><label>Date de paiement si payé</label><input id="dec-pay" type="date"></div></div><button type="submit">Enregistrer</button></form><div class="table-wrap"><table><thead><tr><th>Impôt</th><th>Période</th><th>Échéance</th><th>Montant</th><th>Statut</th></tr></thead><tbody>${rows||'<tr><td colspan="5">Aucune déclaration enregistrée.</td></tr>'}</tbody></table></div></section>
+ <section class="card"><h3>Échéances légales pré-paramétrées</h3><div class="table-wrap"><table><thead><tr><th>Obligation</th><th>Période</th><th>Date indicative</th><th>Référence</th></tr></thead><tbody>${cal.items.map(x=>'<tr><td>'+esc(x.title)+'</td><td>'+esc(x.period)+'</td><td>'+x.dueDate+'</td><td>'+esc(x.legalReference)+(x.confidence==="review_required"?" — à confirmer":"")+'</td></tr>').join("")}</tbody></table></div><p class="muted">${esc(cal.disclaimer)}</p></section>`;
+}
+function reconPanel(){
+ const w=ws(),fields=[["TVA","TVA"],["IS","IS"],["IR","IR"],["WITHHOLDING","Autres retenues"]];
+ return `<section class="card"><h2>Rapprochement comptable et fiscal</h2><p>Associer les comptes de passif fiscal selon le plan de comptes actif. Aucune codification CGNC ou SYSCOHADA n'est imposée.</p><form id="recon-form"><div class="grid cols-2">${fields.map(([k,l])=>'<div><label>Comptes '+l+' (séparés par virgules)</label><input id="acct-'+k+'" value="'+esc((w.taxAccountMap[k]||[]).join(", "))+'" placeholder="Ex. 4455, 4456"></div><div><label>Montant déclaré / dû '+l+' (MAD)</label><input id="decl-'+k+'" type="number" min="0" step=".01" value="0"></div>').join("")}</div><button type="submit">Rapprocher</button></form><div id="recon-result"></div></section><section class="card"><p class="muted">Rapprochement indicatif : examiner le sens des soldes, les paiements, extournes et périmètres. Les écritures ne sont ni modifiées ni générées.</p></section>`;
+}
+function bind(){
+ document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;viewTax();}));
+ document.getElementById("tax-country")?.addEventListener("change",e=>{store.settings.taxCountry=e.target.value;saveNow();viewTax();});
+ document.getElementById("is-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const a=accountingResult(),r=calculateMoroccoIS({accountingResult:a.result,additions:Number(document.getElementById("is-add").value),deductions:Number(document.getElementById("is-ded").value),rateCategory:document.getElementById("is-rate").value,cmGeneralBase:Number(document.getElementById("is-cm").value),cmReducedBase:Number(document.getElementById("is-cm-low").value),cmRate:Number(document.getElementById("is-cm-rate").value),cmExempt:document.getElementById("is-exempt").checked,advancePayments:Number(document.getElementById("is-credits").value),withholdingCredits:Number(document.getElementById("is-wht").value)});
+  const out=document.getElementById("is-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}ws().lastCalculations.IS=r;saveNow();
+  out.innerHTML='<section class="card"><h3>Résultat</h3><p>Résultat fiscal : <strong>'+fmt(r.fiscalProfit)+'</strong></p><p>IS calculé : '+fmt(r.calculatedIS)+' · Cotisation minimale : '+fmt(r.minimumContribution)+'</p><p>Impôt brut retenu : '+fmt(r.grossTaxDue)+' · Crédits : '+fmt(r.credits)+'</p><h2>Solde indicatif : '+fmt(r.netDue)+'</h2><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.disclaimer)+'</p><button type="button" id="make-is-dec">Créer un brouillon IS</button></section>';
+  document.getElementById("make-is-dec").onclick=()=>{const item={id:"tax-"+Date.now(),taxType:"IS",period:start()+" → "+end(),dueDate:addMonths(end(),3),amount:r.netDue,status:"draft",reference:r.legalReference};ws().declarations.push(item);saveNow();tab="declarations";viewTax();};
+ });
+ document.getElementById("ir-form")?.addEventListener("submit",e=>{e.preventDefault();const r=calculateMoroccoIR({annualNetTaxableIncome:Number(document.getElementById("ir-income").value),dependents:Number(document.getElementById("ir-dep").value)});const out=document.getElementById("ir-result");if(!r.ok){out.textContent=r.errors.join(" ");return;}ws().lastCalculations.IR=r;saveNow();out.innerHTML='<section class="card"><h3>IR annuel : '+fmt(r.annualTax)+'</h3><p>Équivalent mensuel : '+fmt(r.monthlyEquivalent)+' · Taux effectif : '+r.effectiveRate+' %</p><p>Avant réduction familiale : '+fmt(r.grossAnnualTax)+' · Réduction : '+fmt(r.familyReduction)+'</p><div class="table-wrap"><table><thead><tr><th>Tranche</th><th>Taux</th><th>Base</th><th>Impôt</th></tr></thead><tbody>'+r.breakdown.map(x=>'<tr><td>'+fmt(x.from)+' – '+(Number.isFinite(x.to)?fmt(x.to):"plus")+'</td><td>'+x.rate+'%</td><td>'+fmt(x.taxableBase)+'</td><td>'+fmt(x.tax)+'</td></tr>').join("")+'</tbody></table></div><p class="muted">'+esc(r.disclaimer)+'</p></section>';});
+ document.getElementById("wht-form")?.addEventListener("submit",e=>{e.preventDefault();const r=calculateMoroccoWithholding({ruleCode:document.getElementById("wht-rule").value,date:document.getElementById("wht-date").value,baseAmount:Number(document.getElementById("wht-base").value),customRate:Number(document.getElementById("wht-custom").value),customLegalReference:document.getElementById("wht-ref").value,payerEligible:document.getElementById("wht-eligible").checked,applyTreaty:document.getElementById("wht-apply-treaty").checked,treatyRate:document.getElementById("wht-treaty").value});const out=document.getElementById("wht-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}ws().withholdingRecords.push({...r,id:"wht-"+Date.now(),beneficiary:document.getElementById("wht-benef").value.trim()});saveNow();out.innerHTML='<section class="card"><h3>Retenue enregistrée : '+fmt(r.taxAmount)+'</h3><p>Net à payer : '+fmt(r.netPayment)+' · '+r.rate+' %</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul></section>';viewTax();});
+ document.getElementById("dec-form")?.addEventListener("submit",e=>{e.preventDefault();const status="draft",item={id:"dec-"+Date.now(),taxType:document.getElementById("dec-type").value,period:document.getElementById("dec-period").value.trim(),dueDate:document.getElementById("dec-due").value,amount:Number(document.getElementById("dec-amount").value),reference:document.getElementById("dec-ref").value.trim(),status,paymentDate:document.getElementById("dec-pay").value};const v=validateTaxDeclaration(item);if(!v.ok){toast(v.errors.join(" "));return;}ws().declarations.push(item);saveNow();toast("Déclaration enregistrée.");viewTax();});
+ document.querySelectorAll("[data-status]").forEach(s=>s.addEventListener("change",()=>{const item=ws().declarations.find(x=>x.id===s.dataset.status);if(!item)return;if(s.value==="paid"&&!item.paymentDate){toast("Renseigner la date de paiement dans le registre avant de marquer payé.");s.value=item.status;return;}item.status=s.value;const v=validateTaxDeclaration(item);if(!v.ok){toast(v.errors.join(" "));item.status="draft";}saveNow();viewTax();}));
+ document.getElementById("recon-form")?.addEventListener("submit",e=>{e.preventDefault();const accounts={},declared={};for(const k of ["TVA","IS","IR","WITHHOLDING"]){accounts[k]=document.getElementById("acct-"+k).value.split(",").map(x=>x.trim()).filter(Boolean);ws().taxAccountMap[k]=accounts[k];declared[k]=Number(document.getElementById("decl-"+k).value);}saveNow();const r=reconcileTaxLedger({entries:store.entries,accounts,declared});document.getElementById("recon-result").innerHTML='<div class="table-wrap"><table><thead><tr><th>Impôt</th><th>Comptes</th><th>Solde comptable</th><th>Déclaré</th><th>Écart</th><th>État</th></tr></thead><tbody>'+r.results.map(x=>'<tr><td>'+x.taxType+'</td><td>'+esc(x.accounts.join(", "))+'</td><td>'+fmt(x.ledgerBalance)+'</td><td>'+fmt(x.declaredAmount)+'</td><td>'+fmt(Math.abs(x.difference))+'</td><td>'+(x.status==="balanced"?"Équilibré":"À examiner")+'</td></tr>').join("")+'</tbody></table></div><p class="muted">'+esc(r.disclaimer)+'</p>';});
+}
+export function viewTax(){
+ const code=String(store.settings.taxCountry||store.settings.country||"MA").toUpperCase(),profile=getTaxCountryProfile(code);
+ const vat=buildVatReport({countryCode:"MA",startDate:start(),endDate:end(),salesDocuments:store.billing?.documents||[],purchaseDocuments:store.billing?.purchases?.documents||[]});
+ const content=tab==="overview"?overview(profile,vat):tab==="is"?isPanel():tab==="ir"?irPanel():tab==="wht"?whtPanel():tab==="declarations"?declarationsPanel():reconPanel();
+ $app.innerHTML='<h1>Fiscalité — moteur international</h1><section class="card"><label for="tax-country">Juridiction fiscale</label><select id="tax-country"><option value="MA" '+(code==="MA"?"selected":"")+'>Maroc — opérationnel</option><option value="SN" '+(code==="SN"?"selected":"")+'>Sénégal — à configurer</option><option value="FR" '+(code==="FR"?"selected":"")+'>France — à configurer</option><option value="CI" '+(code==="CI"?"selected":"")+'>Côte d’Ivoire — à configurer</option></select><p class="muted">'+esc(profile.countryName)+' · '+(profile.status==="active"?"Référentiel actif":"Pays non activé")+'</p></section>'+nav()+(profile.status==="active"?content:'<section class="card"><h2>Référentiel non activé</h2><p>Aucun taux ni calcul national n'est proposé pour ce pays avant validation de ses textes.</p></section>')+'<section class="card"><h3>Sources officielles</h3><ul><li><a href="https://www.finances.gov.ma/Publication/dgi/2025/cgi-2026-fr.pdf" target="_blank" rel="noopener noreferrer">CGI Maroc 2026</a></li><li><a href="https://www.sgg.gov.ma/BO/FR/2873/2025/BO_7465-bis_fr.pdf" target="_blank" rel="noopener noreferrer">Loi de finances 2026</a></li><li><a href="https://www.tax.gov.ma/wps/portal/DGI/Vos-impots-procedures/Vos-echeances-fiscales" target="_blank" rel="noopener noreferrer">Calendrier fiscal DGI</a></li></ul><p class="muted">Préparation et contrôle uniquement : aucun dépôt officiel, paiement, écriture comptable ou clôture automatique.</p></section>';
+ bind();
 }

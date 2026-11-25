@@ -1,0 +1,42 @@
+import { strict as assert } from "node:assert";
+import { calculateSenegalIS, calculateSenegalIR, calculateSenegalWithholding, calculateCoteIvoireIS, calculateCoteIvoireITS, calculateCoteIvoireWithholding, getAfricanWithholdingOptions } from "../js/african-tax-calculators.js";
+
+const snIs=calculateSenegalIS({fiscalProfit:10000000,priorYearTurnover:100000000});
+assert.equal(snIs.ok,true);
+assert.equal(snIs.corporateTax,3000000);
+assert.equal(snIs.minimumTax,500000);
+assert.equal(snIs.amountDue,3000000);
+const snLoss=calculateSenegalIS({fiscalProfit:-500000,priorYearTurnover:100000000});
+assert.equal(snLoss.corporateTax,0);
+assert.equal(snLoss.amountDue,500000);
+assert.equal(calculateSenegalIS({fiscalProfit:100000,priorYearTurnover:0,minimumTaxExempt:true}).minimumTax,0);
+assert.equal(calculateSenegalIS({fiscalProfit:100000,priorYearTurnover:0,taxpayerCategory:"large"}).ok,false);
+
+const snIr=calculateSenegalIR({annualTaxableIncome:10000000,familyParts:2});
+assert.equal(snIr.ok,true);
+assert.equal(snIr.roundedTaxableIncome,10000000);
+assert.equal(snIr.grossAnnualTax,3064000);
+assert.equal(snIr.familyReduction,459600);
+assert.equal(snIr.annualTax,2604400);
+assert.equal(calculateSenegalIR({annualTaxableIncome:10000000,familyParts:5.5}).ok,false);
+const snWht=calculateSenegalWithholding({ruleCode:"SN_DIVIDENDS",baseAmount:100000,date:"2026-11-25"});
+assert.equal(snWht.taxAmount,10000);
+assert.equal(calculateSenegalWithholding({ruleCode:"SN_DIVIDENDS",baseAmount:100000,date:"2026-02-30"}).ok,false);
+assert.equal(getAfricanWithholdingOptions("SN").length,7);
+
+const ciIs=calculateCoteIvoireIS({fiscalProfit:100000000});
+assert.equal(ciIs.corporateTax,25000000);
+assert.equal(calculateCoteIvoireIS({fiscalProfit:100000000,sector:"telecom"}).corporateTax,30000000);
+assert.equal(calculateCoteIvoireIS({fiscalProfit:-1000}).corporateTax,0);
+const ciIts=calculateCoteIvoireITS({monthlyTaxableSalary:1000000,familyParts:2});
+assert.equal(ciIts.grossMonthlyTax,192000);
+assert.equal(ciIts.familyReduction,11000);
+assert.equal(ciIts.monthlyTax,181000);
+assert.equal(calculateCoteIvoireITS({monthlyTaxableSalary:1000000,familyParts:5.5}).ok,false);
+const ciWht=calculateCoteIvoireWithholding({ruleCode:"CI_RIBNC",baseAmount:1000000,date:"2026-06-01"});
+assert.equal(ciWht.taxableBase,800000);
+assert.equal(ciWht.taxAmount,200000);
+assert.equal(ciWht.effectiveRate,20);
+assert.equal(calculateCoteIvoireWithholding({ruleCode:"CI_AIRSI",baseAmount:100000,date:"2025-12-31"}).ok,false);
+assert.ok(getAfricanWithholdingOptions("CI").length>=8);
+console.log("Lot 25 — calculateurs fiscaux Sénégal et Côte d’Ivoire : OK");

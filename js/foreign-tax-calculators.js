@@ -2,6 +2,8 @@
 // Calculs partiels et transparents : les règles complexes non modélisées restent exclues.
 const round2 = value => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 const validAmount = value => Number.isFinite(Number(value)) && Number(value) >= 0;
+const validSigned = value => Number.isFinite(Number(value));
+const validDate = value => { const m=String(value||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/); if(!m)return false; const d=new Date(Date.UTC(+m[1],+m[2]-1,+m[3])); return d.getUTCFullYear()===+m[1]&&d.getUTCMonth()===+m[2]-1&&d.getUTCDate()===+m[3]; };
 const FR_IR_BRACKETS = [
   { from: 0, to: 11600, rate: 0 },
   { from: 11600, to: 29579, rate: 11 },
@@ -28,7 +30,7 @@ function progressiveTax(income, brackets) {
 }
 export function calculateFranceIS({ fiscalProfit, additions = 0, deductions = 0, reducedRateEligible = false } = {}) {
   const values = { fiscalProfit, additions, deductions };
-  if (Object.values(values).some(value => !validAmount(value)) || ![true, false].includes(reducedRateEligible)) {
+  if (!validSigned(fiscalProfit) || !validAmount(additions) || !validAmount(deductions) || ![true, false].includes(reducedRateEligible)) {
     return { ok: false, errors: ["Résultat fiscal ou retraitements invalides."] };
   }
   const adjustedProfit = round2(Number(fiscalProfit) + Number(additions) - Number(deductions));
@@ -69,7 +71,7 @@ export function calculateFranceIR({ annualTaxableIncome, householdParts = 1 } = 
 }
 export function calculateBelgiumIS({ fiscalProfit, additions = 0, deductions = 0, smallCompanyEligible = false } = {}) {
   const values = { fiscalProfit, additions, deductions };
-  if (Object.values(values).some(value => !validAmount(value)) || ![true, false].includes(smallCompanyEligible)) {
+  if (!validSigned(fiscalProfit) || !validAmount(additions) || !validAmount(deductions) || ![true, false].includes(smallCompanyEligible)) {
     return { ok: false, errors: ["Résultat fiscal ou retraitements invalides."] };
   }
   const adjustedProfit = round2(Number(fiscalProfit) + Number(additions) - Number(deductions));

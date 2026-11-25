@@ -24,7 +24,7 @@ export function buildCommercialMarginReport({
     movementsByDocument.set(documentId, list);
   }
   const rows = new Map();
-  const totals = { revenue: 0, cost: 0, margin: 0, units: 0, invoices: 0, missingCostLines: 0 };
+  const totals = { invoices: 0, missingCostLines: 0, products: 0, byCurrency: {} };
   const includedInvoices = new Set();
   const notesByInvoice = new Map();
   for (const note of Array.isArray(creditNotes) ? creditNotes : []) {
@@ -91,7 +91,10 @@ export function buildCommercialMarginReport({
     totals.missingCostLines += row.missingCostLines;
     return { ...row, invoices: row.invoices.size, marginRate };
   }).sort((a, b) => b.margin - a.margin || a.productName.localeCompare(b.productName, "fr"));
-  totals.margin = round(totals.revenue - totals.cost);
-  totals.marginRate = totals.revenue > 0 ? round(totals.margin / totals.revenue * 100) : null;
+  totals.invoices = includedInvoices.size;
+  totals.products = resultRows.length;
+  for (const value of Object.values(totals.byCurrency)) {
+    value.marginRate = value.revenue > 0 ? round(value.margin / value.revenue * 100) : null;
+  }
   return { ok: true, startDate, endDate, rows: resultRows, totals, baseCurrencies: [...new Set(resultRows.map(row => row.currency))], includedInvoices: includedInvoices.size };
 }

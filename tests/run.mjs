@@ -1944,7 +1944,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v69/g);
+  assert.match(serviceWorkerSource,/mizane-v70/g);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2153,7 +2153,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v69/);
+  assert.match(serviceWorkerSource,/mizane-v70/);
 });
 
 
@@ -2616,6 +2616,22 @@ test("créances clients : balance âgée, règlements, avoirs et séparation des
   assert.equal(report.totals.outstandingBase, 2300);
   assert.equal(report.byCustomer.find(item => item.customer === "Client A" && item.currency === "MAD").outstanding, 800);
   assert.equal(buildReceivablesReport({ asOf: "2026-02-30" }).ok, false);
+});
+
+
+const taxDocumentVaultMigration = readFileSync(new URL("../supabase/migrations/20261125172040_tax_document_vault.sql", import.meta.url), "utf8");
+const taxDocumentCloudSource = readFileSync(new URL("../js/tax-documents-cloud.js", import.meta.url), "utf8");
+test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", () => {
+  assert.match(taxDocumentVaultMigration, /create table if not exists public\.company_tax_documents/);
+  assert.match(taxDocumentVaultMigration, /enable row level security[\s\S]*force row level security/);
+  assert.match(taxDocumentVaultMigration, /values \('tax-evidence','tax-evidence',false,15728640/);
+  assert.match(taxDocumentVaultMigration, /private\.is_active_company_member/);
+  assert.match(taxDocumentVaultMigration, /private\.has_company_role/);
+  assert.match(taxDocumentCloudSource, /storage\.from\("tax-evidence"\)\.upload/);
+  assert.match(taxDocumentCloudSource, /company_memberships/);
+  assert.match(taxDocumentCloudSource, /company_id/);
+  assert.match(taxDocumentCloudSource, /\.download\(/);
+  assert.match(taxDocumentCloudSource, /verifyCloudTaxEvidence/);
 });
 
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);

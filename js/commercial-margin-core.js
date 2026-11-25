@@ -28,7 +28,7 @@ export function buildCommercialMarginReport({
   const includedInvoices = new Set();
   const notesByInvoice = new Map();
   for (const note of Array.isArray(creditNotes) ? creditNotes : []) {
-    if (note?.type !== "credit_note" || note.sourceInvoiceId == null || !validDate(note.date) || note.date < startDate || note.date > endDate) continue;
+    if (note?.type !== "credit_note" || note.sourceInvoiceId == null) continue;
     const key = String(note.sourceInvoiceId);
     const list = notesByInvoice.get(key) || [];
     list.push(note);

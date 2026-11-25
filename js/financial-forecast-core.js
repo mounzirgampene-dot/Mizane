@@ -42,7 +42,7 @@ export function buildFinancialForecast({
   let excludedReceivables = 0;
   for (const item of Array.isArray(receivables) ? receivables : []) {
     if (!validDate(item?.dueDate) || item.dueDate < asOf || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
-      if (item && Number(item?.amount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedReceivables += 1;
+      if (item && Number(item?.baseAmount ?? item?.amount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedReceivables += 1;
       continue;
     }
     events.push({

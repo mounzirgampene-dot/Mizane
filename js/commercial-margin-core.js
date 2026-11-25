@@ -49,26 +49,30 @@ export function buildCommercialMarginReport({
       costsByProduct.set(productId, round((costsByProduct.get(productId) || 0) + cost));
     }
     const creditedLines = (notesByInvoice.get(String(invoice.id)) || []).flatMap(note => note.lines || []);
-    const invoiceProductIds = new Set();
+    const groupedLines = new Map();
     for (const line of Array.isArray(invoice.lines) ? invoice.lines : []) {
       const productId = String(line.stockProductId || "");
       if (!productId) continue;
-      invoiceProductIds.add(productId);
-      const quantity = Number(line.quantity || 0);
-      const unitPrice = Number(line.unitPrice || 0);
+      const quantity = Number(line.quantity || 0), unitPrice = Number(line.unitPrice || 0);
       if (!(quantity > 0) || !Number.isFinite(quantity) || !(unitPrice >= 0) || !Number.isFinite(unitPrice)) continue;
+      const group = groupedLines.get(productId) || { quantity: 0, revenue: 0, description: line.description || "" };
+      group.quantity += quantity;
+      group.revenue += quantity * unitPrice * rate;
+      groupedLines.set(productId, group);
+    }
+    for (const [productId, group] of groupedLines) {
+      invoiceProductIds.add(productId);
       const creditHT = creditedLines.filter(item => String(item.stockProductId || "") === productId)
         .reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)) * Math.max(0, Number(item.unitPrice || 0)), 0);
-      const grossRevenue = quantity * unitPrice * rate;
-      const revenue = Math.max(0, grossRevenue - creditHT * rate);
+      const revenue = Math.max(0, round(group.revenue - creditHT * rate));
       const cost = costsByProduct.get(productId) || 0;
       const key = currency + "|" + productId;
       const row = rows.get(key) || {
-        productId, productName: String(productMap.get(productId)?.name || line.description || productId),
+        productId, productName: String(productMap.get(productId)?.name || group.description || productId),
         sku: String(productMap.get(productId)?.sku || ""), currency,
         units: 0, revenue: 0, cost: 0, margin: 0, invoices: new Set(), missingCostLines: 0,
       };
-      row.units = round(row.units + quantity);
+      row.units = round(row.units + group.quantity);
       row.revenue = round(row.revenue + revenue);
       row.cost = round(row.cost + cost);
       row.margin = round(row.revenue - row.cost);

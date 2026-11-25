@@ -29,6 +29,7 @@ export function buildFinancialForecast({
   baseCurrency = "MAD",
   openingCash = 0,
   receivables = [],
+  payables = [],
   manual = [],
   asOf = new Date().toISOString().slice(0, 10),
   horizons = [30, 60, 90],
@@ -40,6 +41,7 @@ export function buildFinancialForecast({
   }
   const events = [];
   let excludedReceivables = 0;
+  let excludedPayables = 0;
   for (const item of Array.isArray(receivables) ? receivables : []) {
     if (!validDate(item?.dueDate) || item.dueDate < asOf || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
       if (item && Number(item?.baseAmount ?? item?.amount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedReceivables += 1;
@@ -55,6 +57,16 @@ export function buildFinancialForecast({
       originalAmount: round(item.originalAmount ?? item.baseAmount),
       automatic: true,
     });
+  }
+  for (const item of Array.isArray(payables) ? payables : []) {
+    if (!validDate(item?.dueDate) || item.dueDate < asOf || !(Number(item?.baseAmount) >= 0) || !Number.isFinite(Number(item?.baseAmount))) {
+      if (item && Number(item?.originalAmount) > 0 && (!validDate(item?.dueDate) || item.dueDate >= asOf)) excludedPayables += 1;
+      continue;
+    }
+    events.push({ id: String(item.id || item.number || "payable"), date: item.dueDate,
+      label: String(item.label || ("Décaissement fournisseur — " + (item.supplier || item.number || "Facture"))),
+      direction: "out", amount: round(item.baseAmount), currency: String(item.currency || currency).toUpperCase(),
+      originalAmount: round(item.originalAmount ?? item.baseAmount), automatic: true, source: "supplier" });
   }
   for (const item of Array.isArray(manual) ? manual : []) {
     if (!validDate(item?.date) || item.date < asOf || !String(item?.label || "").trim() ||
@@ -102,6 +114,8 @@ export function buildFinancialForecast({
     projections,
     monthly,
     receivablesByCurrency: groupFinancialAmounts(receivables, "originalAmount"),
+    payablesByCurrency: groupFinancialAmounts(payables, "originalAmount"),
     excludedReceivables,
+    excludedPayables,
   };
 }

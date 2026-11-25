@@ -20,7 +20,9 @@ export const MOROCCO_IR_BRACKETS = [
 export const MOROCCO_WITHHOLDING_RULES = [
   { code: "MA_WHT_SERVICE_COMPANY_5", label: "Honoraires, commissions et loyers — personne morale éligible", rate: 5, taxType: "IS", legalReference: "CGI 2026, art. 19-IV-A, 15 bis et 15 ter", requiresEligibility: true },
   { code: "MA_WHT_NONRESIDENT_10", label: "Produits bruts versés à un non-résident", rate: 10, taxType: "IS_IR", legalReference: "CGI 2026, art. 19-IV-B et 73-II-B-1°", requiresTreatyReview: true },
-  { code: "MA_WHT_DIVIDENDS_2026", label: "Dividendes et produits de participation — 2026", rate: 11.25, taxType: "IS_IR", legalReference: "CGI 2026, art. 247-XXXVII-C", requiresEligibility: true },
+  { code: "MA_WHT_DIVIDENDS_2025", label: "Dividendes et produits de participation — 2025", rate: 12.5, taxType: "IS_IR", validFrom: "2025-01-01", validTo: "2025-12-31", legalReference: "CGI, art. 247-XXXVII-C", requiresEligibility: true },
+  { code: "MA_WHT_DIVIDENDS_2026", label: "Dividendes et produits de participation — 2026", rate: 11.25, taxType: "IS_IR", validFrom: "2026-01-01", validTo: "2026-12-31", legalReference: "CGI 2026, art. 247-XXXVII-C", requiresEligibility: true },
+  { code: "MA_WHT_DIVIDENDS_2027", label: "Dividendes et produits de participation — à compter de 2027", rate: 10, taxType: "IS_IR", validFrom: "2027-01-01", validTo: null, legalReference: "CGI 2026, art. 247-XXXVII-C", requiresEligibility: true },
   { code: "MA_WHT_FIXED_INCOME_20", label: "Produits de placements à revenu fixe / Sukuk", rate: 20, taxType: "IS", legalReference: "CGI 2026, art. 19-IV-C", requiresEligibility: true },
   { code: "MA_WHT_OCCASIONAL_30", label: "Rémunérations occasionnelles hors personnel salarié — cas visés", rate: 30, taxType: "IR", legalReference: "CGI 2026, art. 58-II-C et 73-II-G", requiresEligibility: true },
 ];
@@ -94,12 +96,12 @@ export function calculateMoroccoWithholding({ ruleCode, baseAmount, customRate, 
     if (!Number.isFinite(rate) || rate < 0 || rate > 100 || !String(customLegalReference || "").trim()) return { ok: false, errors: ["Un taux personnalisé valide et sa référence juridique sont obligatoires."] };
   } else if (!rule) return { ok: false, errors: ["Catégorie de retenue inconnue."] };
   if (rule?.code === "MA_WHT_SERVICE_COMPANY_5" && !payerEligible) return { ok: false, errors: ["Le taux de 5 % exige un payeur et un bénéficiaire répondant aux conditions de l'article 19-IV-A."] };
-  if (rule?.code === "MA_WHT_DIVIDENDS_2026" && date < "2026-01-01") return { ok: false, errors: ["Le taux de 11,25 % n'est applicable qu'aux distributions à compter du 1er janvier 2026."] };
+  if (rule?.validFrom && date < rule.validFrom || rule?.validTo && date > rule.validTo) return { ok: false, errors: ["Cette version du taux de retenue sur dividendes n'est pas applicable à la date choisie."] };
   const warnings = [];
   if (rule?.requiresTreatyReview) warnings.push("Vérifier la convention fiscale applicable, le bénéficiaire effectif et les justificatifs avant d'appliquer un taux conventionnel.");
   if (rule?.requiresEligibility) warnings.push("Vérifier le statut fiscal du bénéficiaire, la nature exacte du revenu et les conditions légales.");
   if (applyTreaty) {
-    const treaty = Number(treatyRate);
+    const treaty = treatyRate === "" || treatyRate == null ? NaN : Number(treatyRate);
     if (!Number.isFinite(treaty) || treaty < 0 || treaty > rate) return { ok: false, errors: ["Taux conventionnel invalide : justificatif et taux autorisé requis."] };
     rate = treaty;
     warnings.push("Taux conventionnel appliqué sur saisie expresse : conserver le certificat de résidence et les justificatifs.");

@@ -3,13 +3,13 @@ import "./regional-african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
-const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]}};
+const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,8,0]},GQ:{currency:"XAF",rates:[15,5,0]}};
 for(const [code,spec] of Object.entries(expected)){
  const p=getTaxCountryProfile(code);
  assert.equal(p.status,"active",code);
  assert.equal(p.currency,spec.currency,code);
  assert.deepEqual(p.rules.filter(x=>x.taxType==="VAT").map(x=>x.rate),spec.rates,code);
- const expectedModules={FR:["VAT","IS","IR","WITHHOLDING"],BE:["VAT","IS","IR","WITHHOLDING"],SN:["VAT","IS","IR","WITHHOLDING"],CI:["VAT","IS","IR","WITHHOLDING"],BJ:["VAT","IS","WITHHOLDING"],BF:["VAT","IS","WITHHOLDING"],ML:["IS"],GH:["VAT"],NG:["VAT"],TG:["VAT"],SL:["VAT"],GM:["VAT"],CV:[],CM:["VAT"],GA:["VAT"],TD:["VAT"]};
+ const expectedModules={FR:["VAT","IS","IR","WITHHOLDING"],BE:["VAT","IS","IR","WITHHOLDING"],SN:["VAT","IS","IR","WITHHOLDING"],CI:["VAT","IS","IR","WITHHOLDING"],BJ:["VAT","IS","WITHHOLDING"],BF:["VAT","IS","WITHHOLDING"],ML:["IS"],GH:["VAT"],NG:["VAT"],TG:["VAT"],SL:["VAT"],GM:["VAT"],CV:[],CM:["VAT"],GA:["VAT"],TD:["VAT"],CD:["VAT"],GQ:["VAT"]};
  assert.deepEqual(p.calculationModules,expectedModules[code],code+" : modules réellement exposés par l’interface");
  assert.ok(p.legalSources.length>=2,code+" : sources officielles");
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
@@ -31,7 +31,7 @@ assert.equal(getTaxCountryProfile("BF").status,"active");
 assert.equal(getTaxCountryProfile("ML").status,"active");
 assert.equal(getTaxCountryProfile("ML").calculationModules.includes("VAT"),false);
 assert.equal(getTaxCountryProfile("ZZ").status,"not_configured");
-for(const code of ["LR","MR","NE","GN","GW","CG"]){const p=getTaxCountryProfile(code);assert.ok(["review_required","research_required"].includes(p.status),code+" : pays non activé sans validation juridique");assert.deepEqual(p.calculationModules,[],code+" : aucun calculateur activé");assert.deepEqual(p.rules,[],code+" : aucune règle exploitable sans consolidation");assert.ok(p.legalSources.length>=2,code+" : références documentaires");}
+for(const code of ["LR","MR","NE","GN","GW","CG","CF"]){const p=getTaxCountryProfile(code);assert.ok(["review_required","research_required"].includes(p.status),code+" : pays non activé sans validation juridique");assert.deepEqual(p.calculationModules,[],code+" : aucun calculateur activé");assert.deepEqual(p.rules,[],code+" : aucune règle exploitable sans consolidation");assert.ok(p.legalSources.length>=2,code+" : références documentaires");}
 assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="VAT").value,"19 %");
 assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="IS").value,"30 %");
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="IS").value,"25 % / 30 % / 35 %");
@@ -61,4 +61,15 @@ assert.equal(getTaxCountryProfile("GA").calculationModules.includes("IS"),false)
 assert.equal(getTaxCountryProfile("TD").calculationModules.includes("IS"),false);
 assert.equal(getTaxCountryProfile("CG").status,"research_required");
 assert.equal(getTaxCountryProfile("GA").taxFacts.find(x=>x.label.includes("Minimum forfaitaire")).value,"IMF : 1 % du CA fiscal HT ; MP : 1 000 000 FCFA");
-console.log("Lot 23/33 — juridictions fiscales internationales et CEMAC : OK");
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_16",baseAmount:1000,date:"2026-01-01"}).taxAmount,160);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_5",baseAmount:1000,date:"2026-01-01"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_5",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,50);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_1",baseAmount:1000,date:"2026-01-01",eligibilityConfirmed:true}).taxAmount,10);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_8",baseAmount:1000,date:"2026-08-17"}).ok,false);
+assert.equal(calculateTaxLine({countryCode:"CD",taxCode:"CD_VAT_8",baseAmount:1000,date:"2026-08-17",eligibilityConfirmed:true}).taxAmount,80);
+assert.equal(calculateTaxLine({countryCode:"GQ",taxCode:"GQ_VAT_15",baseAmount:1000,date:"2025-01-01"}).taxAmount,150);
+assert.equal(calculateTaxLine({countryCode:"GQ",taxCode:"GQ_VAT_5",baseAmount:1000,date:"2025-01-01",eligibilityConfirmed:true}).taxAmount,50);
+assert.equal(getTaxCountryProfile("CD").calculationModules.includes("IS"),false);
+assert.equal(getTaxCountryProfile("GQ").calculationModules.includes("IS"),false);
+assert.equal(getTaxCountryProfile("CF").status,"research_required");
+console.log("Lot 23/33/34 — juridictions fiscales internationales et Afrique centrale : OK");

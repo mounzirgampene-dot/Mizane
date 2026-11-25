@@ -417,7 +417,7 @@ function openDocument(type) {
       const metadata = validateSupplierInvoiceMetadata({ reference:supplierReference, date:box.querySelector("#pd-date").value || today(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD" });
       if (!metadata.ok) { box.querySelector("#pd-error").textContent = metadata.errors[0]; return; }
       const dueDate=box.querySelector("#pd-due-date").value;
-      if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate)||Number.isNaN(Date.parse(dueDate+"T00:00:00Z"))){box.querySelector("#pd-error").textContent="La date d’échéance doit être valide.";return;}
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)||Number.isNaN(Date.parse(dueDate+"T00:00:00Z"))){box.querySelector("#pd-error").textContent="La date d’échéance doit être valide.";return;}
       const duplicate = findDuplicateSupplierInvoice(p.documents, supplierId, supplierReference);
       if (duplicate) {
         box.querySelector("#pd-error").textContent = "Cette référence de facture fournisseur existe déjà pour ce fournisseur (" + duplicate.number + "). Vérifiez qu'il ne s'agit pas d'une double saisie.";
@@ -470,7 +470,7 @@ function configureSupplierAccounting(doc) {
 }
 function openSupplierDueDateEditor(invoice) {
   const {box}=modal(`<h2>Modifier l’échéance — ${esc(invoice.number)}</h2><p class="muted">Cette modification ajuste le suivi de trésorerie sans modifier l’écriture comptable.</p><label>Nouvelle date d’échéance</label><input id="psde-date" type="date" value="${esc(invoice.dueDate||invoice.date||today())}"><div id="psde-error" class="errors"></div><div class="actions"><button id="psde-save">Enregistrer l’échéance</button><button class="secondary" data-close>Annuler</button></div>`);
-  box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||Number.isNaN(Date.parse(value+"T00:00:00Z"))){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
+  box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||Number.isNaN(Date.parse(value+"T00:00:00Z"))){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
 }
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);

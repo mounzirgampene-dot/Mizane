@@ -176,3 +176,115 @@ export function postSalesStockCostJournalEntry(targetStore, document, movements,
   const posted = postBillingJournalEntriesAtomically(targetStore,proposal.entries);
   return {...posted,cost:proposal.cost,reference:proposal.reference};
 }
+
+
+const validPeriodDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value||""))
+  && !Number.isNaN(Date.parse(String(value)+"T00:00:00Z"))
+  && new Date(String(value)+"T00:00:00Z").toISOString().slice(0,10)===String(value);
+
+export function calculateLocalStockPeriodValuation(stock,startDate,endDate) {
+  if(!stock||!Array.isArray(stock.movements)||!validPeriodDate(startDate)||!validPeriodDate(endDate)||startDate>endDate){
+    return {ok:false,errors:["Données locales ou dates de valorisation invalides."]};
+  }
+  const movements=stock.movements;
+  const totalsFor=cutoff=>{
+    let value=0;
+    const positions=new Map();
+    for(const movement of movements){
+      const date=String(movement.date||movement.movement_date||"");
+      if(!validPeriodDate(date)||date>cutoff)continue;
+      const kind=String(movement.kind||movement.document_type||"");
+      const quantity=Number(movement.quantityDelta??movement.quantity_delta??(kind==="receipt"?movement.quantity:kind==="issue"?-Number(movement.quantity||0):0));
+      const rawValue=Number(movement.valueDelta??movement.value_delta??movement.totalCost??0);
+      const valueDelta=movement.valueDelta!=null||movement.value_delta!=null
+        ? rawValue
+        : kind==="receipt"?Math.abs(rawValue):kind==="issue"?-Math.abs(rawValue):0;
+      if(!Number.isFinite(quantity)||!Number.isFinite(valueDelta))return {ok:false};
+      value+=valueDelta;
+      const key=String(movement.productId??movement.product_id??"")+"|"+String(movement.warehouseId??movement.warehouse_id??"");
+      positions.set(key,(positions.get(key)||0)+quantity);
+      if(kind==="transfer"&&movement.destinationWarehouseId){
+        const destination=String(movement.productId??movement.product_id??"")+"|"+String(movement.destinationWarehouseId);
+        positions.set(destination,(positions.get(destination)||0)+Math.abs(Number(movement.quantity||quantity)));
+      }
+    }
+    return {ok:true,value:round2(value),negativePositions:[...positions.values()].filter(quantity=>quantity < -0.000001).length};
+  };
+  const opening=totalsFor(new Date(Date.parse(startDate+"T00:00:00Z")-86400000).toISOString().slice(0,10));
+  const closing=totalsFor(endDate);
+  if(!opening.ok||!closing.ok)return {ok:false,errors:["Un mouvement local contient une quantité ou une valeur invalide."]};
+  const ordered=movements.filter(m=>validPeriodDate(m.date||m.movement_date)&&String(m.date||m.movement_date)<=endDate)
+    .slice().sort((a,b)=>String(a.date||a.movement_date).localeCompare(String(b.date||b.movement_date))||String(a.createdAt||a.created_at||a.id||"").localeCompare(String(b.createdAt||b.created_at||b.id||"")));
+  const runningBalances=new Map();
+  let negativeMovements=0;
+  for(const movement of ordered){
+    const date=String(movement.date||movement.movement_date);
+    const kind=String(movement.kind||movement.document_type||"");
+    const quantity=Number(movement.quantityDelta??movement.quantity_delta??(kind==="receipt"?movement.quantity:kind==="issue"?-Number(movement.quantity||0):0));
+    const key=String(movement.productId??movement.product_id??"")+"|"+String(movement.warehouseId??movement.warehouse_id??"");
+    const sourceBalance=(runningBalances.get(key)||0)+quantity;
+    runningBalances.set(key,sourceBalance);
+    if(date>=startDate&&sourceBalance < -0.000001)negativeMovements++;
+    const destinationId=movement.destinationWarehouseId??movement.destination_warehouse_id;
+    if(kind==="transfer"&&destinationId){
+      const destination=String(movement.productId??movement.product_id??"")+"|"+String(destinationId);
+      runningBalances.set(destination,(runningBalances.get(destination)||0)+Math.abs(Number(movement.quantity||quantity)));
+    }
+  }
+  const activeCountSessions=(stock.countSessions||[]).filter(session=>["counting","submitted"].includes(session.status)).length;
+  return {
+    ok:true,accounting_mode:stock.settings?.accountingMode||stock.settings?.accounting_mode||"perpetual",
+    opening_value:opening.value,closing_value:closing.value,
+    opening_negative_positions:opening.negativePositions,closing_negative_positions:closing.negativePositions,
+    active_count_sessions:activeCountSessions,negative_movements:negativeMovements,movement_count:movements.filter(m=>String(m.date||m.movement_date||"")>=startDate&&String(m.date||m.movement_date||"")<=endDate).length,
+    period_start:startDate,period_end:endDate,source:"local",
+  };
+}
+
+export function buildPeriodicStockClosingJournalEntry(targetStore,valuation,mapping={}) {
+  if(!valuation||valuation.ok===false)return {ok:false,entries:[],errors:valuation?.errors||["État de valorisation du stock absent."]};
+  const mode=valuation.accounting_mode||valuation.accountingMode||"perpetual";
+  if(mode!=="periodic")return {ok:true,skipped:true,entries:[],errors:[]};
+  const startDate=valuation.period_start||valuation.startDate;
+  const endDate=valuation.period_end||valuation.endDate;
+  if(!validPeriodDate(startDate)||!validPeriodDate(endDate)||startDate>endDate)return {ok:false,entries:[],errors:["Période de clôture du stock invalide."]};
+  const opening=Number(valuation.opening_value??valuation.openingValue);
+  const closing=Number(valuation.closing_value??valuation.closingValue);
+  const openingNegative=Number(valuation.opening_negative_positions??valuation.openingNegativePositions)||0;
+  const closingNegative=Number(valuation.closing_negative_positions??valuation.closingNegativePositions)||0;
+  const activeCounts=Number(valuation.active_count_sessions??valuation.activeCountSessions)||0;
+  const negativeMovements=Number(valuation.negative_movements??valuation.negativeMovements)||0;
+  if(!Number.isFinite(opening)||!Number.isFinite(closing)||opening < -0.01||closing < -0.01)return {ok:false,entries:[],errors:["La valorisation historique du stock est négative ou invalide ; clôture refusée."]};
+  if(openingNegative>0||closingNegative>0||negativeMovements>0)return {ok:false,entries:[],errors:["Des stocks négatifs existent au début, à la fin ou pendant la période ; régularisez-les avant la clôture périodique."]};
+  if(activeCounts>0)return {ok:false,entries:[],errors:["Un inventaire physique est encore en cours ; terminez-le avant la clôture périodique."]};
+  const delta=round2(closing-opening);
+  if(Math.abs(delta)<0.01)return {ok:true,skipped:true,unchanged:true,entries:[],opening,closing,delta,errors:[]};
+  const reference="VARIATION STOCK "+startDate+" "+endDate;
+  const existing=existingReference(targetStore,reference);
+  const accounts=accountsFor(targetStore);
+  const inventory=requireAccount(accounts,mapping.inventory,"asset","stock");
+  if(!inventory)return {ok:false,entries:[],opening,closing,delta,errors:["Le compte de stock (actif) du plan comptable n'a pas pu être déterminé automatiquement."]};
+  const variationCode=String(mapping.stockVariation||"").trim();
+  const variationAccount=accounts.find(account=>String(account.code)===variationCode&&["expense","income"].includes(account.type));
+  if(!variationAccount)return {ok:false,entries:[],opening,closing,delta,errors:["Le compte de variation des stocks n'a pas pu être déterminé automatiquement."]};
+  const amount=Math.abs(delta);
+  const lines=delta>0
+    ? [{account:inventory,label:"Augmentation du stock à la clôture",third:"",debit:amount,credit:0},{account:variationCode,label:"Variation positive des stocks",third:"",debit:0,credit:amount}]
+    : [{account:variationCode,label:"Variation négative des stocks",third:"",debit:amount,credit:0},{account:inventory,label:"Diminution du stock à la clôture",third:"",debit:0,credit:amount}];
+  if(existing){
+    if(existing.reversed)return {ok:false,entries:[],opening,closing,delta,errors:["L'écriture de variation de stock existe mais a été contrepassée ; clôture automatique bloquée."]};
+    const same=existing.date===endDate&&existing.lines?.length===2&&existing.lines.every((line,index)=>String(line.account)===String(lines[index].account)&&round2(line.debit)===round2(lines[index].debit)&&round2(line.credit)===round2(lines[index].credit));
+    return same?{ok:true,duplicate:true,entries:[],reference,opening,closing,delta,existing,errors:[]}:{ok:false,entries:[],opening,closing,delta,errors:["Une écriture différente utilise déjà la référence de clôture du stock."]};
+  }
+  const entry={date:endDate,journal:"OD",reference,lines};
+  const validation=validateEntry(targetStore,entry);
+  if(!validation.ok)return {ok:false,entries:[],opening,closing,delta,errors:validation.errors};
+  return {ok:true,entries:[entry],reference,opening,closing,delta,errors:[]};
+}
+
+export function postPeriodicStockClosingJournalEntry(targetStore,valuation,mapping={}) {
+  const proposal=buildPeriodicStockClosingJournalEntry(targetStore,valuation,mapping);
+  if(!proposal.ok||proposal.skipped||proposal.duplicate)return {...proposal,created:0};
+  const posted=postBillingJournalEntriesAtomically(targetStore,proposal.entries);
+  return {...posted,reference:proposal.reference,opening:proposal.opening,closing:proposal.closing,delta:proposal.delta};
+}

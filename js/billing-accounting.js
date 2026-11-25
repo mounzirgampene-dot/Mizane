@@ -30,6 +30,23 @@ export function suggestBillingAccounts(planId, accounts = []) {
   };
 }
 
+const STOCK_ACCOUNT_DEFAULTS = {
+  syscohada: { inventory:"31", stockVariation:"603", stockVariationType:"expense" },
+  pcg: { inventory:"37", stockVariation:"713", stockVariationType:"income" },
+  nct: { inventory:"34", stockVariation:"713", stockVariationType:"income" },
+  cgnc: { inventory:"314", stockVariation:"713", stockVariationType:"income" },
+};
+
+export function suggestStockAccounts(planId,accounts=[]) {
+  const defaults=STOCK_ACCOUNT_DEFAULTS[planId]||STOCK_ACCOUNT_DEFAULTS.syscohada;
+  const exact=(code,type)=>accounts.find(account=>String(account.code)===code&&account.type===type)?.code||"";
+  return {
+    inventory:exact(defaults.inventory,"asset"),
+    stockVariation:exact(defaults.stockVariation,defaults.stockVariationType),
+    stockVariationType:defaults.stockVariationType,
+  };
+}
+
 function accountExists(accounts, code, type) {
   return accounts.some(account => String(account.code) === String(code) && account.type === type);
 }

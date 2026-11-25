@@ -4,7 +4,50 @@ import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, match
 import { saveStore, downloadBlob } from "../db.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
-import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady } from "../cloud-sync.js";
+import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady, hasActiveStockCompany, readCloudStockPeriodValuation } from "../cloud-sync.js";
+import { getStock } from "../stock-core.js";
+import { suggestStockAccounts } from "../billing-accounting.js";
+import { calculateLocalStockPeriodValuation, postPeriodicStockClosingJournalEntry } from "../stock-accounting.js";
+
+
+async function retryStockPeriodRequest(operation,attempts=3) {
+  let lastError;
+  for(let attempt=0;attempt<attempts;attempt++){
+    try{return await operation();}
+    catch(error){
+      lastError=error;
+      if(attempt+1<attempts)await new Promise(resolve=>setTimeout(resolve,400*(2**attempt)));
+    }
+  }
+  throw lastError||new Error("Valorisation périodique du stock indisponible.");
+}
+
+async function postPeriodicStockAdjustment(startDate,endDate) {
+  const valuation=hasActiveStockCompany()
+    ? await retryStockPeriodRequest(()=>readCloudStockPeriodValuation(startDate,endDate))
+    : calculateLocalStockPeriodValuation(getStock(store),startDate,endDate);
+  if(!valuation?.ok)throw new Error(valuation?.errors?.join(" ")||"Valorisation du stock impossible.");
+  if((valuation.accounting_mode||"perpetual")!=="periodic")return {ok:true,skipped:true,reason:"perpetual"};
+  const accounts=[
+    ...(store.__accountCache?Object.entries(store.__accountCache).map(([code,account])=>({code,...account})):[]),
+    ...(store.settings.customAccounts||[]),
+  ];
+  const uniqueAccounts=[...new Map(accounts.map(account=>[String(account.code),account])).values()];
+  const defaults=suggestStockAccounts(store.settings.plan,uniqueAccounts);
+  store.billing ||= {documents:[],settings:{}};
+  store.billing.settings ||= {};
+  store.billing.settings.accountingAccounts ||= {};
+  const mapping=store.billing.settings.accountingAccounts;
+  const valid=(code,type)=>uniqueAccounts.some(account=>String(account.code)===String(code)&&account.type===type);
+  if(!valid(mapping.inventory,"asset"))mapping.inventory=defaults.inventory;
+  const variation=uniqueAccounts.find(account=>String(account.code)===String(mapping.stockVariation)&&["expense","income"].includes(account.type));
+  if(!variation)mapping.stockVariation=defaults.stockVariation;
+  if(!mapping.inventory||!mapping.stockVariation)throw new Error("Le plan comptable ne contient pas les comptes de stock et de variation nécessaires à la clôture automatique.");
+  const result=postPeriodicStockClosingJournalEntry(store,valuation,mapping);
+  if(!result.ok)throw new Error((result.errors||["Écriture de variation de stock impossible."]).join(" "));
+  saveStore(store);
+  return result;
+}
 
 export function viewTools() {
   const s = store.settings;
@@ -77,9 +120,9 @@ export function viewTools() {
     const newEnd = document.getElementById("cl-end").value;
     if (!newStart || !newEnd) return toast("Renseignez les dates du nouvel exercice.");
     if (newStart <= s.exerciceEnd || newEnd < newStart) return toast("Le nouvel exercice doit commencer après la fin de l’exercice clôturé et se terminer après sa date de début.");
-    const { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
+    let { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
     const out = document.getElementById("cl-result");
-    if (!closing && !anew) { out.innerHTML = `<p class="muted">Rien à clôturer : aucune écriture sur cet exercice.</p>`; return; }
+    if (!closing && !anew) out.innerHTML = `<p class="muted">Aucune écriture générale à solder. Le système vérifiera néanmoins le stock si l’inventaire intermittent est activé.</p>`;
     const checks = [closing, anew].filter(Boolean).map((e) => ({ e, v: validateEntry(store, e) }));
     if (checks.some((c) => !c.v.ok)) {
       out.innerHTML = `<ul class="errors">${checks.flatMap((c) => c.v.errors).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
@@ -97,6 +140,10 @@ export function viewTools() {
       button.disabled = true;
       try {
         assertCloudAccountingPeriodReady();
+        const stockAdjustment=await postPeriodicStockAdjustment(s.exerciceStart,s.exerciceEnd);
+        ({ closing, anew, resultat } = closingProposal(store,s.exerciceStart,s.exerciceEnd,newStart));
+        const finalChecks=[closing,anew].filter(Boolean).map(entry=>({entry,validation:validateEntry(store,entry)}));
+        if(finalChecks.some(item=>!item.validation.ok))throw new Error(finalChecks.flatMap(item=>item.validation.errors).join(" "));
         for (const entry of [closing, anew]) {
           if (!entry) continue;
           const exists = (store.entries || []).some(item => item.date === entry.date && item.reference === entry.reference);
@@ -104,7 +151,7 @@ export function viewTools() {
           const posted = postEntry(store, entry);
           if (!posted.ok) throw new Error(posted.errors[0] || "Écriture de clôture invalide.");
         }
-        // Envoyer d'abord les écritures de clôture et d'à-nouveaux, avant d'activer le verrou serveur.
+        // La variation du stock est intégrée avant le résultat et les à-nouveaux ; tout est synchronisé avant le verrou serveur.
         saveStore(store);
         await syncCloudIfReady();
         await manageCloudAccountingPeriod({ startDate: s.exerciceStart, endDate: s.exerciceEnd, action: "close" });
@@ -116,7 +163,7 @@ export function viewTools() {
         saveStore(store);
         try { await syncCloudIfReady(); }
         catch (syncError) { toast("Période clôturée, mais la synchronisation des paramètres sera à relancer : " + (syncError.message || "erreur inconnue"), 6000); }
-        toast("✓ Exercice clôturé et période verrouillée. À-nouveaux générés pour " + newStart + ".");
+        toast("✓ Exercice clôturé. Inventaire périodique " + (stockAdjustment.skipped?"sans variation à comptabiliser":"comptabilisé") + " ; à-nouveaux générés pour " + newStart + ".");
         router.go("entries");
       } catch (error) {
         button.disabled = false;

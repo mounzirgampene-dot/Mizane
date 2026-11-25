@@ -2123,7 +2123,7 @@ test("achats : règlements fournisseurs partiels, change, plafonnement et idempo
   assert.equal(posted.ok,true,posted.errors?.join(" "));
   assert.equal(store.entries.length,1);
   assert.equal(buildSupplierPaymentJournalEntry(store,invoice,partial,partial).ok,false,"un règlement déjà comptabilisé ne doit pas être dupliqué");
-  assert.equal(buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:2,amount:81},{...partial}).ok,false,"le cumul des règlements ne doit pas dépasser la dette TTC");
+  assert.equal(buildSupplierPaymentJournalEntry(store,{...invoice,payments:[{amount:40}]},{...partial,id:2,amount:81},{...partial}).ok,false,"le cumul des règlements ne doit pas dépasser la dette TTC");
   const fxLoss=buildSupplierPaymentJournalEntry(store,invoice,{...partial,id:2,amount:10,exchangeRate:2.1,treasury:"512",fxLoss:"675"},{...partial,fxLoss:"675"});
   assert.equal(fxLoss.ok,true,fxLoss.errors?.join(" "));
   assert.deepEqual(fxLoss.entries[0].lines.map(line=>[line.account,line.debit,line.credit]),[["401",20,0],["675",1,0],["512",0,21]]);

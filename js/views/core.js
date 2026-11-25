@@ -21,6 +21,8 @@ export function viewDashboard(readOnly = false) {
   const overview = buildStrategicDashboardSnapshot(store);
   const currencyRows = values => Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
     .map(([code, amount]) => `<div class="dashboard-currency"><strong>${esc(code)}</strong><span>${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(amount)}</span></div>`).join("") || '<p class="muted">Aucune donnée disponible.</p>';
+  const profitabilityRows = Object.entries(overview.profitability).sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, item]) => `<div class="dashboard-currency"><strong>${esc(code)}</strong><span>Marge brute : ${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(item.margin)} · Taux : ${item.marginRate == null ? "indisponible" : item.marginRate + " %"} · Coûts incomplets : ${item.incompleteLines}</span></div>`).join("") || '<p class="muted">Aucune marge calculable sur les ventes avec mouvements de stock disponibles.</p>';
   const alertItems = [
     ...overview.receivables.overdue.map(item => `<li>Facture client ${esc(item.number)} — ${esc(item.customer)} : ${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: item.currency, maximumFractionDigits: 2 }).format(item.balance)} (échéance ${esc(item.dueDate)})</li>`),
     ...overview.inventory.lowStock.map(item => `<li>Stock bas : ${esc(item.name)} — ${item.quantity} ${esc(item.unit)} (seuil : ${item.threshold})</li>`),
@@ -44,6 +46,8 @@ export function viewDashboard(readOnly = false) {
         ${currencyRows(overview.sales.amountByCurrency)}
         <p class="muted">${overview.purchases.invoices} facture(s) fournisseur(s) · Montants par devise</p>
         ${currencyRows(overview.purchases.amountByCurrency)}
+        <h3>Rentabilité commerciale</h3>
+        ${profitabilityRows}
         <div class="actions"><button class="secondary" data-route="billing">Facturation</button><button class="secondary" data-route="purchases">Achats</button><button class="secondary" data-route="commercial-margins">Marges commerciales</button></div>
       </section>
       <section class="card">

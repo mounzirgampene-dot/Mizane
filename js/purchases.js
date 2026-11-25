@@ -466,6 +466,10 @@ function configureSupplierAccounting(doc) {
     openDetail(doc.id);
   });
 }
+function openSupplierDueDateEditor(invoice) {
+  const {box}=modal(`<h2>Modifier l’échéance — ${esc(invoice.number)}</h2><p class="muted">Cette modification ajuste le suivi de trésorerie sans modifier l’écriture comptable.</p><label>Nouvelle date d’échéance</label><input id="psde-date" type="date" value="${esc(invoice.dueDate||invoice.date||today())}"><div id="psde-error" class="errors"></div><div class="actions"><button id="psde-save">Enregistrer l’échéance</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(value)||Number.isNaN(Date.parse(value+"T00:00:00Z"))){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
+}
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);
   if (!doc) return;
@@ -489,7 +493,7 @@ function openDetail(id) {
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
-    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
+    ${doc.type==="invoice"?`<p>Échéance : <strong>${esc(doc.dueDate||"Non définie")}</strong> · Délai fournisseur : ${Number.isInteger(doc.paymentTermsDays)?doc.paymentTermsDays+" jours":"Non renseigné"}</p><p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
@@ -500,6 +504,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Configurer l’imputation comptable", () => configureSupplierAccounting(doc));
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
+  if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Modifier l’échéance", () => openSupplierDueDateEditor(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));

@@ -34,6 +34,7 @@ on:
       - feat/lot30-tax-declaration-calendar
       - feat/lot31-tax-document-traceability
       - feat/lot32-central-tax-document-vault
+      - feat/lot33-central-africa-tax-profiles
   pull_request:
     branches:
       - main

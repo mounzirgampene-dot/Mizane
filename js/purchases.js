@@ -6,7 +6,7 @@ import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from ".
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
-import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation } from "./purchase-credit-notes.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry, planSupplierMultiInvoiceReconciliation, postSupplierMultiInvoicePaymentJournalEntry } from "./purchase-credit-notes.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -59,30 +59,65 @@ function openSupplierMultiInvoiceReconciliation() {
   const p=data();
   const invoices=p.documents.filter(invoice=>invoice.type==="invoice"&&invoice.status==="validated"&&invoice.accountingPostedAt&&supplierInvoiceBalance(invoice)>0.001);
   if(invoices.length<2) return toast("Il faut au moins deux factures fournisseurs validées avec un solde dû.");
-  const {box}=modal(`<h2>Rapprochement d'un règlement groupé</h2>
-    <p class="muted">Sélectionnez les factures concernées et répartissez le montant du paiement. Cette opération crée un rapprochement traçable sans générer une seconde écriture de trésorerie.</p>
-    <div class="grid cols-2"><div><label>Date du paiement</label><input id="psmr-date" type="date" value="${today()}"></div><div><label>Référence bancaire / caisse</label><input id="psmr-reference" maxlength="120" required></div><div><label>Montant du paiement</label><input id="psmr-amount" type="number" min="0.01" step="0.01"></div><div><label>Tolérance autorisée</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"></div></div>
+  const {box}=modal(`<h2>Règlement groupé de factures fournisseurs</h2>
+    <p class="muted">Cette opération comptabilise un seul décaissement bancaire ou de caisse, puis l'affecte aux factures sélectionnées. Les écarts de change sont comptabilisés séparément.</p>
+    <div class="grid cols-2">
+      <div><label>Date du paiement</label><input id="psmr-date" type="date" value="${today()}"></div>
+      <div><label>Référence bancaire / caisse</label><input id="psmr-reference" maxlength="120" required></div>
+      <div><label>Montant total payé</label><input id="psmr-amount" type="number" min="0.01" step="0.01"></div>
+      <div><label>Tolérance d'ajustement</label><input id="psmr-tolerance" type="number" min="0" step="0.01" value="0"></div>
+      <div><label>Mode de paiement</label><select id="psmr-method"><option value="bank">Banque / virement</option><option value="cash">Caisse / espèces</option></select></div>
+      <div><label>Taux de conversion du paiement</label><input id="psmr-rate" type="number" min="0.000001" step="0.000001" value="1"></div>
+      <div><label>Compte bancaire / caisse</label><select id="psmr-treasury">${accountOptions("asset","","treasury")}</select></div>
+      <div><label>Perte de change</label><select id="psmr-fx-loss">${accountOptions("expense")}</select></div>
+      <div><label>Gain de change</label><select id="psmr-fx-gain">${accountOptions("income")}</select></div>
+    </div>
     <div class="table-wrap"><table><thead><tr><th>Choisir</th><th>Facture</th><th>Fournisseur</th><th>Devise</th><th>Solde dû</th><th>Affectation</th></tr></thead><tbody>${invoices.map(invoice=>`<tr data-reconcile-invoice="${invoice.id}"><td><input type="checkbox" class="psmr-check"></td><td>${esc(invoice.number)}</td><td>${esc(supplierName(invoice.supplierId))}</td><td>${esc(invoice.currency||"MAD")}</td><td>${money(supplierInvoiceBalance(invoice))}</td><td><input class="psmr-allocation" type="number" min="0" max="${supplierInvoiceBalance(invoice)}" step="0.01" value="0" disabled></td></tr>`).join("")}</tbody></table></div>
-    <div id="psmr-error" class="errors"></div><div class="actions"><button id="psmr-save">Enregistrer le rapprochement</button><button class="secondary" data-close>Annuler</button></div>`);
+    <div id="psmr-error" class="errors"></div><div class="actions"><button id="psmr-save">Comptabiliser le règlement groupé</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelectorAll("[data-reconcile-invoice]").forEach(row=>row.querySelector(".psmr-check").addEventListener("change",event=>{
-    const input=row.querySelector(".psmr-allocation");input.disabled=!event.target.checked;if(event.target.checked&&num(input.value)<=0)input.value=String(Math.min(supplierInvoiceBalance(invoices.find(item=>String(item.id)===row.dataset.reconcileInvoice)),num(box.querySelector("#psmr-amount").value)));
+    const input=row.querySelector(".psmr-allocation");
+    input.disabled=!event.target.checked;
+    if(event.target.checked&&num(input.value)<=0) input.value=String(Math.min(supplierInvoiceBalance(invoices.find(item=>String(item.id)===row.dataset.reconcileInvoice)),num(box.querySelector("#psmr-amount").value)));
   }));
   box.querySelector("#psmr-amount").addEventListener("input",()=>{
     const selected=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked);
     if(selected.length===1&&num(selected[0].querySelector(".psmr-allocation").value)<=0) selected[0].querySelector(".psmr-allocation").value=box.querySelector("#psmr-amount").value;
   });
   box.querySelector("#psmr-save").addEventListener("click",()=>{
+    const error=box.querySelector("#psmr-error");
     const reference=box.querySelector("#psmr-reference").value.trim();
-    if(!reference){box.querySelector("#psmr-error").textContent="La référence du paiement est obligatoire.";return;}
+    if(!reference){error.textContent="La référence du paiement est obligatoire.";return;}
     p.reconciliations ||= [];
-    if(p.reconciliations.some(item=>item.reference.toLowerCase()===reference.toLowerCase())){box.querySelector("#psmr-error").textContent="Cette référence de paiement est déjà rapprochée.";return;}
+    if(p.reconciliations.some(item=>String(item.reference||"").toLowerCase()===reference.toLowerCase())){error.textContent="Cette référence de paiement est déjà rapprochée.";return;}
     const allocations=[...box.querySelectorAll("[data-reconcile-invoice]")].filter(row=>row.querySelector(".psmr-check").checked).map(row=>({invoiceId:String(row.dataset.reconcileInvoice),amount:num(row.querySelector(".psmr-allocation").value)}));
     const first=allocations.length?invoices.find(item=>String(item.id)===String(allocations[0].invoiceId)):null;
-    const payment={date:box.querySelector("#psmr-date").value,reference,amount:num(box.querySelector("#psmr-amount").value),currency:first?.currency||"MAD"};
-    const plan=planSupplierMultiInvoiceReconciliation(invoices,allocations,payment,{tolerance:num(box.querySelector("#psmr-tolerance").value)});
-    if(!plan.ok){box.querySelector("#psmr-error").textContent=plan.errors.join(" ");return;}
-    p.reconciliations.push({id:globalThis.crypto?.randomUUID?.()||String(Date.now()),...plan,...payment,createdAt:new Date().toISOString()});
-    persist("Rapprochement multi-factures enregistré.");box.closest("dialog").close();renderList();
+    const payment={date:box.querySelector("#psmr-date").value,reference,amount:num(box.querySelector("#psmr-amount").value),currency:first?.currency||"MAD",method:box.querySelector("#psmr-method").value,exchangeRate:num(box.querySelector("#psmr-rate").value)};
+    const tolerance=num(box.querySelector("#psmr-tolerance").value);
+    const plan=planSupplierMultiInvoiceReconciliation(invoices,allocations,payment,{tolerance});
+    if(!plan.ok){error.textContent=plan.errors.join(" ");return;}
+    // A tolerance may absorb only a small rounding difference. Adjust the final allocation explicitly before posting.
+    const normalized=allocations.map(item=>({...item}));
+    if(Math.abs(plan.difference)>0.001){
+      const last=normalized[normalized.length-1];
+      const invoice=invoices.find(item=>String(item.id)===String(last.invoiceId));
+      const adjusted=round(last.amount+plan.difference);
+      if(!(adjusted>0)||adjusted>supplierInvoiceBalance(invoice)+0.001){error.textContent="La tolérance ne peut pas être absorbée par la dernière facture sélectionnée. Corrigez les affectations.";return;}
+      last.amount=adjusted;
+    }
+    const groupId=uuid();
+    const mapping={treasury:box.querySelector("#psmr-treasury").value,fxLoss:box.querySelector("#psmr-fx-loss").value,fxGain:box.querySelector("#psmr-fx-gain").value};
+    const posted=postSupplierMultiInvoicePaymentJournalEntry(store,invoices,normalized,payment,mapping);
+    if(!posted.ok){error.textContent=(posted.errors||["Comptabilisation du règlement refusée."]).join(" ");return;}
+    const entry=(store.entries||[]).find(item=>item.reference==="REGLEMENT GROUPE FOURNISSEUR "+reference);
+    for(const allocation of posted.allocations){
+      const invoice=invoices.find(item=>String(item.id)===String(allocation.invoiceId));
+      invoice.payments ||= [];
+      invoice.payments.push({id:p.nextPaymentId++,groupId,date:payment.date,amount:allocation.amount,method:payment.method,exchangeRate:payment.exchangeRate,treasury:mapping.treasury,fxLoss:mapping.fxLoss,fxGain:mapping.fxGain,reference,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
+    }
+    p.reconciliations.push({id:groupId,...plan,allocations:posted.allocations,date:payment.date,reference,amount:payment.amount,currency:payment.currency,method:payment.method,exchangeRate:payment.exchangeRate,status:"posted",entryId:entry?.id||null,createdAt:new Date().toISOString()});
+    persist("Règlement groupé comptabilisé et affecté aux factures.");
+    box.closest("dialog").close();
+    renderList();
   });
 }
 function openSupplierCreditNote(invoice) {

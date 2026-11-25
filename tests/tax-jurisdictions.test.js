@@ -35,7 +35,10 @@ for(const code of ["LR","NE","GN","GW","CG","CF"]){const p=getTaxCountryProfile(
 assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="VAT").value,"19 %");
 assert.equal(getTaxCountryProfile("NE").taxFacts.find(x=>x.taxType==="IS").value,"30 %");
 assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="IS").value,"25 % / 30 % / 35 %");
-assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les importations de l’annexe I ; 0 % exportations");
+assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="VAT").value,"18 %");
+assert.equal(getTaxCountryProfile("GN").taxFacts.find(x=>x.taxType==="VAT"&&x.value==="0 %").legalReference.includes("art. 373"),true);
+assert.equal(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").value,"19 % normal ; 10 % pour les opérations de l’annexe I ; 0 % exportations");
+assert.match(getTaxCountryProfile("GW").taxFacts.find(x=>x.taxType==="VAT").detail,/transmissions de biens et prestations de services/);
 assert.equal(getTaxCountryProfile("LR").taxFacts.find(x=>x.taxType==="IS").value,"25 %");
 assert.equal(getTaxCountryProfile("MR").taxFacts.length,8);
 assert.equal(calculateTaxLine({countryCode:"NE",taxCode:"NE_VAT_19",baseAmount:100,date:"2026-01-01"}).ok,false);

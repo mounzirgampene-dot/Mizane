@@ -6,6 +6,7 @@ import { hasActiveStockCompany, readCloudStock, postCloudStockDocument } from ".
 import { planSupplierInvoiceReceiptAllocation } from "./purchase-receipts.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "./purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "./purchase-accounting.js";
+import { buildSupplierCreditNoteJournalEntry, postSupplierCreditNoteJournalEntry } from "./purchase-credit-notes.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -54,6 +55,29 @@ function supplierName(id) {
 function supplierInvoicePayable(invoice) { const rate=Number(invoice?.accounting?.taxRate||0); return round(num(invoice?.total)*(1+(Number.isFinite(rate)?rate:0)/100)); }
 function supplierInvoicePaid(invoice) { return round((invoice?.payments||[]).reduce((sum,payment)=>sum+num(payment.amount),0)); }
 function supplierInvoiceBalance(invoice) { return Math.max(0,round(supplierInvoicePayable(invoice)-supplierInvoicePaid(invoice))); }
+function openSupplierCreditNote(invoice) {
+  const {box}=modal(`<h2>Avoir fournisseur — ${esc(invoice.number)}</h2>
+    <p>Fournisseur : ${esc(supplierName(invoice.supplierId))} · Solde dû : <strong>${money(supplierInvoiceBalance(invoice))} ${esc(invoice.currency||"")}</strong></p>
+    <div class="grid cols-2"><div><label>Date de l'avoir</label><input id="pscn-date" type="date" value="${today()}"></div><div><label>Référence de l'avoir</label><input id="pscn-number" maxlength="80" required></div></div>
+    <label>Montant HT de l'avoir</label><input id="pscn-total" type="number" min="0.01" step="0.01" required>
+    <label>Motif</label><textarea id="pscn-reason" maxlength="500"></textarea>
+    <div id="pscn-error" class="errors"></div><div class="actions"><button id="pscn-save">Comptabiliser l'avoir</button><button class="secondary" data-close>Annuler</button></div>`);
+  box.querySelector("#pscn-save").addEventListener("click",()=>{
+    const p=data(), number=box.querySelector("#pscn-number").value.trim(), total=num(box.querySelector("#pscn-total").value);
+    if(!number || !(total>0)){box.querySelector("#pscn-error").textContent="La référence et un montant HT positif sont obligatoires.";return;}
+    invoice.creditNotes ||= [];
+    if(invoice.creditNotes.some(item=>String(item.number).toLowerCase()===number.toLowerCase())){box.querySelector("#pscn-error").textContent="Cette référence d'avoir existe déjà sur la facture.";return;}
+    const creditNote={id:p.nextCreditNoteId||1,number,date:box.querySelector("#pscn-date").value,total,reason:box.querySelector("#pscn-reason").value.trim(),createdAt:new Date().toISOString()};
+    const mode=store.settings.inventoryMode==="periodic"?"periodic":"perpetual";
+    const proposal=buildSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
+    if(!proposal.ok){box.querySelector("#pscn-error").textContent=proposal.errors.join(" ");return;}
+    const posted=postSupplierCreditNoteJournalEntry(store,invoice,creditNote,mode);
+    if(!posted.ok){box.querySelector("#pscn-error").textContent=(posted.errors||["Comptabilisation refusée."]).join(" ");return;}
+    creditNote.payableAmount=proposal.summary.payableAmount;creditNote.status="posted";
+    invoice.creditNotes.push(creditNote);p.nextCreditNoteId=creditNote.id+1;
+    persist("Avoir fournisseur comptabilisé.");box.closest("dialog").close();renderList();
+  });
+}
 function openSupplierPayment(invoice) {
   const balance=supplierInvoiceBalance(invoice); if(balance<=0.001)return toast('Cette facture fournisseur est déjà intégralement réglée.');
   const defaultRate=Number(invoice.accounting?.exchangeRate)||1;
@@ -353,11 +377,12 @@ function openDetail(id) {
       doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
+  const creditNoteRows=(doc.creditNotes||[]).map(note=>`<tr><td>${esc(note.date)}</td><td>${esc(note.number)}</td><td>${money(note.payableAmount??note.total)} ${esc(doc.currency||"")}</td><td>${note.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const paymentRows=(doc.payments||[]).map(payment=>`<tr><td>${esc(payment.date)}</td><td>${money(payment.amount)} ${esc(doc.currency||"")}</td><td>${payment.method==="cash"?"Caisse":"Banque"}</td><td>${payment.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
-    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
+    ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\\"4\\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
@@ -369,6 +394,7 @@ function openDetail(id) {
   if (doc.status === "draft" && doc.type === "invoice") addAction("Valider la facture", () => validateInvoice(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && !doc.accountingPostedAt) addAction("Comptabiliser la facture", () => postSupplierAccounting(doc, box));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
+  if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));

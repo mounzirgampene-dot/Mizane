@@ -72,7 +72,7 @@ const existingProfiles = [
   { code: "JO", name: "Jordanie", zone: "International", currency: "JOD", vatRates: [], locale: "ar-JO" },
   { code: "SA", name: "Arabie saoudite", zone: "International", currency: "SAR", vatRates: [], locale: "ar-SA" },
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
-  { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", vatRates: [], locale: "fr-TN" },
+  { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [], locale: "fr-TN" },
   { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
 ];
 const profiles = new Map(existingProfiles.map((country) => [country.code, country]));

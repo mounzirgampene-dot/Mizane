@@ -2636,7 +2636,7 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
   assert.match(taxDocumentCloudSource, /\.download\(/);
   assert.match(taxDocumentCloudSource, /verifyCloudTaxEvidence/);
   assert.match(taxDocumentVaultHardeningMigration, /guard_company_tax_document_update/);
-  assert.match(taxDocumentVaultHardeningMigration, /metadata structurelles/);
+  assert.match(taxDocumentVaultHardeningMigration, /métadonnées structurelles/);
   assert.match(taxDocumentUiSource, /import\("\.\/tax-documents-cloud\.js"\)/);
   assert.match(taxDocumentUiSource, /Documents partagés sans déclaration locale/);
   assert.match(taxDocumentManageFunctionSource, /company_tax_documents/);

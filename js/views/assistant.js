@@ -164,7 +164,11 @@ export function viewSettings() {
       </div>
       <div class="row">
         <div><label>Plan comptable</label>
-          <select id="s-plan">${Object.values(PLANS).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+          <select id="s-plan">
+            <optgroup label="Référentiels nationaux et régionaux">${Object.values(PLANS).filter((p) => p.category !== "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+            <optgroup label="Modèles sectoriels indicatifs">${Object.values(PLANS).filter((p) => p.category === "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+          </select>
+          <p class="muted" id="plan-description">${esc(plan.description || (plan.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE."))}</p>
         </div>
         <div><label>Devise</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"></div>
         <div><label>Langue</label>
@@ -221,11 +225,18 @@ export function viewSettings() {
     document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;
   };
   updateVat();
+  const updatePlanDescription = () => {
+    const selectedPlan = PLANS[document.getElementById("s-plan").value];
+    document.getElementById("plan-description").textContent = selectedPlan?.description ||
+      (selectedPlan?.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE.");
+  };
+  document.getElementById("s-plan").addEventListener("change", updatePlanDescription);
   document.getElementById("s-country").addEventListener("change", (e) => {
     const c = getCountry(e.target.value);
-    document.getElementById("s-plan").value = c.plan;
+    if (c.plan && PLANS[c.plan]) document.getElementById("s-plan").value = c.plan;
     document.getElementById("s-currency").value = c.currency;
     updateVat();
+    updatePlanDescription();
   });
 
   document.getElementById("s-save").addEventListener("click", () => {

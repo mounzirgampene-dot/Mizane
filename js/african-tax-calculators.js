@@ -37,7 +37,8 @@ const CI_WHT=[
 ["CI_IRVM","IRVM — revenus de valeurs mobilières",15,"gross","CGI Côte d'Ivoire, art. 182"],
 ["CI_RIBIC","RIBIC — bénéficiaire résident non immatriculé, cas éligible",7.5,"gross","CGI Côte d'Ivoire, art. 93"],
 ["CI_RIBNC","RIBNC — prestataire non-résident sans installation professionnelle",25,"net80","CGI Côte d'Ivoire, art. 92-2° a) ; doctrine DGI n°046/2024"],
-["CI_RIRL","RIRL — loyers versés à un résident, cas éligible",7.5,"gross","CGI Côte d'Ivoire, art. 93"],
+["CI_RIRL_PERSONAL","Acompte revenus locatifs — propriétaire personne physique",12,"gross","CGI Côte d'Ivoire, art. 168 et 169 ; DGI, Le système fiscal ivoirien","Acompte sur revenus locatifs : 12 % du loyer brut pour un propriétaire personne physique, sous réserve des conditions de retenue et du rôle de l’intermédiaire."],
+["CI_RIRL_LEGAL","Acompte revenus locatifs — propriétaire personne morale ou entreprise",15,"gross","CGI Côte d'Ivoire, art. 168 et 169 ; DGI, Le système fiscal ivoirien","Acompte sur revenus locatifs : 15 % du loyer brut lorsque le local appartient à une personne morale ou à une entreprise ; vérifier le redevable légal et les exceptions."]
 ["CI_FIRCA","Prélèvement FIRCA — filières agricoles, cas général",2,"gross","CGI Côte d'Ivoire, art. 60 bis"],
 ["CI_FIRCA_CACAO","Prélèvement FIRCA — pisteurs café-cacao",7.5,"gross","CGI Côte d'Ivoire, art. 60 bis"],
 ["CI_ARTISTS_2026","Rémunérations de certains artistes, sportifs et intervenants non salariés",7.5,"gross","Annexe fiscale 2026 — extension de la retenue sur cachets"]];
@@ -61,8 +62,11 @@ export function calculateCoteIvoireITS({monthlyTaxableSalary,familyParts=1}={}){
 }
 export function calculateCoteIvoireWithholding({ruleCode,baseAmount,date}={}){
  const base=Number(baseAmount),rule=CI_WHT.find(x=>x[0]===ruleCode);
+ if(ruleCode==="CI_RIRL")return{ok:false,errors:["Ancienne règle RIRL à 7,5 % retirée : sélectionner 12 % pour un propriétaire personne physique ou 15 % pour une personne morale/entreprise, après vérification des conditions légales."]};
  if(!amount(base)||!dateOK(date)||!String(date).startsWith("2026-"))return{ok:false,errors:["Base ou date invalide ; règles de retenue versionnées pour 2026."]};
  if(!rule)return{ok:false,errors:["Catégorie de retenue inconnue pour la Côte d'Ivoire."]};
  const taxable=rule[3]==="net80"?round2(base*.8):base,due=round2(taxable*rule[2]/100);
- return{ok:true,countryCode:"CI",currency:"XOF",ruleCode,label:rule[1],baseAmount:round2(base),taxableBase:taxable,rate:rule[2],effectiveRate:round2(due/base*100),taxAmount:due,netPayment:round2(base-due),date,legalReference:rule[4],warnings:["Retenue applicable uniquement à la catégorie et au bénéficiaire visés. Vérifier territorialité, convention, exonérations et formalités avant paiement."]};
+ const warnings=["Retenue applicable uniquement à la catégorie et au bénéficiaire visés. Vérifier territorialité, convention, exonérations et formalités avant paiement."];
+ if(rule[5])warnings.push(rule[5]);
+ return{ok:true,countryCode:"CI",currency:"XOF",ruleCode,label:rule[1],baseAmount:round2(base),taxableBase:taxable,rate:rule[2],effectiveRate:round2(due/base*100),taxAmount:due,netPayment:round2(base-due),date,legalReference:rule[4],warnings};
 }

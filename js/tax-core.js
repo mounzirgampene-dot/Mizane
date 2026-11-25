@@ -181,6 +181,52 @@ const profiles = {
   {label:"Ministry of Finance — Appropriation Act 2024, Sales Tax provisions",url:"https://www.mof.gov.so/sites/default/files/Publications/Appropriation%20Act.%20for%202024%20budget.pdf"}
  ],rules:[]},
 
+
+ ZA:{countryCode:"ZA",countryName:"Afrique du Sud",currency:"ZAR",status:"research_required",authority:"South African Revenue Service (SARS)",rulesVersion:"Budget 2026/27 — revue documentaire 2026-11",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"Value-Added Tax (VAT)",value:"15 % — taux normal",detail:"SARS confirme le taux standard de 15 %. Le projet d'augmentation à 15,5 % puis 16 % a été retiré en avril 2025. Certaines opérations sont taxées à 0 % ou exonérées ; la qualification n'est pas modélisée.",legalReference:"Value-Added Tax Act 89 of 1991 ; SARS — VAT ; Budget 2026",sourceUrl:"https://www.sars.gov.za/types-of-tax/value-added-tax/"},
+  {taxType:"IS",label:"Corporate Income Tax",value:"27 % — taux général",detail:"Le taux de 27 % est confirmé pour les années d'imposition se terminant du 1er avril 2026 au 31 mars 2027. Les régimes des petites sociétés, zones économiques spéciales, mines et autres secteurs exigent une qualification distincte.",legalReference:"Income Tax Act 58 of 1962 ; SARS — Companies, Trusts and SBC, mise à jour 25 février 2026",sourceUrl:"https://www.sars.gov.za/tax-rates/income-tax/companies-trusts-and-small-business-corporations-sbc/"},
+  {taxType:"IR",label:"Personal Income Tax",value:"18 % à 45 % — barème progressif 2026/27",detail:"Barème SARS applicable du 1er mars 2026 au 28 février 2027 ; abattements, crédits, avantages et situations particulières non intégrés.",legalReference:"SARS Tax Guide 2026/27",sourceUrl:"https://www.treasury.gov.za/documents/national%20budget/2026/sars/Budget%202026%20Tax%20guide.pdf"}
+ ],taxScales:[],legalSources:[
+  {label:"SARS — Value-Added Tax",url:"https://www.sars.gov.za/types-of-tax/value-added-tax/"},
+  {label:"SARS — Corporate income tax rates 2026/27",url:"https://www.sars.gov.za/tax-rates/income-tax/companies-trusts-and-small-business-corporations-sbc/"},
+  {label:"National Treasury / SARS — Tax Guide 2026/27",url:"https://www.treasury.gov.za/documents/national%20budget/2026/sars/Budget%202026%20Tax%20guide.pdf"}
+ ],rules:[]},
+ SD:{countryCode:"SD",countryName:"Soudan",currency:"SDG",status:"research_required",authority:"Sudan Taxation Chamber",rulesVersion:"Income Tax Act 1986 et amendements ; VAT Act et règlements — consolidation 2026 en attente",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"Value Added Tax",value:"Taux actuel non confirmé — textes officiels divergents dans leur ancienneté",detail:"La Taxation Chamber publie la loi TVA et ses règlements, mais le texte accessible mentionne un taux de 15 % modifié ultérieurement à 17 % par décision de 2015. Aucune source officielle consolidée et datée de 2026 ne permet de certifier le taux applicable aujourd'hui ; aucun taux n'est donc proposé au calculateur.",legalReference:"Value Added Tax Act ; amendements et décision du Conseil des ministres du 7 mai 2015 citée dans le texte publié",sourceUrl:"https://tax.gov.sd/en/tax-laws/"},
+  {taxType:"IS",label:"Income Tax — entreprises",value:"Taux et catégories à consolider",detail:"Le portail officiel publie l'Income Tax Act 1986 et ses amendements, mais les taux et règles applicables aux sociétés doivent être reconstruits à partir de la législation consolidée et des textes récents. Le taux personnel historique de 2021 ne vaut pas preuve d'un barème 2026.",legalReference:"Income Tax Act 1986 et amendements publiés par la Sudan Taxation Chamber",sourceUrl:"https://tax.gov.sd/en/income-tax-2/"}
+ ],taxScales:[],legalSources:[
+  {label:"Sudan Taxation Chamber — Tax Laws",url:"https://tax.gov.sd/en/tax-laws/"},
+  {label:"Sudan Taxation Chamber — Value Added Tax",url:"https://tax.gov.sd/en/value-added-tax-vat/"},
+  {label:"Sudan Taxation Chamber — Income Tax",url:"https://tax.gov.sd/en/income-tax-2/"},
+  {label:"VAT Act — texte publié par l'administration fiscale",url:"https://tax.gov.sd/wp-content/uploads/2025/02/The-Value-Add-tax.pdf"}
+ ],rules:[]},
+ SS:{countryCode:"SS",countryName:"Soudan du Sud",currency:"SSP",status:"research_required",authority:"Ministry of Finance and Planning ; South Sudan Revenue Authority (SSRA)",rulesVersion:"Taxation Act 2009 ; Finance Bill 2026/2027 — projet non présumé promulgué",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"IR",label:"Personal Income Tax / Business Profit Tax",value:"Projet de barème 2026/27 : 0 % à 20 % sur salaires — non activé",detail:"Le Finance Bill 2026/2027 présente des tranches mensuelles de 0 %, 5 %, 10 %, 15 % et 20 %, mais précise que le texte n'entre en vigueur qu'après signature présidentielle et certaines modifications attendent les observations de la SSRA. Il s'agit d'un projet, pas d'une règle certaine en vigueur.",legalReference:"Finance Bill 2026/2027, Schedule 1 ; clause 1 (entrée en vigueur après signature présidentielle)",sourceUrl:"https://mofp.gov.ss/publications/finance-bill-fy-2026-27/download"},
+  {taxType:"VAT",label:"Sales Tax / indirect taxation",value:"Régime et taux 2026 à confirmer",detail:"Le projet budgétaire 2026/2027 propose des modifications aux taxes indirectes et à la Taxation Act 2009. Les dispositions doivent être confrontées au texte final promulgué et aux instructions de la SSRA ; aucune valeur n'est intégrée au calculateur.",legalReference:"Taxation Act 2009 et Finance Bill 2026/2027 — statut législatif à vérifier",sourceUrl:"https://mofp.gov.ss/publications/finance-bill-fy-2026-27/download"}
+ ],taxScales:[],legalSources:[
+  {label:"Ministry of Finance and Planning — Finance Bill 2026/2027",url:"https://mofp.gov.ss/publications/finance-bill-fy-2026-27/download"},
+  {label:"Laws of South Sudan — portail ministériel",url:"https://mofp.gov.ss/publications"},
+  {label:"Taxation Act 2009 — référence législative à consolider",url:"https://www.mofp.gov.ss/"}
+ ],rules:[]},
+ ST:{countryCode:"ST",countryName:"São Tomé-et-Príncipe",currency:"STN",status:"research_required",authority:"Direcção dos Impostos — Ministério das Finanças",rulesVersion:"Código do IVA — Lei n.º 13/2019 et modifications jusqu'au Decreto-Lei n.º 12/2023",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"Imposto sobre o Valor Acrescentado (IVA)",value:"15 % taux normal ; 7,5 % taux réduit ; régimes spéciaux",detail:"La Direction des Impostos publie les codes de facturation indiquant 15 % et 7,5 %, ainsi que des régimes spéciaux. Les taux spéciaux affichés à 0 % dans le tableau de codes ne doivent pas être assimilés à des taux généraux : les conditions et assiettes doivent être vérifiées dans le CIVA consolidé.",legalReference:"Lei n.º 13/2019 ; Lei n.º 02/2023 ; Decreto-Lei n.º 12/2023 ; CIVA",sourceUrl:"https://impostos.b-software.st/index.php/informacoes/e-factura/codigos-de-isencoes-e-sujeicoes"},
+  {taxType:"IS",label:"Imposto sobre o Rendimento das Pessoas Colectivas",value:"Taux 2026 à confirmer",detail:"Le portail fiscal met à disposition la Lei n.º 10/2009 portant Code de l'impôt sur le revenu des personnes collectives et des modifications ultérieures. Le taux et les régimes sectoriels doivent être vérifiés dans le texte consolidé et la loi budgétaire applicable.",legalReference:"Lei n.º 10/2009 — Código do Imposto sobre o Rendimento das Pessoas Colectivas",sourceUrl:"https://impostos.b-software.st/index.php/legislacao/leg-tributaria/category/25-irc"}
+ ],taxScales:[],legalSources:[
+  {label:"Direcção dos Impostos — codes d'assujettissement et d'exonération IVA",url:"https://impostos.b-software.st/index.php/informacoes/e-factura/codigos-de-isencoes-e-sujeicoes"},
+  {label:"Direcção dos Impostos — législation IVA et modifications",url:"https://impostos.b-software.st/index.php/legislacao/leg-tributaria/category/27-iva"},
+  {label:"Direcção dos Impostos — législation IRC",url:"https://impostos.b-software.st/index.php/legislacao/leg-tributaria/category/25-irc"},
+  {label:"Ministère des Finances — Manuel de TVA",url:"https://impostos.financas.gov.st/phocadownload/Impostos/IVA/MANUAL%20DO%20IVA_completo.pdf"}
+ ],rules:[]},
+ DZ:{countryCode:"DZ",countryName:"Algérie",currency:"DZD",status:"research_required",authority:"Direction Générale des Impôts (DGI) — Ministère des Finances",rulesVersion:"Loi n° 25-17 du 14 décembre 2025 — Loi de finances 2026 ; contrôle documentaire novembre 2026",rulesEffectiveFrom:"",calculationModules:[],taxFacts:[
+  {taxType:"VAT",label:"Taxe sur la valeur ajoutée (TVA)",value:"19 % taux normal ; 9 % taux réduit",detail:"La DGI confirme le taux normal de 19 % et le taux réduit de 9 %. La loi de finances 2026, article 53, modifie le champ du taux réduit ; les exonérations et l'éligibilité par opération doivent être qualifiées au niveau des articles du CTCA.",legalReference:"Code des taxes sur le chiffre d'affaires, art. 21 et 23 ; Loi n° 25-17 du 14 décembre 2025, art. 53",sourceUrl:"https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/la-taxe-sur-la-valeur-ajoutee"},
+  {taxType:"IS",label:"Impôt sur les bénéfices des sociétés (IBS)",value:"19 % production ; 23 % BTP/hydraulique/tourisme ; 26 % autres activités",detail:"La DGI publie les taux par secteur et un taux réduit de 10 % pour certains bénéfices réinvestis, sous conditions. Le calcul exige l'affectation exacte des activités, la ventilation du chiffre d'affaires et les conditions de réinvestissement ; aucune règle automatisée n'est activée.",legalReference:"CIDTA, art. 150 et 142 bis ; Loi de finances 2026",sourceUrl:"https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/ibs"}
+ ],taxScales:[],legalSources:[
+  {label:"DGI — TVA, taux et obligations",url:"https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/la-taxe-sur-la-valeur-ajoutee"},
+  {label:"DGI — Impôt sur les bénéfices des sociétés",url:"https://www.mfdgi.gov.dz/fr/professionnels/services-pro/regime-reel/ibs"},
+  {label:"Journal officiel / Douanes — Loi de finances 2026, loi n° 25-17",url:"https://www.douane.gov.dz/IMG/pdf/loi_de_finance_2026.pdf"},
+  {label:"AAPI — Système fiscal algérien",url:"https://aapi.dz/systeme-fiscal/"}
+ ],rules:[]},
+
 };
 
 export function getTaxCountryProfile(countryCode) {

@@ -21,6 +21,7 @@ import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, b
 import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "../js/commercial-performance-core.js";
 import { buildStrategicDashboardSnapshot } from "../js/strategic-dashboard-core.js";
+import { buildFinancialForecast, groupFinancialAmounts } from "../js/financial-forecast-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";

@@ -3,6 +3,7 @@ import { cashBalance } from "../accounting.js";
 import { saveStore } from "../db.js";
 import { store, $app, toast, esc, money } from "../state.js";
 import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
+import { buildFinancialForecast } from "../financial-forecast-core.js";
 import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -58,16 +59,6 @@ function bucket(days) {
   return "Plus de 90 jours";
 }
 
-function forecastRows(receivablesList, manual) {
-  return [
-    ...receivablesList.map(item => ({
-      id: "invoice:" + item.number, date: item.dueDate, label: "Encaissement client — " + item.customer + " (" + item.number + ")",
-      direction: "in", amount: item.amount, automatic: true,
-    })),
-    ...manual.filter(item => item.date >= today()).map(item => ({ ...item, automatic: false })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-}
-
 export function viewFinancial(period = null) {
   const exerciceStart = period?.start || store.settings.exerciceStart;
   const exerciceEnd = period?.end || store.settings.exerciceEnd;
@@ -89,17 +80,26 @@ export function viewFinancial(period = null) {
     {label:"Créances ouvertes sur factures émises",current:outstanding,previous:round(priorDocs.reduce((sum,item)=>sum+item.amount,0))},
     {label:"Dettes fournisseurs estimées",current:payable,previous:round(priorVendors.reduce((sum,item)=>sum+item.amount,0))},
   ],money);
-  const forecast = forecastRows(docs, manual);
+  const financialForecast = buildFinancialForecast({
+    baseCurrency: store.settings.currency,
+    openingCash: currentCash,
+    receivables: docs.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
+    manual,
+    asOf: today(),
+  });
+  const forecast = financialForecast.events;
   const buckets = ["À échéance / non échue", "1 à 30 jours", "31 à 60 jours", "61 à 90 jours", "Plus de 90 jours"];
   const bucketRows = buckets.map(name => {
     const amount = round(docs.filter(item => bucket(item.days) === name).reduce((sum, item) => sum + item.amount, 0));
     return "<tr><td>" + esc(name) + "</td><td class=\"num\">" + money(amount) + "</td></tr>";
   }).join("");
-  const forecastTotals = [30, 60, 90].map(days => {
-    const limit = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
-    const amount = forecast.filter(item => item.date <= limit).reduce((sum, item) => sum + (item.direction === "in" ? item.amount : -item.amount), 0);
-    return { days, amount: round(currentCash + amount) };
-  });
+  const forecastTotals = financialForecast.projections.map(item => ({ days: item.days, amount: item.amount }));
+  const monthlyForecastRows = financialForecast.monthly.map(item =>
+    "<tr><td>" + esc(item.month) + "</td><td class=\\"num\\">" + money(item.inflows) + "</td><td class=\\"num\\">" + money(item.outflows) + "</td><td class=\\"num\\">" + money(item.net) + "</td><td class=\\"num\\">" + money(item.closing) + "</td></tr>"
+  ).join("");
+  const receivableCurrencyRows = Object.entries(financialForecast.receivablesByCurrency).map(([currency, amount]) =>
+    "<tr><td>" + esc(currency) + "</td><td class=\\"num\\">" + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + " " + esc(currency) + "</td></tr>"
+  ).join("");
   const agingChart = renderHorizontalBars("Ancienneté des créances",buckets.map(name=>({
     label:name,
     amount:round(docs.filter(item=>bucket(item.days)===name).reduce((sum,item)=>sum+item.amount,0)),
@@ -139,8 +139,8 @@ export function viewFinancial(period = null) {
       <tbody>${docs.length ? docs.map(item => "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.days > 0 ? item.days + " j" : "—") + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>
     </section>
     <section class="card">
-      <h2>Prévisions de trésorerie</h2>
-      <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance. Ajoutez les autres encaissements et décaissements prévus pour compléter la projection.</p>
+      <h2>Prévisions de trésorerie — devise de référence : ${esc(store.settings.currency)}</h2>
+      <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance après conversion au taux enregistré sur la facture. Les prévisions manuelles sont saisies dans la devise de référence.</p>
       <div class="grid cols-3">${forecastTotals.map(item => "<div class=\"card kpi\"><div class=\"label\">Solde projeté à " + item.days + " jours</div><div class=\"value\">" + money(item.amount) + "</div></div>").join("")}</div>
       <form id="forecast-form">
         <div class="row">

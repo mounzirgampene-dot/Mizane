@@ -298,11 +298,16 @@ function renderList() {
   const invoices = docs.filter(doc => doc.type === "invoice");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
+  const payablesSchedule=buildSupplierPayablesSchedule(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice),supplierName:supplierName(invoice.supplierId)})));
+  const forecast=supplierCashOutflowForecast(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice)})),today(),30);
+  const currencySummary=map=>Object.entries(map||{}).map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"—";
+  const bucketLabels={upcoming:"À venir",due_today:"À payer aujourd’hui",overdue_1_30:"Retard 1–30 jours",overdue_31_60:"Retard 31–60 jours",overdue_61_90:"Retard 61–90 jours",overdue_90_plus:"Retard supérieur à 90 jours",undated:"Sans échéance"};
+  const payablesRows=payablesSchedule.items.map(item=>`<tr><td>${esc(item.number)}</td><td>${esc(item.supplierName||supplierName(item.supplierId))}</td><td>${esc(item.dueDate||"Non définie")}</td><td>${esc(bucketLabels[item.bucket]||item.bucket)}</td><td class="num">${money(item.balance)} ${esc(item.currency)}</td><td><button class="secondary" data-payable-open="${esc(item.invoiceId)}">Ouvrir</button></td></tr>`).join("");
   const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   const rows = docs.map(doc => `<tr>
     <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
     <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
-    <td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
+    <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):"—")}</td><td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
     <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
   </tr>`).join("");
   $app.innerHTML = `
@@ -318,8 +323,8 @@ function renderList() {
       </div>
       <p><strong>Dettes fournisseurs comptabilisées :</strong> ${esc(outstandingSummary)}</p>
     </section>
-    <section class="card"><h2>Documents d'achat</h2>
-      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
+    <section class="card"><h2>Échéancier des dettes fournisseurs</h2><div class="grid cols-3"><div class="calculator-result"><strong>${payablesSchedule.totals.overdue}</strong><br><span class="muted">Factures en retard</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.dueToday}</strong><br><span class="muted">À payer aujourd’hui</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.upcoming}</strong><br><span class="muted">Échéances à venir</span></div></div><p><strong>Décaissements prévus sur 30 jours :</strong> ${esc(currencySummary(forecast.amountByCurrency))}</p><div class="table-wrap"><table><thead><tr><th>Facture</th><th>Fournisseur</th><th>Échéance</th><th>Situation</th><th>Solde dû</th><th>Action</th></tr></thead><tbody>${payablesRows||'<tr><td colspan=6>Aucune dette fournisseur échue ou à venir.</td></tr>'}</tbody></table></div></section><section class="card"><h2>Documents d'achat</h2>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>Échéance</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="8">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card"><h2>Rapprochements de paiements groupés</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Devise</th><th>Montant</th><th>État</th><th>Factures</th></tr></thead><tbody>${reconciliationRows||'<tr><td colspan="6">Aucun rapprochement enregistré.</td></tr>'}</tbody></table></div></section>
     <section class="card"><h2>Règle d'entrée en stock</h2><p>${stockState?.settings?.purchase_trigger === "supplier_invoice" ? "L'entrée en stock est déclenchée à la validation de la facture fournisseur." : "L'entrée en stock est déclenchée à la réception physique. Les réceptions partielles sont prises en charge."}</p><p class="muted">Les factures et commandes sont synchronisées dans l'espace professionnel. Les quantités physiques sont inscrites dans le journal serveur de stock.</p></section>`;
@@ -328,6 +333,7 @@ function renderList() {
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));
   document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
+  $app.querySelectorAll("[data-payable-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.payableOpen))));
 }
 function openSupplier() {
   const p = data();

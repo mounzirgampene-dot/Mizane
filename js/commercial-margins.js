@@ -1,5 +1,5 @@
 // MIZANE — Rapport des coûts d'achat et des marges commerciales.
-import { store, $app, esc, toast, money } from "./state.js";
+import { store, $app, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock } from "./cloud-sync.js";
 import { buildCommercialMarginReport } from "./commercial-margin-core.js";
 

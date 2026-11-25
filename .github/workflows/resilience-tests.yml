@@ -10,6 +10,7 @@ on:
       - feat/lot4-periodic-inventory-closing
       - feat/lot5-supplier-settlements
       - feat/lot6-supplier-credit-notes-reconciliation
+      - feat/lot7-mixed-supplier-invoices
   pull_request:
     branches:
       - main

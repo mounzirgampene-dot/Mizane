@@ -9,6 +9,7 @@ on:
       - feat/lot3-stock-operations-accounting
       - feat/lot4-periodic-inventory-closing
       - feat/lot5-supplier-settlements
+      - feat/lot6-supplier-credit-notes-reconciliation
   pull_request:
     branches:
       - main

@@ -208,7 +208,7 @@ export function calculateLocalStockPeriodValuation(stock,startDate,endDate) {
         positions.set(destination,(positions.get(destination)||0)+Math.abs(Number(movement.quantity||quantity)));
       }
     }
-    return {value:round2(value),negativePositions:[...positions.values()].filter(quantity=>quantity < -0.000001).length};
+    return {ok:true,value:round2(value),negativePositions:[...positions.values()].filter(quantity=>quantity < -0.000001).length};
   };
   const opening=totalsFor(new Date(Date.parse(startDate+"T00:00:00Z")-86400000).toISOString().slice(0,10));
   const closing=totalsFor(endDate);

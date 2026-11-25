@@ -272,7 +272,9 @@ function renderList() {
     <section class="card"><h2>Documents d'achat</h2>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="7">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
+    <section class="card"><h2>Rapprochements de paiements groupés</h2><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Devise</th><th>Montant</th><th>État</th><th>Factures</th></tr></thead><tbody>${reconciliationRows||'<tr><td colspan="6">Aucun rapprochement enregistré.</td></tr>'}</tbody></table></div></section>
     <section class="card"><h2>Règle d'entrée en stock</h2><p>${stockState?.settings?.purchase_trigger === "supplier_invoice" ? "L'entrée en stock est déclenchée à la validation de la facture fournisseur." : "L'entrée en stock est déclenchée à la réception physique. Les réceptions partielles sont prises en charge."}</p><p class="muted">Les factures et commandes sont synchronisées dans l'espace professionnel. Les quantités physiques sont inscrites dans le journal serveur de stock.</p></section>`;
+  const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
   document.getElementById("pa-supplier").addEventListener("click", openSupplier);
   document.getElementById("pa-order").addEventListener("click", () => openDocument("order"));
   document.getElementById("pa-invoice").addEventListener("click", () => openDocument("invoice"));

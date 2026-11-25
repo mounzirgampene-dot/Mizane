@@ -3,6 +3,7 @@ import { postEntry, validateEntry, toCSV } from "../accounting.js";
 import { AMORT_METHODS, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
 import { buildFixedAssetSchedule, fixedAssetsSummary } from "../fixed-assets-core.js";
+import { buildAssetDisposal, summarizeAssetDisposals } from "../asset-disposals-core.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
 import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady, hasActiveStockCompany, readCloudStockPeriodValuation } from "../cloud-sync.js";
@@ -52,7 +53,7 @@ async function postPeriodicStockAdjustment(startDate,endDate) {
 
 export function viewTools() {
   const s = store.settings;
-  const assets = store.assets || [];
+  const assets = (store.assets || []).filter(asset => !asset.disposedAt && !asset.disposalId);
   const assetSummary = fixedAssetsSummary(assets);
   const closedPeriods = Array.isArray(s.closedPeriods) ? s.closedPeriods.filter(period => period.status !== "open") : [];
   $app.innerHTML = `
@@ -101,6 +102,21 @@ export function viewTools() {
       </table></div>
       <div class="actions"><button id="am-dotation">Générer la dotation de l'exercice</button></div>`}
       <div id="am-result" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card">
+      <h2>📤 Sorties et cessions d'immobilisations</h2>
+      <p class="muted">Enregistrez une cession, une mise au rebut ou une destruction. Le calcul utilise les amortissements effectivement enregistrés dans le registre ; aucune écriture comptable n'est créée automatiquement.</p>
+      <div class="row">
+        <div><label for="asset-disposal-item">Immobilisation</label><select id="asset-disposal-item">${assets.map((asset,index) => '<option value="' + index + '">' + esc(asset.name) + ' — ' + esc(asset.account) + ' — ' + money(asset.amount) + '</option>').join("")}</select></div>
+        <div><label for="asset-disposal-date">Date de sortie</label><input type="date" id="asset-disposal-date" value="${esc(s.exerciceEnd || new Date().toISOString().slice(0,10))}"></div>
+        <div><label for="asset-disposal-type">Motif</label><select id="asset-disposal-type"><option value="cession">Cession</option><option value="mise_rebut">Mise au rebut</option><option value="destruction">Destruction</option></select></div>
+        <div><label for="asset-disposal-proceeds">Prix de cession</label><input type="number" id="asset-disposal-proceeds" min="0" step="0.01" value="0"></div>
+        <div class="nogrow"><button type="button" id="asset-disposal-save" ${assets.length ? "" : "disabled"}>Calculer la sortie</button></div>
+      </div>
+      <div id="asset-disposal-preview" class="muted" style="margin-top:8px"></div>
+      ${(() => { const summary = summarizeAssetDisposals(store.settings.assetDisposals || []); return '<div class="grid cols-3" style="margin-top:10px"><section class="card kpi"><div class="value">' + summary.count + '</div><div class="label">Sorties enregistrées</div></section><section class="card kpi"><div class="value">' + money(summary.gains) + '</div><div class="label">Plus-values cumulées</div></section><section class="card kpi"><div class="value">' + money(summary.losses) + '</div><div class="label">Moins-values cumulées</div></section></div>'; })()}
+      ${(store.settings.assetDisposals || []).length ? '<div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Immobilisation</th><th>Motif</th><th class="num">VNC</th><th class="num">Produit</th><th class="num">Plus/moins-value</th></tr></thead><tbody>' + store.settings.assetDisposals.map(item => '<tr><td>' + esc(item.date) + '</td><td>' + esc(item.assetName) + '</td><td>' + (item.type === "cession" ? "Cession" : item.type === "mise_rebut" ? "Mise au rebut" : "Destruction") + '</td><td class="num">' + money(item.netBookValue) + '</td><td class="num">' + money(item.proceeds) + '</td><td class="num">' + money(item.gainLoss) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="muted">Aucune sortie d&#39;immobilisation enregistrée.</p>'}
     </div>
 
     <div class="card">
@@ -265,7 +281,7 @@ export function viewTools() {
   }));
 
   document.getElementById("am-dotation")?.addEventListener("click", () => {
-    const lines = dotationLines(store.assets);
+    const lines = dotationLines((store.assets || []).filter(asset => !asset.disposedAt && !asset.disposalId));
     if (lines.length < 2) return toast("Toutes les immobilisations sont déjà amorties.");
     const entry = { date: s.exerciceEnd, journal: "OD", reference: "Dotations " + s.exerciceEnd.slice(0, 4), lines };
     const v = validateEntry(store, entry);
@@ -286,6 +302,38 @@ export function viewTools() {
       saveStore(store);
       toast(`✓ Écriture de dotations #${res.entry.id} enregistrée.`);
       router.go("entries");
+    });
+  });
+
+  document.getElementById("asset-disposal-type")?.addEventListener("change", event => {
+    const proceeds = document.getElementById("asset-disposal-proceeds");
+    if (event.target.value === "destruction") proceeds.value = "0";
+  });
+  document.getElementById("asset-disposal-save")?.addEventListener("click", () => {
+    const index = Number(document.getElementById("asset-disposal-item")?.value);
+    const asset = assets[index];
+    if (!asset) return toast("Sélectionnez une immobilisation encore active.");
+    const input = { date: document.getElementById("asset-disposal-date")?.value, type: document.getElementById("asset-disposal-type")?.value, proceeds: document.getElementById("asset-disposal-proceeds")?.value };
+    const result = buildAssetDisposal(asset, input);
+    if (!result.ok) return toast(result.errors[0]);
+    const disposal = result.disposal;
+    const label = disposal.gainLoss > 0 ? "plus-value" : disposal.gainLoss < 0 ? "moins-value" : "aucun écart";
+    const preview = document.getElementById("asset-disposal-preview");
+    preview.innerHTML = "<p>Valeur brute : <strong>" + money(disposal.grossValue) + "</strong> · Amortissements cumulés : <strong>" + money(disposal.accumulated) + "</strong> · VNC : <strong>" + money(disposal.netBookValue) + "</strong> · Produit : <strong>" + money(disposal.proceeds) + "</strong> · Résultat : <strong>" + label + " de " + money(Math.abs(disposal.gainLoss)) + "</strong>.</p><p>Confirmez l'enregistrement pour retirer l'immobilisation de la liste active. Aucune écriture comptable ne sera passée.</p>";
+    const confirm = document.createElement("button");
+    confirm.type = "button"; confirm.textContent = "Confirmer la sortie"; confirm.id = "asset-disposal-confirm";
+    preview.appendChild(confirm);
+    confirm.addEventListener("click", () => {
+      if (asset.disposedAt || asset.disposalId) return toast("Cette immobilisation est déjà sortie.");
+      store.settings.assetDisposals ||= [];
+      if (store.settings.assetDisposals.some(item => item.assetKey === disposal.assetKey)) return toast("Une sortie existe déjà pour cette immobilisation.");
+      disposal.id = globalThis.crypto?.randomUUID?.() || "disposal-" + Date.now();
+      asset.disposedAt = disposal.date;
+      asset.disposalId = disposal.id;
+      store.settings.assetDisposals.unshift(disposal);
+      saveStore(store);
+      toast("Sortie d'immobilisation enregistrée. Aucune écriture comptable créée.");
+      router.render();
     });
   });
 

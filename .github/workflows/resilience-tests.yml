@@ -21,6 +21,7 @@ on:
       - feat/lot16-financial-forecast
       - feat/lot17-budget-control
       - feat/lot18-fixed-assets
+      - feat/lot19-asset-disposals
   pull_request:
     branches:
       - main

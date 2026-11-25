@@ -271,4 +271,36 @@ assert.match(getTaxCountryProfile("SS").taxFacts.find(x=>x.taxType==="IR").detai
 assert.match(getTaxCountryProfile("ST").taxFacts.find(x=>x.taxType==="VAT").detail,/CIVA consolidé/);
 assert.match(getTaxCountryProfile("DZ").taxFacts.find(x=>x.taxType==="IS").detail,/10 %/);
 
+
+const lot51Profiles={
+ EG:{currency:"EGP",name:"Égypte",indirect:"14 % taux normal ; 5 % pour certaines machines et certains dispositifs médicaux éligibles",direct:"22,5 % taux général ; régimes particuliers à distinguer"},
+ LY:{currency:"LYD",name:"Libye",indirect:"Aucune TVA générale identifiée ; régime indirect à confirmer",direct:"20 % taux général rapporté ; taxe du Jihad de 4 % à distinguer"},
+ TN:{currency:"TND",name:"Tunisie",indirect:"19 % taux normal ; 13 % et 7 % taux réduits ; ajustements ciblés en 2026",direct:"20 % taux général ; 10 %, 35 % et 40 % selon secteurs et situations"},
+ JO:{currency:"JOD",name:"Jordanie",indirect:"16 % taux général ; taux spéciaux et exonérations par catégorie",direct:"20 % général ; 24 % secteurs désignés ; 35 % banques"},
+ SA:{currency:"SAR",name:"Arabie saoudite",indirect:"15 % taux normal ; 0 % pour certaines opérations éligibles",direct:"20 % sur les parts imposables à l'impôt sur le revenu ; Zakat distincte pour les parts concernées"}
+};
+for(const [code,spec] of Object.entries(lot51Profiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code+" : aucun module fiscal activé");
+ assert.deepEqual(p.rules,[],code+" : aucune règle fiscale activée");
+ assert.ok(p.legalSources.length>=3,code+" : références documentaires");
+ assert.equal(p.taxFacts.find(x=>["VAT","SALES_TAX"].includes(x.taxType)).value,spec.indirect,code);
+ assert.equal(p.taxFacts.find(x=>["IS","IR"].includes(x.taxType)).value,spec.direct,code);
+ assert.deepEqual(getActiveTaxRules(code,"VAT","2026-11-25"),[],code+" : aucune règle TVA active");
+ assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS active");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul fiscal bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays présent dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : aucun taux TVA par défaut");
+}
+assert.match(getTaxCountryProfile("EG").taxFacts.find(x=>x.taxType==="VAT").legalReference,/149 of 2026/);
+assert.match(getTaxCountryProfile("LY").taxFacts.find(x=>x.taxType==="IS").detail,/4 %/);
+assert.match(getTaxCountryProfile("TN").taxFacts.find(x=>x.taxType==="IS").detail,/contribution permanente de 4 %/);
+assert.equal(getTaxCountryProfile("JO").taxFacts.find(x=>x.taxType==="SALES_TAX").taxType,"SALES_TAX");
+assert.match(getTaxCountryProfile("SA").taxFacts.find(x=>x.taxType==="IS").detail,/Zakat/);
+
 console.log("Lot 23/33/34/35 — juridictions fiscales internationales et Afrique centrale : OK");

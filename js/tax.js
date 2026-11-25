@@ -85,6 +85,31 @@ function reconPanel(){
 function bind(){
  document.querySelectorAll("[data-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.tab;viewTax();}));
  document.getElementById("tax-country")?.addEventListener("change",e=>{store.settings.taxCountry=e.target.value;saveNow();viewTax();});
+ const foreignIsForm=document.getElementById("foreign-is-form");
+ foreignIsForm?.addEventListener("submit",e=>{
+  e.preventDefault();const code=foreignIsForm.dataset.country||String(store.settings.taxCountry||"").toUpperCase();
+  const args={fiscalProfit:Number(document.getElementById("foreign-is-profit").value),additions:Number(document.getElementById("foreign-is-add").value),deductions:Number(document.getElementById("foreign-is-ded").value)};
+  args[code==="FR"?"reducedRateEligible":"smallCompanyEligible"]=document.getElementById("foreign-is-eligible").checked;
+  const r=code==="FR"?calculateFranceIS(args):calculateBelgiumIS(args),out=document.getElementById("foreign-is-result");
+  if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_IS"]=r;saveNow();
+  out.innerHTML='<h3>IS brut estimé : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.grossTax)+'</h3><p>Base au taux réduit : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.reducedBase)+' · Base au taux normal : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.normalBase)+'</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+' — '+esc(r.disclaimer)+'</p>';
+ });
+ document.getElementById("foreign-ir-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const code=String(store.settings.taxCountry||"").toUpperCase();
+  const r=code==="FR"?calculateFranceIR({annualTaxableIncome:Number(document.getElementById("foreign-ir-income").value),householdParts:Number(document.getElementById("foreign-ir-parts").value)}):calculateBelgiumIR({annualTaxableIncome:Number(document.getElementById("foreign-ir-income").value),personalAllowance:Number(document.getElementById("foreign-ir-allowance").value)});
+  const out=document.getElementById("foreign-ir-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_IR"]=r;saveNow();
+  out.innerHTML='<h3>IR annuel estimé : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.annualTax)+'</h3><p>Taux effectif : '+r.effectiveRate+' %</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+' — '+esc(r.disclaimer)+'</p>';
+ });
+ document.getElementById("foreign-wht-form")?.addEventListener("submit",e=>{
+  e.preventDefault();const code=String(store.settings.taxCountry||"").toUpperCase();
+  const r=calculateForeignWithholding({countryCode:code,ruleCode:document.getElementById("foreign-wht-rule").value,baseAmount:Number(document.getElementById("foreign-wht-base").value),date:document.getElementById("foreign-wht-date").value,applyTreaty:document.getElementById("foreign-wht-apply-treaty").checked,treatyRate:document.getElementById("foreign-wht-treaty").value});
+  const out=document.getElementById("foreign-wht-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}
+  ws().lastCalculations[code+"_WITHHOLDING"]=r;saveNow();
+  out.innerHTML='<h3>Retenue estimée : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.taxAmount)+'</h3><p>Net après retenue : '+new Intl.NumberFormat("fr-FR",{style:"currency",currency:r.currency}).format(r.netPayment)+' · Taux : '+r.rate+' %</p><ul>'+r.warnings.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul><p class="muted">'+esc(r.legalReference)+'</p>';
+ });
+
  document.getElementById("is-form")?.addEventListener("submit",e=>{
   e.preventDefault();const a=accountingResult(),r=calculateMoroccoIS({accountingResult:a.result,additions:Number(document.getElementById("is-add").value),deductions:Number(document.getElementById("is-ded").value),rateCategory:document.getElementById("is-rate").value,cmGeneralBase:Number(document.getElementById("is-cm").value),cmReducedBase:Number(document.getElementById("is-cm-low").value),cmRate:Number(document.getElementById("is-cm-rate").value),cmExempt:document.getElementById("is-exempt").checked,advancePayments:Number(document.getElementById("is-credits").value),withholdingCredits:Number(document.getElementById("is-wht").value)});
   const out=document.getElementById("is-result");if(!r.ok){out.innerHTML='<p class="error">'+esc(r.errors.join(" "))+'</p>';return;}ws().lastCalculations.IS=r;saveNow();

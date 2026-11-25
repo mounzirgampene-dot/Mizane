@@ -3,6 +3,7 @@ import "./regional-african-tax-calculators.test.js";
 import "./foreign-tax-calculators.test.js";
 import { strict as assert } from "node:assert";
 import { getTaxCountryProfile, getActiveTaxRules, calculateTaxLine, buildVatReport } from "../js/tax-core.js";
+import { getCountry } from "../js/countries.js";
 const expected={FR:{currency:"EUR",rates:[20,10,5.5,2.1]},BE:{currency:"EUR",rates:[21,12,6]},SN:{currency:"XOF",rates:[18]},CI:{currency:"XOF",rates:[18,9]},BJ:{currency:"XOF",rates:[18]},BF:{currency:"XOF",rates:[18,10]},ML:{currency:"XOF",rates:[]},GH:{currency:"GHS",rates:[15]},NG:{currency:"NGN",rates:[7.5]},TG:{currency:"XOF",rates:[18]},SL:{currency:"SLE",rates:[15]},GM:{currency:"GMD",rates:[15]},CV:{currency:"CVE",rates:[]},CM:{currency:"XAF",rates:[19.25,0]},GA:{currency:"XAF",rates:[18,10,5,0]},TD:{currency:"XAF",rates:[19.25,9.9,0]},CD:{currency:"CDF",rates:[16,5,1,8,0]},GQ:{currency:"XAF",rates:[15,5,0]},MR:{currency:"MRU",rates:[16,0]}};
 for(const [code,spec] of Object.entries(expected)){
  const p=getTaxCountryProfile(code);
@@ -15,6 +16,34 @@ for(const [code,spec] of Object.entries(expected)){
  assert.ok(p.rules.every(x=>x.legalReference&&x.validFrom),code+" : références et dates");
  assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : règles IS détaillées non activées dans le moteur de lignes");
 }
+
+const newEastAfricanProfiles={
+ KE:{currency:"KES",name:"Kenya",vat:"16 % standard ; 0 % zero-rated supplies",is:"30 % sociétés résidentes ; 37,5 % sociétés non-résidentes"},
+ RW:{currency:"RWF",name:"Rwanda",vat:"18 % standard ; 0 % pour opérations légalement éligibles",is:"28 %"},
+ UG:{currency:"UGX",name:"Uganda",vat:"18 % standard ; 0 % pour fournitures éligibles",is:"30 % du revenu imposable"}
+};
+for(const [code,spec] of Object.entries(newEastAfricanProfiles)){
+ const p=getTaxCountryProfile(code);
+ assert.equal(p.countryName,spec.name,code);
+ assert.equal(p.currency,spec.currency,code);
+ assert.equal(p.status,"research_required",code);
+ assert.deepEqual(p.calculationModules,[],code);
+ assert.deepEqual(p.rules,[],code);
+ assert.ok(p.legalSources.length>=3,code+" : sources institutionnelles");
+ assert.equal(p.taxFacts.find(x=>x.taxType==="VAT").value,spec.vat,code);
+ assert.equal(p.taxFacts.find(x=>x.taxType==="IS").value,spec.is,code);
+ assert.deepEqual(getActiveTaxRules(code,"VAT","2026-11-25"),[],code+" : aucune règle TVA activée");
+ assert.deepEqual(getActiveTaxRules(code,"IS","2026-11-25"),[],code+" : aucune règle IS activée");
+ assert.equal(calculateTaxLine({countryCode:code,taxCode:code+"_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).ok,false,code+" : calcul TVA bloqué");
+ const selector=getCountry(code);
+ assert.equal(selector.name,spec.name,code+" : pays disponible dans le sélecteur");
+ assert.equal(selector.currency,spec.currency,code+" : devise du sélecteur");
+ assert.deepEqual(selector.vatRates,[],code+" : pas de taux par défaut non activés");
+}
+assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/300 000 000 UGX/);
+assert.match(getTaxCountryProfile("UG").taxFacts.find(x=>x.label.includes("PAYE")).value,/335 000 UGX/);
+assert.match(getTaxCountryProfile("RW").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/20 000 000 RWF/);
+assert.match(getTaxCountryProfile("KE").taxFacts.find(x=>x.label.includes("seuil d'immatriculation")).value,/5 000 000 KES/);
 assert.equal(getActiveTaxRules("CI","VAT","2026-01-16").some(x=>x.rate===9),false);
 assert.equal(getActiveTaxRules("CI","VAT","2026-01-17").some(x=>x.rate===9),true);
 assert.equal(calculateTaxLine({countryCode:"FR",taxCode:"FR_VAT_STANDARD",baseAmount:100,date:"2026-11-25"}).taxAmount,20);

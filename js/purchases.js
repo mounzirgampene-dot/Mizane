@@ -465,7 +465,8 @@ function openDetail(id) {
   const linkedOrder = doc.orderId ? p.documents.find(item => item.id === doc.orderId) : null;
   const lines = doc.lines.map(line => {
     const item = product(line.productId);
-    return `<tr><td>${esc(item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "Entrepôt")}</td><td class="num">${line.quantity} ${esc(line.unit)}</td><td class="num">${money(line.unitCost)}</td><td class="num">${round(line.baseQuantity)} ${esc(item?.base_unit || "")}</td></tr>`;
+    const kind=line.lineType==="service"?"Service":line.lineType==="fixed_asset"?"Immobilisation":"Marchandise";
+    return `<tr><td>${kind}</td><td>${esc(line.description || item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "—")}</td><td class="num">${line.quantity} ${esc(line.unit || "")}</td><td class="num">${money(line.unitCost)}</td><td class="num">${line.lineType==="service"||line.lineType==="fixed_asset"?"—":round(line.baseQuantity)+" "+esc(item?.base_unit||"")}</td></tr>`;
   }).join("");
   const remaining = doc.lines.reduce((sum,line) => {
     if (line.lineType === "service" || line.lineType === "fixed_asset") return sum;
@@ -482,7 +483,7 @@ function openDetail(id) {
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
     ${doc.type==="invoice"?`<p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
-    <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
     <div id="pd-detail-actions" class="actions"></div><div id="pd-detail-error" class="errors"></div>
     <div class="actions"><button class="secondary" data-close>Fermer</button></div>`);

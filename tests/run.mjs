@@ -1,4 +1,5 @@
 import "./fixed-assets.test.js";
+import "./asset-disposals.test.js";
 // MIZANE — Tests du moteur comptable. Exécution : node tests/run.mjs
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";

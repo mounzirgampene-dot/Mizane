@@ -21,6 +21,7 @@ import { addSupplierPaymentTerms, supplierPayableAge, classifySupplierPayable, b
 import { buildCommercialMarginReport } from "../js/commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "../js/commercial-performance-core.js";
 import { buildStrategicDashboardSnapshot } from "../js/strategic-dashboard-core.js";
+import { buildFinancialForecast, groupFinancialAmounts } from "../js/financial-forecast-core.js";
 import { findDuplicateSupplierInvoice, validateSupplierInvoiceMetadata } from "../js/purchase-validation.js";
 import { buildSupplierInvoiceJournalEntry, postSupplierInvoiceJournalEntry, buildSupplierPaymentJournalEntry, postSupplierPaymentJournalEntry } from "../js/purchase-accounting.js";
 import { supplierInvoiceTaxBreakdown } from "../js/purchase-tax.js";
@@ -1933,7 +1934,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v51/);
+  assert.match(serviceWorkerSource,/mizane-v52/);
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
 });
@@ -2142,7 +2143,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v51/);
+  assert.match(serviceWorkerSource,/mizane-v52/);
 });
 
 
@@ -2529,5 +2530,26 @@ test("tableau de bord stratégique : agrège les ventes, achats et retards sans 
   assert.equal(snapshot.profitability.MAD.margin, 40);
 });
 
+test("prévisions financières : projections cumulées et ventilation stricte par devise", () => {
+  const report = buildFinancialForecast({
+    baseCurrency: "MAD", openingCash: 1000, asOf: "2026-11-25",
+    receivables: [{ id: "f1", dueDate: "2026-12-10", currency: "EUR", originalAmount: 100, baseAmount: 1100, customer: "Client A" }, { id: "f2", dueDate: "2026-11-20", currency: "MAD", originalAmount: 50, baseAmount: 50 }],
+    payables: [{ id: "p1", dueDate: "2026-12-15", currency: "EUR", originalAmount: 50, baseAmount: 550, supplier: "Fournisseur B" }],
+    manual: [{ id: "m1", date: "2026-11-26", label: "Loyer", amount: 25, direction: "out" }, { id: "m2", date: "2026-11-27", label: "Flux EUR non converti", amount: 500, direction: "in", currency: "EUR" }],
+  });
+  assert.equal(report.ok, true);
+  assert.equal(report.projections.find(item => item.days === 30).amount, 1575);
+  assert.equal(report.projections.find(item => item.days === 30).inflows, 1150);
+  assert.equal(report.projections.find(item => item.days === 30).outflows, 575);
+  assert.deepEqual(report.receivablesByCurrency, { EUR: 100, MAD: 50 });
+  assert.deepEqual(report.payablesByCurrency, { EUR: 50 });
+  assert.equal(report.events.some(item => item.id === "m2"), false);
+  assert.equal(report.monthly[0].outflows, 25);
+  assert.equal(report.monthly[0].inflows, 50);
+  assert.equal(report.monthly[1].inflows, 1100);
+  assert.equal(report.monthly[1].outflows, 550);
+  assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});
+  assert.equal(buildFinancialForecast({baseCurrency:"MAD",openingCash:0,asOf:"2026-02-30"}).ok, false);
+});
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

@@ -18,6 +18,7 @@ on:
       - feat/lot12-supplier-payment-schedule
       - feat/lot13-commercial-margins
       - feat/lot14-commercial-performance
+      - feat/lot16-financial-forecast
   pull_request:
     branches:
       - main

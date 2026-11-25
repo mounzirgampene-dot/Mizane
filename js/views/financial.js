@@ -3,7 +3,10 @@ import { cashBalance } from "../accounting.js";
 import { saveStore } from "../db.js";
 import { store, $app, toast, esc, money } from "../state.js";
 import { chartModeControls, bindChartMode, renderHorizontalBars } from "../charts.js";
+import { buildFinancialForecast } from "../financial-forecast-core.js";
 import { periodControls, bindPeriodControls, previousYearRange, comparisonTable } from "../report-periods.js";
+import { buildSupplierPayablesSchedule } from "../supplier-payables.js";
+import { supplierInvoiceTaxBreakdown } from "../purchase-tax.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
@@ -58,16 +61,6 @@ function bucket(days) {
   return "Plus de 90 jours";
 }
 
-function forecastRows(receivablesList, manual) {
-  return [
-    ...receivablesList.map(item => ({
-      id: "invoice:" + item.number, date: item.dueDate, label: "Encaissement client — " + item.customer + " (" + item.number + ")",
-      direction: "in", amount: item.amount, automatic: true,
-    })),
-    ...manual.filter(item => item.date >= today()).map(item => ({ ...item, automatic: false })),
-  ].sort((a, b) => a.date.localeCompare(b.date));
-}
-
 export function viewFinancial(period = null) {
   const exerciceStart = period?.start || store.settings.exerciceStart;
   const exerciceEnd = period?.end || store.settings.exerciceEnd;
@@ -89,17 +82,46 @@ export function viewFinancial(period = null) {
     {label:"Créances ouvertes sur factures émises",current:outstanding,previous:round(priorDocs.reduce((sum,item)=>sum+item.amount,0))},
     {label:"Dettes fournisseurs estimées",current:payable,previous:round(priorVendors.reduce((sum,item)=>sum+item.amount,0))},
   ],money);
-  const forecast = forecastRows(docs, manual);
+  const forecastReceivables = receivables("", "");
+  const purchaseInvoices = (store.billing?.purchases?.documents || []).filter(invoice => invoice?.type === "invoice" && invoice.status === "validated" && invoice.accountingPostedAt);
+  const supplierBalance = invoice => {
+    const tax = supplierInvoiceTaxBreakdown(invoice);
+    const total = Number(invoice.payableAmount ?? (tax.ok ? tax.payable : invoice.totals?.ttc ?? invoice.total ?? 0));
+    const paid = (invoice.payments || []).filter(payment => !payment.status || payment.status === "posted").reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    const credited = (invoice.creditNotes || []).filter(note => !note.status || note.status === "posted").reduce((sum, note) => sum + Number(note.payableAmount ?? note.total ?? 0), 0);
+    return round(Math.max(0, total - paid - credited));
+  };
+  const supplierSchedule = buildSupplierPayablesSchedule(purchaseInvoices.map(invoice => ({ ...invoice, balance: supplierBalance(invoice) })), today());
+  const payablesForecast = supplierSchedule.items.map(item => {
+    const invoice = purchaseInvoices.find(candidate => String(candidate.id) === String(item.invoiceId));
+    const rate = Number(invoice?.exchangeRate);
+    const baseAmount = item.currency === String(store.settings.currency).toUpperCase() ? item.balance : (Number.isFinite(rate) && rate > 0 ? round(item.balance * rate) : null);
+    return { id: item.invoiceId, number: item.number, supplier: item.supplierName, dueDate: item.dueDate, currency: item.currency, originalAmount: item.balance, baseAmount };
+  });
+  const financialForecast = buildFinancialForecast({
+    baseCurrency: store.settings.currency,
+    openingCash: currentCash,
+    receivables: forecastReceivables.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
+    payables: payablesForecast,
+    manual,
+    asOf: today(),
+  });
+  const forecast = financialForecast.events;
   const buckets = ["À échéance / non échue", "1 à 30 jours", "31 à 60 jours", "61 à 90 jours", "Plus de 90 jours"];
   const bucketRows = buckets.map(name => {
     const amount = round(docs.filter(item => bucket(item.days) === name).reduce((sum, item) => sum + item.amount, 0));
     return "<tr><td>" + esc(name) + "</td><td class=\"num\">" + money(amount) + "</td></tr>";
   }).join("");
-  const forecastTotals = [30, 60, 90].map(days => {
-    const limit = new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
-    const amount = forecast.filter(item => item.date <= limit).reduce((sum, item) => sum + (item.direction === "in" ? item.amount : -item.amount), 0);
-    return { days, amount: round(currentCash + amount) };
-  });
+  const forecastTotals = financialForecast.projections.map(item => ({ days: item.days, amount: item.amount }));
+  const monthlyForecastRows = financialForecast.monthly.map(item =>
+    '<tr><td>' + esc(item.month) + '</td><td class="num">' + money(item.inflows) + '</td><td class="num">' + money(item.outflows) + '</td><td class="num">' + money(item.net) + '</td><td class="num">' + money(item.closing) + '</td></tr>'
+  ).join("");
+  const receivableCurrencyRows = Object.entries(financialForecast.receivablesByCurrency).map(([currency, amount]) =>
+    '<tr><td>' + esc(currency) + '</td><td class="num">' + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + esc(currency) + '</td></tr>'
+  ).join("");
+  const payableCurrencyRows = Object.entries(financialForecast.payablesByCurrency).map(([currency, amount]) =>
+    '<tr><td>' + esc(currency) + '</td><td class="num">' + amount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2}) + ' ' + esc(currency) + '</td></tr>'
+  ).join("");
   const agingChart = renderHorizontalBars("Ancienneté des créances",buckets.map(name=>({
     label:name,
     amount:round(docs.filter(item=>bucket(item.days)===name).reduce((sum,item)=>sum+item.amount,0)),
@@ -139,9 +161,15 @@ export function viewFinancial(period = null) {
       <tbody>${docs.length ? docs.map(item => "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.days > 0 ? item.days + " j" : "—") + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table>
     </section>
     <section class="card">
-      <h2>Prévisions de trésorerie</h2>
-      <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance. Ajoutez les autres encaissements et décaissements prévus pour compléter la projection.</p>
+      <h2>Prévisions de trésorerie — devise de référence : ${esc(store.settings.currency)}</h2>
+      <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance après conversion au taux enregistré sur la facture. Les prévisions manuelles sont saisies dans la devise de référence.</p>
       <div class="grid cols-3">${forecastTotals.map(item => "<div class=\"card kpi\"><div class=\"label\">Solde projeté à " + item.days + " jours</div><div class=\"value\">" + money(item.amount) + "</div></div>").join("")}</div>
+      <p class="muted">Les projections sont exprimées dans la devise de référence de l’entreprise. Les créances et dettes restent également ventilées dans leurs devises d’origine.</p>
+      <div class="grid cols-2">
+        <section class="table-wrap"><h3>Créances ouvertes par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${receivableCurrencyRows || '<tr><td colspan="2">Aucune créance.</td></tr>'}</tbody></table></section>
+        <section class="table-wrap"><h3>Dettes fournisseurs à échéance par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${payableCurrencyRows || '<tr><td colspan="2">Aucune dette.</td></tr>'}</tbody></table></section>
+      </div>
+      <section class="table-wrap"><h3>Flux prévisionnels mensuels — 6 mois</h3><table><thead><tr><th>Mois</th><th class="num">Entrées</th><th class="num">Sorties</th><th class="num">Net</th><th class="num">Solde fin</th></tr></thead><tbody>${monthlyForecastRows}</tbody></table></section>
       <form id="forecast-form">
         <div class="row">
           <div><label for="forecast-date">Date prévue</label><input id="forecast-date" type="date" min="${today()}" required></div>

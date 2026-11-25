@@ -16,6 +16,7 @@ on:
       - feat/lot12-supplier-payment-schedule
       - feat/lot15-strategic-dashboard
       - feat/lot15-profitability-dashboard
+      - feat/lot16-financial-forecast
   workflow_dispatch:
 
 permissions:

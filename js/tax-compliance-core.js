@@ -205,7 +205,7 @@ export function buildMoroccoTaxCalendar({
   const isDue = date(close.getUTCFullYear(), close.getUTCMonth() + 1,
     Math.min(Number(fiscalEnd.slice(8, 10)), lastDay(close.getUTCFullYear(), close.getUTCMonth() + 1)));
   items.push({
-    id: "IS_ANNUAL_" + fiscalEnd, taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)",
+    id: "IS_ANNUAL_" + fiscalEnd.slice(0, 4), taxType: "IS", title: "Déclaration annuelle du résultat fiscal (IS)",
     period: fiscalStartDate + " → " + fiscalEnd, dueDate: isDue,
     legalReference: "CGI 2026, article 20-I", confidence: "statutory_review",
     requiredDocuments: ["États de synthèse définitifs", "Tableau de passage du résultat comptable au résultat fiscal", "Détail des réintégrations et déductions", "Justificatifs des acomptes et retenues imputables"],

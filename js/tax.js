@@ -26,6 +26,7 @@ const tabs=[["overview","Vue générale"],["is","IS"],["ir","IR"],["wht","Retenu
 function nav(){return '<nav class="row wrap">'+tabs.map(([k,v])=>'<button type="button" data-tab="'+k+'" class="'+(tab===k?"":"secondary")+'">'+v+'</button>').join("")+'</nav>';}
 function overview(profile,vat){
  const w=ws(),open=w.declarations.filter(x=>!["filed","paid"].includes(x.status)).length,total=w.withholdingRecords.reduce((s,x)=>s+Number(x.taxAmount||0),0);
+  const vatSummary=vat.ok?Object.entries(vat.byCurrency).map(([currency,item])=>currency+" : "+fmt(item.netVatPayable)).join(" · ")||"Aucune donnée TVA":"Indisponible";
  const cal=buildMoroccoTaxCalendar({fiscalEnd:end(),year:year(),withholdingMonths:[...new Set(ws().withholdingRecords.map(x=>String(x.date||"").slice(0,7)))]});
  return `<section class="grid cols-3"><article class="card kpi"><div class="label">Déclarations à suivre</div><div class="value">${open}</div></article><article class="card kpi"><div class="label">Retenues calculées</div><div class="value">${fmt(total)}</div></article><article class="card kpi"><div class="label">Écritures comptables</div><div class="value">${(store.entries||[]).length}</div></article></section>
  <section class="card"><h2>Référentiel ${esc(profile.countryName)} — CGI 2026</h2><p>TVA nette théorique sur l'exercice : <strong>${esc(vatSummary)}</strong></p><p>Architecture fiscale internationale versionnée par pays et date d'effet. Maroc activé en premier. Les pays non configurés restent bloqués pour éviter l'utilisation de taux supposés.</p>

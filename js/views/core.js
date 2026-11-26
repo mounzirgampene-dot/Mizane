@@ -102,7 +102,7 @@ export function viewDashboard(readOnly = false) {
   `;
   document.getElementById("accounting-controls-csv")?.addEventListener("click", () => {
     const rows = controlRows.length ? controlRows : [{ gravite: "—", type: "aucune_anomalie", date: "", journal: "", ecriture: "", compte: "", anomalie: "Aucune anomalie détectée." }];
-    downloadBlob(new Blob(["\\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-controle-comptable.csv");
+    downloadBlob(new Blob(["\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-controle-comptable.csv");
   });
   document.getElementById("accounting-controls-xls")?.addEventListener("click", () => {
     const table = $app.querySelector("#accounting-control-panel table");

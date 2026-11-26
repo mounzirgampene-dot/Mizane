@@ -47,3 +47,20 @@ La bibliothèque de métadonnées identifie désormais cinq cadres documentés p
 Ces entrées sont des **cadres de normes de reporting vérifiés**, et non cinq plans de comptes prétendument officiels. Les autorités citées ne publient pas un plan de comptes universel directement déductible de ces normes. MIZANE affiche donc le cadre applicable et sa source dans les paramètres, mais conserve le plan comptable déjà choisi tant qu'une nomenclature de comptes officielle, complète et exploitable n'a pas été vérifiée. Aucun compte artificiel, taux fiscal ou module de calcul n'est activé par ce lot.
 
 Pour l'Inde, la fiche référence l'amendement MCA publié au Journal officiel le 12 août 2026. Pour le Royaume-Uni, FRS 102 connaît des changements majeurs applicables principalement aux exercices ouverts à compter du 1er janvier 2026. Pour le Canada et le Brésil, plusieurs cadres ou niveaux de normalisation coexistent ; la sélection finale devra être affinée selon la forme et la taille de l'entité.
+
+
+## Lot 2 — cinq cadres comptables supplémentaires (26 novembre 2026)
+
+| Juridiction | Cadre identifié | Autorité / source |
+|---|---|---|
+| Japon | Japanese GAAP (J-GAAP), avec autres cadres autorisés pour certaines sociétés cotées | ASBJ — https://www.asb-j.jp/en/accounting_standards.html |
+| Chine continentale | Accounting Standards for Business Enterprises (CAS) | Ministère des Finances — https://kjs.mof.gov.cn/zt/kjzzss/qykjzzjs/index.htm |
+| Corée du Sud | K-IFRS et K-GAAP selon le statut de l'entité | IFRS Foundation — https://www.ifrs.org/use-around-the-world/use-of-ifrs-standards-by-jurisdiction/view-jurisdiction/south-korea/ |
+| Mexique | Normas de Información Financiera (NIF), édition 2026 | CINIF — https://cinif.org.mx/normatividad_NIF2026.php |
+| Nouvelle-Zélande | NZ IFRS et normes PBE selon les catégories d'entités | XRB — https://www.xrb.govt.nz/standards/recently-issued/new-accounting-standards/ |
+
+Les entrées de ce lot décrivent les cadres de reporting et leur autorité. Elles ne sont pas ajoutées comme plans de comptes opérationnels tant que la nomenclature complète, sa portée juridique et ses versions applicables n'ont pas été vérifiées.
+
+**Précaution Chine :** le ministère des Finances a publié en septembre 2026 un projet de révision de la liste des comptes et traitements comptables pour consultation. Ce projet est explicitement identifié comme un texte de consultation, et non comme une nomenclature entrée en vigueur. Les changements proposés ne sont donc pas activés dans MIZANE.
+
+**Précaution Japon et Corée :** plusieurs cadres coexistent selon le type d'entité et le statut de cotation. Le choix final devra dépendre de la qualification de l'entreprise, pas seulement du pays sélectionné.

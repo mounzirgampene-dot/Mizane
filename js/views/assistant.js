@@ -172,7 +172,7 @@ export function viewSettings() {
   const migrationRecords = [...(s.planMigrationHistory || [])].reverse();
   const activePlanMigration = migrationRecords.find((item) => item.status === "applied");
   const migrationHistoryHtml = migrationRecords.length
-    ? '<section class="card" style="margin-top:12px"><h3>Historique et audit des migrations</h3><p class="muted">Comparaison des soldes attendus selon le rapprochement et des soldes réellement enregistrés dans le plan cible. Cette comparaison technique ne certifie pas l'équivalence juridique ou comptable des référentiels.</p>' +
+    ? '<section class="card" style="margin-top:12px"><h3>Historique et audit des migrations</h3><p class="muted">Comparaison des soldes attendus selon le rapprochement et des soldes réellement enregistrés dans le plan cible. Cette comparaison technique ne certifie pas une équivalence juridique ou comptable des référentiels.</p>' +
       migrationRecords.map((record) => {
         const report = record.auditReport;
         const rows = report ? migrationAuditRows(report) : [];

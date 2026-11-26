@@ -29,6 +29,8 @@ export function newStore() {
       aiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
       customAccounts: [],
       customPlans: [],
+      planVersions: [],
+      planMappings: [],
     },
     thirds: [],
     entries: [],

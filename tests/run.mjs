@@ -2660,6 +2660,15 @@ test("créances clients : balance âgée, règlements, avoirs et séparation des
 });
 
 
+const companyAiFunctionSource = readFileSync(new URL("../supabase/functions/company-ai/index.ts", import.meta.url), "utf8");
+test("assistant IA cloud : accès strictement réservé aux administrateurs et comptables", () => {
+  assert.match(companyAiFunctionSource, /const AI_ALLOWED_ROLES = new Set\(\["admin","accountant"\]\)/);
+  assert.match(companyAiFunctionSource, /!AI_ALLOWED_ROLES\.has\(member\.role\)/);
+  assert.doesNotMatch(companyAiFunctionSource, /\["admin","accountant","reader"\]/);
+  assert.match(companyAiFunctionSource, /action==="configure"[\s\S]*AI_ALLOWED_ROLES\.has\(member\.role\)/);
+  assert.match(companyAiFunctionSource, /mizane_get_company_ai_secret/);
+});
+
 const taxDocumentVaultMigration = readFileSync(new URL("../supabase/migrations/20261125172040_tax_document_vault.sql", import.meta.url), "utf8");
 const taxDocumentCloudSource = readFileSync(new URL("../js/tax-documents-cloud.js", import.meta.url), "utf8");
 const taxDocumentVaultHardeningMigration = readFileSync(new URL("../supabase/migrations/20261125172702_tax_document_vault_hardening.sql", import.meta.url), "utf8");

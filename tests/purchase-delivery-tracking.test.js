@@ -13,6 +13,7 @@ test("achats fournisseurs : calcule le délai prévisionnel depuis la date de co
   assert.equal(addDeliveryDays("2026-12-31", 1), "2027-01-01");
   assert.equal(addDeliveryDays("2026-02-30", 3), "");
   assert.equal(addDeliveryDays("2026-11-26", -1), "");
+  assert.equal(summarizePurchaseOrder(order({ expectedDeliveryDate: "2026-02-30" }), "2026-02-26").deliveryState, "missing_date");
 });
 
 test("achats fournisseurs : détecte les commandes en retard et calcule le reliquat", () => {

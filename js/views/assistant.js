@@ -374,7 +374,7 @@ export function viewSettings() {
     const rows = migrationAuditRows(record.auditReport);
     const headers = Object.keys(rows[0] || {});
     const html = '<html><head><meta charset="utf-8"><style>body{font-family:Arial}table{border-collapse:collapse}th,td{border:1px solid #999;padding:5px}th{background:#eee}</style></head><body><h1>Audit de migration MIZANE</h1><p>' + esc(record.mappingLabel) + ' — ' + esc(record.sourcePlanId) + ' vers ' + esc(record.targetPlanId) + '</p><p>Comparaison technique selon le rapprochement approuvé ; ne vaut pas certification d’équivalence.</p><table><thead><tr>' + headers.map((key) => '<th>' + esc(key) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr>' + headers.map((key) => '<td>' + esc(row[key]) + '</td>').join('') + '</tr>').join('') + '</tbody></table></body></html>';
-    downloadBlob(new Blob(["\\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8" }), "mizane-audit-migration-" + record.id + ".xls");
+    downloadBlob(new Blob(["\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8" }), "mizane-audit-migration-" + record.id + ".xls");
   }));
   document.querySelectorAll("[data-migration-pdf]").forEach((button) => button.addEventListener("click", () => {
     const record = migrationRecords.find((item) => item.id === button.dataset.migrationPdf);

@@ -260,7 +260,7 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Achat HT</th><th class="num">Vente HT</th><th class="num">Stock total</th><th class="num">Valeur</th><th>Seuil min. / cible</th>${canEditThresholds ? "<th>Action</th>" : ""}</tr></thead>
-      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)} / ${esc(p.purchasePriceUnit||p.unit)}</td><td class="num">${money(p.salePriceHT||0)} / ${esc(p.salePriceUnit||p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td><td>${p.type === "service" ? "—" : (Number(p.minimumStock||0)>0 || Number(p.targetStock||0)>0 ? fmtQty(p.minimumStock||0)+" / "+fmtQty(p.targetStock||0) : "Non défini")}</td>${canEditThresholds ? `<td>${p.type === "service" ? "—" : `<button class="secondary small" data-stock-threshold="${esc(p.id)}">Définir</button>`}</td>` : ""}</tr>`).join("") || '<tr><td colspan="${canEditThresholds ? "11" : "10"}" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
+      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)} / ${esc(p.purchasePriceUnit||p.unit)}</td><td class="num">${money(p.salePriceHT||0)} / ${esc(p.salePriceUnit||p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td><td>${p.type === "service" ? "—" : (Number(p.minimumStock||0)>0 || Number(p.targetStock||0)>0 ? fmtQty(p.minimumStock||0)+" / "+fmtQty(p.targetStock||0) : "Non défini")}</td>${canEditThresholds ? `<td>${p.type === "service" ? "—" : `<button class="secondary small" data-stock-threshold="${esc(p.id)}">Définir</button>`}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${canEditThresholds ? "11" : "10"}" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>`}</tbody></table></div>
     </section>
     <section class="card">
       <h2>Stocks par entrepôt</h2>
@@ -289,8 +289,6 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       <p class="muted">L'autorisation des stocks négatifs est désactivée par défaut. Toute activation est réservée à l'administrateur et auditée côté serveur.</p>
       ${cloudMode ? `<p class="muted">Réservations actives : ${stock.reservations.length}</p>` : ""}
     </section>`;
-  if (readOnly) return;
-  document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
   document.getElementById("stock-replenishment-export")?.addEventListener("click", () => {
     const blob = new Blob([stockReplenishmentCsv(replenishmentReport)], { type:"text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -302,6 +300,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     link.remove();
     URL.revokeObjectURL(url);
   });
+  if (readOnly) return;
+  document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
   document.querySelectorAll("[data-stock-threshold]").forEach(button => {
     const product = stock.products.find(item => String(item.id) === String(button.dataset.stockThreshold));
     if (product) button.addEventListener("click", () => openStockReorderThresholdDialog(product, cloudMode, companyRole));

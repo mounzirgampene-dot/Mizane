@@ -1,5 +1,6 @@
 // MIZANE — Persistance (localStorage) + import/export JSON.
 import { newStore, buildAccountCache, validDate, round2 } from "./accounting.js";
+import { validateCustomPlans } from "./plans/custom.js";
 
 const KEY = "mizane_v1";
 
@@ -79,6 +80,7 @@ export function loadStore(planAccounts) {
   }
   if (!store || !store.settings) store = newStore();
   if (!Array.isArray(store.assets)) store.assets = [];
+  if (!Array.isArray(store.settings.customPlans)) store.settings.customPlans = [];
   store.__planAccounts = planAccounts;
   buildAccountCache(store, planAccounts);
   if (ensureSyncIdentity(store)) saveStore(store);

@@ -275,6 +275,8 @@ export function viewSettings() {
     try {
       const rules = buildConversionRules(conversionSuggestions, selections);
       if (!rules.length) return toast("Aucun rapprochement sélectionné.");
+      const groupedRules = rules.filter((rule) => rule.relation === "many-to-one").length;
+      if (groupedRules && !confirm(groupedRules + " regroupement(s) plusieurs-vers-un détecté(s). Vérifiez que ces comptes peuvent légalement et comptablement être fusionnés. Continuer en brouillon ?")) return;
       const mapping = validatePlanMapping({ id: "conversion-" + Date.now().toString(36), sourcePlanId: sourceId, targetPlanId: targetId, label: document.getElementById("conversion-label").value.trim() || ("Conversion " + sourceId + " vers " + targetId), status: "draft", rules }, conversionCatalog(), conversionVersions());
       s.planMappings = [...(s.planMappings || []), mapping];
       saveStore(store);

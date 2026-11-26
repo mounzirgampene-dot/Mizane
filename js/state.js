@@ -1,6 +1,6 @@
 // MIZANE — État global de l'application et helpers partagés.
 import { newStore, buildAccountCache } from "./accounting.js";
-import { allAccounts } from "./plans.js";
+import { allAccounts, getPlan } from "./plans.js";
 import { formatMoney } from "./countries.js";
 import { saveStore } from "./db.js";
 

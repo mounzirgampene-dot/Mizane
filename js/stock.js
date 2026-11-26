@@ -12,6 +12,7 @@ import {
 } from "./cloud-sync.js";
 import { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 import { buildStockReplenishmentReport, stockReplenishmentCsv } from "./stock-replenishment.js";
+import { openReplenishmentPurchaseOrder } from "./purchases.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
@@ -244,7 +245,10 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
         <div><h2>Réapprovisionnement et alertes</h2><p class="muted">Les seuils sont globaux par article et les quantités réservées sont déduites du disponible, sans mélanger les unités des articles.</p></div>
-        <button class="secondary" id="stock-replenishment-export">Exporter le rapport CSV</button>
+        <div class="actions">
+          <button class="secondary" id="stock-replenishment-export">Exporter le rapport CSV</button>
+          ${cloudMode && canEditThresholds && replenishmentReport.alerts.some(item => item.reorderQuantity > 0) ? '<button id="stock-replenishment-draft">Préparer un brouillon d’achat</button>' : ""}
+        </div>
       </div>
       <div class="grid cols-3">
         <div class="kpi"><div class="label">Articles surveillés</div><div class="value">${replenishmentReport.summary.monitored}</div></div>
@@ -301,6 +305,12 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     URL.revokeObjectURL(url);
   });
   if (readOnly) return;
+  document.getElementById("stock-replenishment-draft")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await openReplenishmentPurchaseOrder(replenishmentReport.alerts); }
+    finally { button.disabled = false; }
+  });
   document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
   document.querySelectorAll("[data-stock-threshold]").forEach(button => {
     const product = stock.products.find(item => String(item.id) === String(button.dataset.stockThreshold));

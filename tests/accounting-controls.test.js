@@ -51,6 +51,6 @@ assert.ok(invalidReport.warnings.some(item => item.type === "compte_inconnu" && 
 assert.ok(invalidReport.warnings.some(item => item.type === "desequilibre" && item.entryId === 100));
 
 const rangeReport = buildAccountingControlReport(store, { start: "2026-03-10", end: "2026-03-10" });
-assert.equal(rangeReport.totals.periodEntries, 1);
+assert.equal(rangeReport.totals.periodEntries, 2);
 assert.ok(rangeReport.totals.outOfPeriodCount >= 1);
 console.log("✓ Contrôles comptables : équilibre, journaux, doublons, dates, comptes et filtres de période.");

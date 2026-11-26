@@ -31,6 +31,7 @@ export function newStore() {
       customPlans: [],
       planVersions: [],
       planMappings: [],
+      planMigrationHistory: [],
     },
     thirds: [],
     entries: [],

@@ -12,6 +12,7 @@ import { suggestStockAccounts } from "../billing-accounting.js";
 import { calculateLocalStockPeriodValuation, postPeriodicStockClosingJournalEntry } from "../stock-accounting.js";
 import { buildThirdPartyReconciliation, applyThirdPartyLettrage, reverseThirdPartyLettrage } from "../third-party-reconciliation.js";
 import { parseBankStatement } from "../bank-statement-import.js";
+import { analyzeBankLine, confirmBankMatchSuggestion, buildBankReconciliationReport, bankReconciliationReportHTML } from "../bank-reconciliation-advanced.js";
 
 
 async function retryStockPeriodRequest(operation,attempts=3) {
@@ -392,6 +393,15 @@ export function viewTools() {
       .map(([currency,amount]) => money(amount) + (currency === "—" ? "" : " " + esc(currency))).join(" · ") || "—";
     const totalBank = formatBankTotals(totalsByCurrency(lines));
     const totalMatched = formatBankTotals(totalsByCurrency(lines.filter(line => line.status === "matched")));
+    const suggestionsMarkup = lines.map((line,index) => {
+      if(line.status==="matched")return "";
+      const analysis=analyzeBankLine(line,store,session.days||4,session);
+      const proposals=analysis.suggestions.slice(0,3).map((suggestion,suggestionIndex) =>
+        '<div class="muted" style="margin:6px 0">'+esc(suggestion.reason)+' <strong>'+suggestion.confidence+'%</strong> · '+suggestion.allocations.map(item=>'#'+Number(item.entryId)+' ('+money(item.amount)+')').join(' + ')+' <button type="button" class="secondary small" data-bk-suggest-line="'+index+'" data-bk-suggestion="'+suggestionIndex+'">Valider cette proposition</button></div>'
+      ).join("");
+      const differences=analysis.discrepancies.length?'<p class="muted">Écarts candidats : '+analysis.discrepancies.map(item=>'#'+item.entryId+' : '+money(item.difference)+' '+esc(item.currency)).join(" · ")+'</p>':"";
+      return '<div class="card" style="margin:8px 0"><strong>'+esc(line.date)+' · '+esc(line.label)+'</strong><p class="muted">'+esc(analysis.diagnosis.label)+' — '+esc(analysis.diagnosis.hint)+(analysis.feeCandidate?' · Frais probables à vérifier':'')+'</p>'+differences+(proposals||'<p class="muted">Aucune combinaison fiable trouvée automatiquement.</p>')+'</div>';
+    }).join("");
     out.innerHTML = `
       <div class="grid cols-2">
         <div class="card kpi"><div class="value">${ok} / ${lines.length}</div><div class="label">Opérations rapprochées</div></div>
@@ -410,11 +420,23 @@ export function viewTools() {
           ${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return `<p class="muted">${esc(d.label)} — ${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="${index}">Préparer une écriture</button>`; })() : ""}
           ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>
-      <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button></div>
+      <section class="card"><h3>Suggestions avancées et écarts à examiner</h3>${suggestionsMarkup || '<p class="muted">Aucune opération en attente.</p>'}</section>
+      <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button><button class="secondary" id="bk-xls">Exporter Excel</button><button class="secondary" id="bk-print">Imprimer / PDF</button></div>
       <p class="muted">Les rapprochements et écritures de régularisation sont enregistrés dans les données synchronisées de l’entreprise. Vérifiez toujours les comptes proposés avant de comptabiliser ; la TVA n’est pas calculée automatiquement.</p>`;
     document.getElementById("bk-unmatched-only")?.addEventListener("change", event => {
       out.querySelectorAll("[data-bk-row]").forEach(row => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
     });
+    out.querySelectorAll("[data-bk-suggest-line]").forEach(button => button.addEventListener("click", () => {
+      const index=Number(button.dataset.bkSuggestLine);
+      try {
+        const analysis=analyzeBankLine(session.lines[index],store,session.days||4,session);
+        const suggestion=analysis.suggestions[Number(button.dataset.bkSuggestion)];
+        session.lines[index]=confirmBankMatchSuggestion(session.lines[index],suggestion,session,store);
+        saveStore(store);
+        renderBankResult(session);
+        toast("Proposition de rapprochement validée. Aucune écriture comptable modifiée.");
+      } catch(error) { toast(error.message || "Validation impossible."); }
+    }));
     out.querySelectorAll("[data-bk-match]").forEach(button => button.addEventListener("click", () => {
       const index = Number(button.dataset.bkMatch);
       const selected = out.querySelector(`[data-bk-choice="${index}"]`)?.value;
@@ -478,11 +500,20 @@ export function viewTools() {
       saveStore(store); renderBankResult(session);
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {
-      downloadBlob(new Blob(["\ufeff" + toCSV(lines.map(m => ({
-        date:m.date,libelle:m.label,montant:m.amount,ecriture:m.match||"",compte:m.matchAccount||"",
-        etat:m.status==="matched"?"Rapprochée":"À vérifier",validation:m.manuallyMatched?"Manuelle":"Automatique"
-      })))],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
+      const report=buildBankReconciliationReport(session,store);
+      downloadBlob(new Blob(["\\ufeff"+toCSV(report.details)],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
     });
+    document.getElementById("bk-xls")?.addEventListener("click", () => {
+      const report=buildBankReconciliationReport(session,store);
+      downloadBlob(new Blob([bankReconciliationReportHTML(report)],{type:"application/vnd.ms-excel;charset=utf-8"}),"mizane-rapprochement.xls");
+    });
+    document.getElementById("bk-print")?.addEventListener("click", () => {
+      const report=buildBankReconciliationReport(session,store),printWindow=window.open("","_blank");
+      if(!printWindow)return toast("Autorisez l'ouverture de la fenêtre pour imprimer le rapport PDF.");
+      printWindow.document.open();
+      printWindow.document.write(bankReconciliationReportHTML(report).replace("</body>","<script>window.addEventListener('load',()=>window.print());</script></body>"));
+      printWindow.document.close();
+    });;
   };
 
   document.getElementById("bk-import-file")?.addEventListener("click", async () => {

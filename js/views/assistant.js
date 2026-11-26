@@ -171,10 +171,16 @@ export function viewAssistant() {
         '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écriture(s)</button></div>';
       bindDraftEditors(out, drafts => {
         const posted = [];
-        for (const draft of drafts) {
-          const result = postEntry(store, draft);
+        if (drafts.length === 1) {
+          const result = postEntry(store, drafts[0]);
           if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
           posted.push(result.entry);
+        } else {
+          for (const draft of drafts) {
+            const result = postEntry(store, draft);
+            if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+            posted.push(result.entry);
+          }
         }
         saveStore(store);
         toast(posted.length + ' écriture(s) enregistrée(s) après validation.');

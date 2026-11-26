@@ -49,7 +49,10 @@ export function esc(s) {
 export function money(n) { return formatMoney(n, store.settings.currency, store.settings.locale); }
 
 export function refreshPlan() {
-  planAccounts = allAccounts(store.settings.plan);
+  const customPlan = (store.settings.customPlans || []).find((plan) => plan.id === store.settings.plan);
+  planAccounts = customPlan
+    ? customPlan.accounts.map(([code, label, type]) => ({ code, label, type }))
+    : allAccounts(store.settings.plan);
   buildAccountCache(store, planAccounts);
 }
 

@@ -84,3 +84,12 @@ Comme pour les lots précédents, il s'agit de cadres de reporting documentés, 
 MIZANE propose désormais neuf modèles sectoriels indicatifs : commerce, services, agriculture, association/ONG, industrie/fabrication, BTP/construction, hôtellerie/restauration, santé/clinique et transport/logistique.
 
 Les cinq nouveaux modèles ajoutent des comptes de base pour les stocks, immobilisations, tiers, charges et produits propres aux activités visées. Ils ne remplacent pas les normes nationales, les règles de valorisation, les obligations sectorielles ni les plans réglementaires éventuellement imposés aux banques, assureurs, établissements de santé ou sociétés cotées. Ils doivent être adaptés et validés par un professionnel compétent avant toute utilisation réelle.
+
+
+## Lot 5 — plans comptables personnalisés
+
+Les entreprises peuvent désormais créer un plan personnalisé en copiant un référentiel intégré ou un modèle sectoriel, puis modifier son nom et sa description, ajouter ou retirer des comptes, l'activer, l'exporter au format JSON ou importer un plan précédemment exporté.
+
+Les plans personnalisés sont stockés dans les paramètres de l'entreprise, dans la sauvegarde locale MIZANE et dans le snapshot de synchronisation de l'entreprise. Les plans officiels et les modèles sectoriels d'origine restent inchangés. Un compte déjà utilisé dans une écriture ne peut pas être retiré du plan actif afin de préserver l'intégrité des journaux et des états.
+
+Le format d'échange est versionné (`mizane-custom-plan`, version 1). L'import valide les identifiants, les codes de comptes, les libellés, les types et l'absence de doublons. Les plans personnalisés ne sont pas certifiés comme référentiels réglementaires : leur conformité relève de la validation du professionnel comptable compétent.

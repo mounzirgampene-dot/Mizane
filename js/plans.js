@@ -21,8 +21,8 @@ export const ACCOUNT_TYPES = {
   income: "Produit",
 };
 
-export function getPlan(id) {
-  return PLANS[id] || PLANS.syscohada;
+export function getPlan(id, customPlans = []) {
+  return PLANS[id] || customPlans.find((plan) => plan.id === id) || PLANS.syscohada;
 }
 
 export function listPlans() {

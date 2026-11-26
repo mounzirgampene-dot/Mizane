@@ -1,5 +1,6 @@
 // MIZANE — Persistance (localStorage) + import/export JSON.
 import { newStore, buildAccountCache, validDate, round2 } from "./accounting.js";
+import { validateCustomPlans } from "./plans/custom.js";
 
 const KEY = "mizane_v1";
 
@@ -79,6 +80,7 @@ export function loadStore(planAccounts) {
   }
   if (!store || !store.settings) store = newStore();
   if (!Array.isArray(store.assets)) store.assets = [];
+  if (!Array.isArray(store.settings.customPlans)) store.settings.customPlans = [];
   store.__planAccounts = planAccounts;
   buildAccountCache(store, planAccounts);
   if (ensureSyncIdentity(store)) saveStore(store);
@@ -122,6 +124,7 @@ export function validateBackup(data) {
   if (data.settings.customAccounts != null && !Array.isArray(data.settings.customAccounts)) {
     throw new Error("La liste des comptes personnalisés est invalide.");
   }
+  const customPlans = validateCustomPlans(data.settings.customPlans);
 
   const ids = new Set();
   const entries = data.entries.map((e, index) => {
@@ -174,6 +177,7 @@ export function validateBackup(data) {
 
   return {
     ...data,
+    settings: { ...data.settings, customPlans },
     version: 1,
     thirds: Array.isArray(data.thirds) ? data.thirds : [],
     assets: Array.isArray(data.assets) ? data.assets : [],

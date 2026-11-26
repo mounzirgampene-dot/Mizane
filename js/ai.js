@@ -162,7 +162,7 @@ export function imageFileToDataUrl(file, maxDim = 1280) {
 export async function suggestEntry(store, text, imageDataUrl = null) {
   const userContent = imageDataUrl
     ? [
-        { type: "text", text: "Voici un justificatif photographié (facture, reçu, ticket ou document de transaction). Extrais les faits visibles sans compléter les champs absents, distingue les données lisibles des incertitudes et prépare une écriture détaillée. Renvoie uniquement un JSON contenant date, journal, reference, lines, sourceFacts et uncertainties. Lis-le" + (text ? " en tenant compte de ces précisions" : "") + " et propose l'écriture comptable, uniquement le JSON :\n" + text },
+        { type: "text", text: "Lis ce justificatif (facture, reçu, ticket ou document de transaction), relève uniquement les faits visibles et prépare une écriture détaillée. Renvoie un JSON avec date, journal, reference, lines, sourceFacts (faits visibles) et uncertainties (données absentes, ambiguës ou illisibles). N’invente aucun montant, compte, date, devise ou taux fiscal." + (text ? "\nPrécisions fournies par l’utilisateur : " + text : "") },
         { type: "image_url", image_url: imageDataUrl },
       ]
     : "Analyse cette opération et prépare une écriture comptable détaillée. N'invente aucune donnée. Renvoie uniquement un JSON contenant date, journal, reference, lines, sourceFacts et uncertainties :\n" + text;

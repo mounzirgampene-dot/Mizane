@@ -2647,5 +2647,7 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/accounting-controls.js"'));
  assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/third-party-reconciliation.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/bank-statement-import.js"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/bank-reconciliation-advanced.js"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v99"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

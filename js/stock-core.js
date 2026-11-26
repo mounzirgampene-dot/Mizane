@@ -48,6 +48,9 @@ export function validateProduct(input, products = []) {
   if (input.type === "service" && input.tracking !== "none") errors.push("Un service ne peut pas avoir de traçabilité de stock.");
   if (input.purchasePriceHT != null && (!Number.isFinite(Number(input.purchasePriceHT)) || Number(input.purchasePriceHT)<0)) errors.push("Prix d’achat HT invalide.");
   if (input.salePriceHT != null && (!Number.isFinite(Number(input.salePriceHT)) || Number(input.salePriceHT)<0)) errors.push("Prix de vente HT invalide.");
+  const minimumStock = Number(input.minimumStock ?? 0);
+  const targetStock = Number(input.targetStock ?? minimumStock);
+  if (!Number.isFinite(minimumStock) || !Number.isFinite(targetStock) || minimumStock < 0 || targetStock < minimumStock || targetStock >= 1000000000000) errors.push("Seuil de réapprovisionnement invalide : la cible doit être supérieure ou égale au seuil minimum.");
   const conversions = Array.isArray(input.unitConversions) ? input.unitConversions : [];
   const availableUnits = [String(input.unit || "unité").trim(), ...conversions.map(c=>String(c?.unit||"").trim())].map(u=>u.toLowerCase());
   if (input.purchasePriceUnit && !availableUnits.includes(String(input.purchasePriceUnit).trim().toLowerCase())) errors.push("L’unité du prix d’achat doit être une unité définie pour l’article.");
@@ -72,6 +75,7 @@ export function addProduct(store, input) {
     unitConversions: (input.unitConversions || []).map(c => ({ unit:String(c.unit).trim(), factorToBase:Number(c.factorToBase) })),
     purchasePriceHT:Number(input.purchasePriceHT||0), salePriceHT:Number(input.salePriceHT||0),
     purchasePriceUnit:String(input.purchasePriceUnit||input.unit||"unité").trim(), salePriceUnit:String(input.salePriceUnit||input.unit||"unité").trim(),
+    minimumStock:Number(input.minimumStock||0), targetStock:Number(input.targetStock??input.minimumStock??0),
     active: true, createdAt: new Date().toISOString(),
   };
   stock.products.push(product);

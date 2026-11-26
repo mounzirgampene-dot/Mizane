@@ -15,6 +15,7 @@ import { suggestAccountMatches, buildConversionRules } from "../plans/conversion
 import { applyPlanMigration, undoPlanMigration } from "../plans/migration.js";
 import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
+import { extractPdfDocument, isSupportedDocumentFile, documentFactsFromProposal, matchDocumentToRecords } from "../ai-documents.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
 function draftLineMarkup(line, index) {
@@ -60,6 +61,17 @@ function bindDraftEditors(root, onSave) {
   });
 }
 
+function documentMatchesMarkup(facts, store) {
+  const matches = matchDocumentToRecords(facts, store);
+  const entryRows = matches.entryMatches.map(item => '<li><strong>Écriture #' + esc(item.entryId) + '</strong> · ' + esc(item.date) + ' · ' + esc(item.amount == null ? "Montant non déterminé" : item.amount.toFixed(2) + " " + item.currency) + ' · confiance indicative ' + item.confidence + '%<br><span class="muted">' + esc(item.reason) + '</span></li>').join("");
+  const bankRows = matches.bankMatches.map(item => '<li><strong>' + esc(item.sourceFile) + '</strong> · ' + esc(item.date) + ' · ' + esc(item.label) + ' · ' + esc(item.amount.toFixed(2) + " " + item.currency) + ' · ' + (item.status === "matched" ? "déjà rapprochée" : "à rapprocher") + ' · ' + item.confidence + '%<br><span class="muted">' + esc(item.reason) + (item.matchedEntryIds.length ? " · écriture(s) #" + item.matchedEntryIds.map(esc).join(", #") : "") + '</span></li>').join("");
+  return '<section class="card" style="margin:12px 0"><h3>Rapprochements possibles avec les données existantes</h3>' +
+    '<p class="muted">Suggestions calculées à partir du montant, de la devise, de la date, de la référence et du tiers lorsque ces informations sont disponibles. Elles ne sont ni validées ni enregistrées automatiquement.</p>' +
+    '<h4>Écritures comptables</h4>' + (entryRows ? '<ul>' + entryRows + '</ul>' : '<p class="muted">Aucune écriture suffisamment proche détectée.</p>') +
+    '<h4>Opérations des relevés bancaires importés</h4>' + (bankRows ? '<ul>' + bankRows + '</ul>' : '<p class="muted">Aucune opération bancaire suffisamment proche détectée.</p>') +
+    '</section>';
+}
+
 let assistantHistoryCompanyId = "";
 
 export function viewAssistant() {
@@ -90,9 +102,9 @@ export function viewAssistant() {
     </div>
     <div class="card">
       <h2>🧠 Copilote comptable — analyser un justificatif</h2>
-      <p class="muted">Joignez une facture, un reçu ou un document de transaction. Le copilote extrait les faits, signale les incertitudes et prépare une écriture détaillée et modifiable. Aucune écriture n'est enregistrée automatiquement.</p>
+      <p class="muted">Joignez une photo ou un PDF multipage (jusqu’à 20 pages). Le copilote extrait les faits, signale les incertitudes, prépare les écritures et recherche des correspondances possibles dans les écritures et relevés bancaires déjà importés. Rien n’est enregistré ni rapproché automatiquement.</p>
       <div class="row">
-        <div><label>Photo du justificatif</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp"></div>
+        <div><label>Photo ou document PDF</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf"></div>
         <div><label>Contexte de l’opération (facultatif)</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
       </div>
       <div class="actions"><button id="invoice-analyze" ${configured ? "" : "disabled"}>${configured ? "Analyser le justificatif" : "Configurez une clé IA pour activer la lecture"}</button></div>
@@ -122,29 +134,50 @@ export function viewAssistant() {
 
   // ---- Import de texte -> écritures ----
 
-  // ---- Justificatif photo -> proposition d'écriture contrôlée ----
+  // ---- Photo ou PDF -> extraction, rapprochements indicatifs et écritures contrôlées ----
   document.getElementById("invoice-analyze").addEventListener("click", async () => {
     const file = document.getElementById("invoice-photo").files[0];
     const out = document.getElementById("invoice-result");
     if (!configured || !aiConfigured(store)) { toast("Configurez d'abord une clé IA dans Paramètres."); return; }
-    if (!file) { toast("Sélectionnez une photo de facture ou de reçu."); return; }
-    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { toast("Formats acceptés : JPEG, PNG ou WebP."); return; }
-    if (file.size > 15 * 1024 * 1024) { toast("La photo dépasse la limite de 15 Mo."); return; }
-    out.innerHTML = '<p class="muted">Analyse du justificatif en cours…</p>';
+    if (!file) { toast("Sélectionnez une photo ou un PDF."); return; }
+    if (!isSupportedDocumentFile(file)) { toast("Formats acceptés : JPEG, PNG, WebP ou PDF."); return; }
+    const isPdf = file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
+    if (file.size > (isPdf ? 20 : 15) * 1024 * 1024) { toast("Le fichier dépasse la limite autorisée (" + (isPdf ? "20" : "15") + " Mo)."); return; }
+    out.innerHTML = '<p class="muted">Lecture et analyse du justificatif en cours…</p>';
     try {
-      const imageData = await imageFileToDataUrl(file);
       const note = document.getElementById("invoice-note").value.trim();
-      const proposal = await suggestEntry(store, note, imageData);
-      out.innerHTML = '<p><strong>Proposition IA — chaque champ est modifiable</strong></p>' +
-        '<p class="muted">L’IA sépare les faits visibles des incertitudes. Corrigez les comptes, libellés, montants, date et journal. Vous pouvez ajouter ou supprimer des lignes. Rien ne sera enregistré avant votre validation explicite.</p>' +
-        draftCardMarkup(proposal, 0, 'Écriture issue du justificatif') +
-        '<p class="muted">Le contrôle technique vérifie la structure et l’équilibre ; il ne certifie ni l’authenticité du document ni sa conformité fiscale ou juridique.</p>' +
-        '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer l’écriture</button></div>';
+      let proposals = [];
+      let pdfInfo = null;
+      if (isPdf) {
+        pdfInfo = await extractPdfDocument(file);
+        const documentText = [note, pdfInfo.text].filter(Boolean).join("\n\n");
+        if (pdfInfo.images.length) proposals = [await suggestEntry(store, documentText, pdfInfo.images)];
+        else proposals = await importEntriesFromText(store, documentText);
+      } else {
+        const imageData = await imageFileToDataUrl(file);
+        proposals = [await suggestEntry(store, note, imageData)];
+      }
+      if (!proposals.length) throw new Error("Aucune écriture exploitable n’a été extraite du document.");
+      const facts = documentFactsFromProposal(proposals[0], store.settings.currency);
+      const warnings = [];
+      if (pdfInfo?.omittedPages) warnings.push(pdfInfo.omittedPages + " page(s) au-delà de la limite de lecture n’ont pas été analysées.");
+      if (pdfInfo?.omittedScannedPages) warnings.push(pdfInfo.omittedScannedPages + " page(s) numérisée(s) supplémentaires n’ont pas pu être transmises au modèle vision (limite de 4 images par document).");
+      if (pdfInfo?.truncatedText) warnings.push("Le texte extrait a été tronqué pour respecter la limite de traitement.");
+      out.innerHTML = '<p><strong>' + proposals.length + ' écriture(s) proposée(s) — champs modifiables</strong></p>' +
+        '<p class="muted">Vérifiez chaque page et chaque montant sur le document original. L’IA sépare les faits visibles des incertitudes. Les contrôles techniques ne certifient ni l’authenticité ni la conformité fiscale ou juridique.</p>' +
+        (warnings.length ? '<p class="warn">' + warnings.map(esc).join('<br>') + '</p>' : '') +
+        proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Écriture issue du justificatif ' + (index + 1))).join('') +
+        documentMatchesMarkup(facts, store) +
+        '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écriture(s)</button></div>';
       bindDraftEditors(out, drafts => {
-        const posted = postEntry(store, drafts[0]);
-        if (!posted.ok) { toast(posted.errors.join(' · ')); return; }
+        const posted = [];
+        for (const draft of drafts) {
+          const result = postEntry(store, draft);
+          if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+          posted.push(result.entry);
+        }
         saveStore(store);
-        toast('Écriture enregistrée après validation.');
+        toast(posted.length + ' écriture(s) enregistrée(s) après validation.');
         router.go('entries');
       });
     } catch (err) {

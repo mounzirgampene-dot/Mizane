@@ -6,7 +6,7 @@ const target={id:"target",accounts:[["101","Capital cible","equity"],["610","Ach
 const store=newStore();store.settings.plan="source";buildAccountCache(store,source.accounts.map(([code,label,type])=>({code,label,type})));
 postEntry(store,{date:"2026-01-10",journal:"OD",reference:"Facture achat",lines:[{account:"600",label:"Facture fournisseur F-01",debit:100,credit:0},{account:"100",label:"Règlement",debit:0,credit:100}]});
 const original=structuredClone(store.entries);
-const mapping={id:"source-target",label:"Source vers cible",sourcePlanId:"source",targetPlanId:"target",status:"approved",rules:[
+const mapping={id:"source-target",label:"Source vers cible",sourcePlanId:"source",targetPlanId:"target",status:"approved",approvedAt:"2026-11-26T12:00:00.000Z",approvalEvents:[{at:"2026-11-26T12:00:00.000Z",actor:null}],rules:[
 {id:"r1",relation:"exact",sourceCodes:["600"],targetCodes:["610"],status:"approved"},
 {id:"r2",relation:"exact",sourceCodes:["100"],targetCodes:["101"],status:"approved"}
 ]};
@@ -18,10 +18,13 @@ assert.deepEqual(store.entries[0].lines.map(l=>l.account),["610","101"]);
 assert.equal(store.entries[0].lines[0].label,"Facture fournisseur F-01");
 assert.deepEqual(store.entries[0].client_uid,original[0].client_uid);
 assert.equal(store.settings.planMigrationHistory.length,1);
+assert.equal(store.settings.planMigrationHistory[0].events[0].type,"approved");
+assert.equal(store.settings.planMigrationHistory[0].approvedAt,"2026-11-26T12:00:00.000Z");
 const undone=undoPlanMigration(store,applied.record.id);
 assert.equal(undone.restoredEntryCount,1);assert.equal(store.settings.plan,"source");
 assert.deepEqual(store.entries,original);
 assert.equal(store.settings.planMigrationHistory[0].status,"undone");
+assert.equal(store.settings.planMigrationHistory[0].events.at(-1).type,"undone");
 const again=applyPlanMigration(store,{sourcePlan:source,targetPlan:target,mapping});
 store.entries[0].reference="edited after migration";
 assert.throws(()=>undoPlanMigration(store,again.record.id),/écritures ont changé/);

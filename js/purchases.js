@@ -12,6 +12,7 @@ import { supplierInvoiceTaxBreakdown } from "./purchase-tax.js";
 import { suggestSupplierInvoiceAccounts } from "./purchase-account-mapping.js";
 import { allAccounts } from "./plans.js";
 import { addSupplierPaymentTerms, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "./supplier-payables.js";
+import { prepareStockReplenishmentDraftLines } from "./stock-replenishment.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -354,25 +355,28 @@ function openSupplier() {
     box.closest("dialog").close(); persist("Fournisseur enregistré."); renderList();
   });
 }
-function openDocument(type) {
+function openDocument(type, options = {}) {
   const p = data();
   const suppliers = p.suppliers.filter(item => item.active !== false);
   if (!suppliers.length) { toast("Créez d'abord un fournisseur."); openSupplier(); return; }
   if (type === "order" && (!(stockState?.products || []).some(item => item.active !== false && item.product_type !== "service") || !(stockState?.warehouses || []).length)) { toast("Créez d'abord au moins un article physique et un entrepôt dans Gestion de stock."); return; }
   const orders = p.documents.filter(doc => doc.type === "order" && doc.status !== "cancelled");
   const suggestedAccounts = type === "invoice" ? suggestSupplierInvoiceAccounts(store, stockState?.settings?.accountingMode || "perpetual") : null;
-  const { box } = modal(`<h2>${type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
-    <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
+  const initialLines = Array.isArray(options.replenishmentLines) ? options.replenishmentLines : [];
+  const initialLineRows = initialLines.length ? initialLines.map((line,index) => lineRow(index,line)).join("") : lineRow(0);
+  const { box } = modal(`<h2>${options.fromReplenishment ? "Brouillon de commande — réapprovisionnement" : type === "order" ? "Nouvelle commande fournisseur" : "Nouvelle facture fournisseur"}</h2>
+    ${options.fromReplenishment ? '<p class="muted">Les quantités sont proposées en unité de base. Choisissez le fournisseur, vérifiez les entrepôts et renseignez les prix unitaires avant d’enregistrer. Aucun envoi ni mouvement de stock ne sera déclenché.</p>' : ""}
+    <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${options.fromReplenishment ? '<option value="">Sélectionner un fournisseur…</option>' : ""}${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
     <div><label>Date</label><input id="pd-date" type="date" value="${today()}"></div></div>
     ${type === "invoice" ? `<div class="grid cols-2"><div><label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select></div><div><label>Échéance de paiement</label><input id="pd-due-date" type="date" value="${addSupplierPaymentTerms(today(),p.suppliers[0]?.paymentTermsDays ?? 30)}"></div></div>` : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
     ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable proposée automatiquement</h3><p class="muted">Les comptes sont préremplis selon le plan ' + esc(suggestedAccounts.planName) + ' ; vérifiez les suggestions et adaptez-les si nécessaire avant validation.</p><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", suggestedAccounts?.accounts.supplier || "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", suggestedAccounts?.accounts.stock || "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", suggestedAccounts?.accounts.purchases || "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", suggestedAccounts?.accounts.inputVat || "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", suggestedAccounts?.accounts.services || "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", suggestedAccounts?.accounts.fixedAssets || "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
-    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire HT</th><th>TVA % (défaut)</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${lineRow(0)}</tbody></table></div>
+    <h3>Lignes d'achat</h3><div class="table-wrap"><table><thead><tr><th>Article physique</th><th>Entrepôt</th><th>Unité</th><th>Quantité</th><th>Coût unitaire HT</th><th>TVA % (défaut)</th><th>Lot / séries (facture)</th><th></th></tr></thead><tbody id="pd-lines">${initialLineRows}</tbody></table></div>
     <button type="button" class="secondary" id="pd-add-line">Ajouter une ligne de marchandise</button>
     ${type === "invoice" ? '<h3>Services et immobilisations</h3><div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Quantité</th><th>Coût unitaire HT</th><th>TVA % (défaut)</th><th></th></tr></thead><tbody id="pd-extra-lines">' + extraLineRow(0) + '</tbody></table></div><button type="button" class="secondary" id="pd-add-extra-line">Ajouter une prestation ou immobilisation</button>' : ""}
     <p id="pd-total" class="calculator-result">Total : 0,00</p><div id="pd-error" class="errors"></div>
-    <div class="actions"><button id="pd-save">Enregistrer ${type === "order" ? "la commande" : "la facture"}</button><button class="secondary" data-close>Annuler</button></div>`);
+    <div class="actions"><button id="pd-save">${options.fromReplenishment ? "Enregistrer le brouillon" : "Enregistrer " + (type === "order" ? "la commande" : "la facture")}</button><button class="secondary" data-close>Annuler</button></div>`);
   const tbody = box.querySelector("#pd-lines");
   const extraTbody = box.querySelector("#pd-extra-lines");
   const bindExtraRows = () => extraTbody?.querySelectorAll("[data-extra-line]").forEach(row => {
@@ -412,6 +416,7 @@ function openDocument(type) {
     const supplierId = Number(box.querySelector("#pd-supplier").value);
     const orderId = type === "invoice" ? Number(box.querySelector("#pd-order")?.value || 0) || null : null;
     if (error) { box.querySelector("#pd-error").textContent = error; return; }
+    if (!supplierId || !p.suppliers.some(item => Number(item.id) === supplierId && item.active !== false)) { box.querySelector("#pd-error").textContent = "Sélectionnez un fournisseur actif."; return; }
     const supplierReference = box.querySelector("#pd-reference").value.trim();
     if (type === "invoice") {
       const metadata = validateSupplierInvoiceMetadata({ reference:supplierReference, date:box.querySelector("#pd-date").value || today(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD" });
@@ -430,7 +435,7 @@ function openDocument(type) {
       const matchingError = validateInvoiceAgainstOrder(order, candidate);
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(p.suppliers.find(item=>item.id===supplierId)?.paymentTermsDays??30)}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:type === "order" ? "ordered" : "draft", createdAt:new Date().toISOString() };
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(p.suppliers.find(item=>item.id===supplierId)?.paymentTermsDays??30)}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:options.fromReplenishment ? "draft" : type === "order" ? "ordered" : "draft", ...(options.fromReplenishment ? { origin:"stock_replenishment", replenishmentCreatedAt:new Date().toISOString() } : {}), createdAt:new Date().toISOString() };
     if (type === "invoice") {
       const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
       if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
@@ -438,7 +443,9 @@ function openDocument(type) {
       doc.accounting = { exchangeRate, taxRate, taxRecoverable:box.querySelector("#pd-tax-recoverable").checked, accounts:{ supplier:box.querySelector("#pd-account-supplier").value, stock:box.querySelector("#pd-account-stock").value, purchases:box.querySelector("#pd-account-purchases").value, inputVat:box.querySelector("#pd-account-vat").value, services:box.querySelector("#pd-account-services").value, fixedAssets:box.querySelector("#pd-account-fixed-assets").value } };
     }
     p.documents.push(doc);
-    box.closest("dialog").close(); persist(type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée."); renderList();
+    box.closest("dialog").close();
+    persist(options.fromReplenishment ? "Brouillon de commande enregistré. Il reste à le vérifier et à le confirmer dans Achats." : type === "order" ? "Commande fournisseur enregistrée." : "Facture fournisseur enregistrée.");
+    if (!options.fromReplenishment) renderList();
   });
 }
 function configureSupplierAccounting(doc) {
@@ -509,6 +516,13 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Modifier l’échéance", () => openSupplierDueDateEditor(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
+  if (doc.type === "order" && doc.status === "draft") addAction("Confirmer la commande", () => {
+    doc.status = "ordered";
+    doc.confirmedAt = new Date().toISOString();
+    persist("Commande confirmée. Vous pouvez désormais enregistrer ses réceptions.");
+    box.closest("dialog").close();
+    openDetail(doc.id);
+  });
   if (doc.type === "order" && ["ordered","partially_received"].includes(doc.status) && remaining > 0) addAction("Enregistrer une réception partielle", () => openReceipt(doc));
   if (doc.type === "invoice" && !doc.orderId && doc.status === "validated" && stockState?.settings?.purchase_trigger === "receipt" && remaining > 0) addAction("Enregistrer la réception physique", () => openReceipt(doc));
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
@@ -663,6 +677,34 @@ async function validateInvoice(doc, box) {
     }
   }
   doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box);
+}
+
+/**
+ * Ouvre le formulaire d'achat existant avec les suggestions du stock.
+ * Le fournisseur et les coûts restent à la décision de l'utilisateur.
+ */
+export async function openReplenishmentPurchaseOrder(suggestions = []) {
+  try {
+    const remote = await readCloudStock();
+    stockState = remote;
+    const prepared = prepareStockReplenishmentDraftLines(
+      suggestions,
+      data().documents,
+      remote.products || [],
+      remote.warehouses || [],
+    );
+    if (!prepared.length) {
+      toast("Aucune quantité supplémentaire à commander : les commandes ouvertes couvrent déjà les suggestions, ou aucun entrepôt actif n’est disponible.");
+      return;
+    }
+    if (!data().suppliers.some(item => item.active !== false)) {
+      toast("Créez d’abord un fournisseur actif dans le module Achats.");
+      return;
+    }
+    openDocument("order", { fromReplenishment:true, replenishmentLines:prepared });
+  } catch (error) {
+    toast(error?.message || "Impossible de préparer le brouillon de commande.", 6000);
+  }
 }
 
 export async function viewPurchases(readOnly = false, role = null) {

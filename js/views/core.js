@@ -90,7 +90,8 @@ export function viewDashboard(readOnly = false) {
       </div>
       <p class="muted">Les soldes de sens inhabituel sont signalés à titre indicatif : les comptes correcteurs et situations particulières nécessitent une appréciation comptable. Le contrôle ne remplace pas la révision par un professionnel.</p>
     </section>
-<h2>État de la comptabilité</h2>
+    <div class="card">
+      <h2>État de la comptabilité</h2>
       <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée" : "⚠ Balance déséquilibrée : " + money(tb.totals.debit) + " / " + money(tb.totals.credit)}</p>
       <p class="muted">Plan comptable : ${esc(store.settings.plan)} · La trésorerie affichée correspond au solde des comptes de classe 5 à la date du jour.</p>
       <div class="actions">

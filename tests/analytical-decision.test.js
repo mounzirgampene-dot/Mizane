@@ -11,7 +11,8 @@ const entries=[
 const allocations=[
  {id:"a1",entryId:1,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
  {id:"a2",entryId:1,lineIndex:1,centerId:"c2",projectId:"p2",percentage:100},
- {id:"a3",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"indirect"},\n {id:"a3b",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"unclassified"},
+ {id:"a3",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"indirect"},
+ {id:"a3b",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"unclassified"},
  {id:"a4",entryId:3,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
  {id:"a5",entryId:4,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
 ];

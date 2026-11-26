@@ -91,8 +91,8 @@ function parseCSV(text) {
     const label = cells[labelIndex] || "";
     let amount = amountIndex >= 0 ? parseAmount(cells[amountIndex]) : null;
     if (amountIndex < 0) {
-      const debit = debitIndex >= 0 ? parseAmount(cells[debitIndex]) : 0;
-      const credit = creditIndex >= 0 ? parseAmount(cells[creditIndex]) : 0;
+      const debit = debitIndex >= 0 ? (String(cells[debitIndex] || "").trim() ? parseAmount(cells[debitIndex]) : 0) : 0;
+      const credit = creditIndex >= 0 ? (String(cells[creditIndex] || "").trim() ? parseAmount(cells[creditIndex]) : 0) : 0;
       amount = debit === null || credit === null ? null : round(Math.abs(credit) - Math.abs(debit));
     }
     if (!date || amount === null || amount === 0) {

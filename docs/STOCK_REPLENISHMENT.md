@@ -57,3 +57,14 @@ Les alertes peuvent alimenter le formulaire Achats existant pour préparer un br
 Chaque ligne est proposée dans l'unité de base de l'article. L'entrepôt suggéré est celui dont la disponibilité est la plus faible parmi les entrepôts actifs ; l'utilisateur peut le modifier. Le fournisseur n'est jamais choisi automatiquement et le coût unitaire reste à renseigner. Les services et les entrepôts inactifs sont exclus.
 
 Le document est enregistré au statut « Brouillon » et reste sans effet sur le stock. L'utilisateur doit ouvrir le document dans Achats puis cliquer sur « Confirmer la commande » pour le faire passer au statut « Commandée ». Cette confirmation ne transmet pas la commande au fournisseur ; elle autorise seulement le suivi des réceptions dans MIZANE. Aucun mouvement de stock, paiement, facture ou engagement externe n'est généré par la préparation du brouillon.
+
+
+## Suivi des livraisons fournisseurs
+
+Le module Achats suit les commandes fournisseurs ouvertes à partir d'une date de livraison prévisionnelle. Un délai habituel peut être renseigné lors de la création du fournisseur ; il sert uniquement à proposer une date calculée à partir de la date de commande et reste modifiable sur chaque commande.
+
+Le tableau de bord signale les commandes en retard, à livrer aujourd'hui, à livrer dans les sept jours et celles dont la date prévisionnelle manque. Le reliquat est calculé en unité de base, après déduction des quantités réellement reçues. Les services et immobilisations ne sont pas inclus dans le suivi physique.
+
+Chaque réception physique peut être datée. Les réceptions partielles sont conservées dans l'historique de la commande avec les quantités reçues et l'horodatage d'enregistrement. Le reliquat demeure ouvert jusqu'à réception complète. Les dates prévisionnelles et les commentaires de suivi peuvent être mis à jour ; l'historique des changements de date est conservé.
+
+Les alertes sont calculées lors de l'ouverture du module Achats. Elles sont internes à l'application : aucune notification externe, aucun courriel fournisseur et aucune confirmation de livraison ne sont envoyés automatiquement. Les commandes ne sont jamais clôturées ni reçues automatiquement par le seul dépassement de la date prévue.

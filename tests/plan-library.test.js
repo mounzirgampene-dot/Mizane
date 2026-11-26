@@ -3,8 +3,8 @@ import { PLANS, OFFICIAL_PLANS, listPlans, allAccounts } from "../js/plans.js";
 import { ACCOUNTING_FRAMEWORKS, getCountryAccountingFramework } from "../js/plans/frameworks.js";
 
 assert.equal(Object.keys(OFFICIAL_PLANS).length, 4, "Les quatre référentiels existants doivent rester disponibles.");
-assert.equal(listPlans().length, 8, "La bibliothèque doit contenir les quatre référentiels et quatre modèles sectoriels.");
-for (const id of ["template-commerce", "template-services", "template-agriculture", "template-association"]) {
+assert.equal(listPlans().length, 13, "La bibliothèque doit contenir quatre référentiels et neuf modèles sectoriels.");
+for (const id of ["template-commerce", "template-services", "template-agriculture", "template-association", "template-industry", "template-construction", "template-hospitality", "template-healthcare", "template-transport"]) {
   const plan = PLANS[id];
   assert.ok(plan, `Plan manquant : ${id}`);
   assert.equal(plan.official, false, "Un modèle sectoriel ne doit pas être présenté comme officiel.");
@@ -13,7 +13,7 @@ for (const id of ["template-commerce", "template-services", "template-agricultur
   assert.ok(allAccounts(id).length > 0);
 }
 assert.equal(PLANS.syscohada.official, undefined, "Ne pas modifier les métadonnées historiques des référentiels existants.");
-console.log("✓ Bibliothèque des plans comptables : 4 référentiels + 4 modèles sectoriels.");
+console.log("✓ Bibliothèque des plans comptables : 4 référentiels + 9 modèles sectoriels.");
 
 assert.equal(Object.keys(ACCOUNTING_FRAMEWORKS).length, 15, "Quinze cadres nationaux doivent être documentés.");
 for (const code of ["GB", "IN", "BR", "CA", "AU", "JP", "CN", "KR", "MX", "NZ", "SG", "PH", "ID", "TH", "HK"]) {

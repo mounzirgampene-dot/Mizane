@@ -501,7 +501,7 @@ export function viewTools() {
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {
       const report=buildBankReconciliationReport(session,store);
-      downloadBlob(new Blob(["\\ufeff"+toCSV(report.details)],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
+      downloadBlob(new Blob(["\ufeff"+toCSV(report.details)],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
     });
     document.getElementById("bk-xls")?.addEventListener("click", () => {
       const report=buildBankReconciliationReport(session,store);
@@ -513,7 +513,7 @@ export function viewTools() {
       printWindow.document.open();
       printWindow.document.write(bankReconciliationReportHTML(report).replace("</body>","<script>window.addEventListener('load',()=>window.print());</script></body>"));
       printWindow.document.close();
-    });;
+    });
   };
 
   document.getElementById("bk-import-file")?.addEventListener("click", async () => {

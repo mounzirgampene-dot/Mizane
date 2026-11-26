@@ -2154,7 +2154,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v99/);
+  assert.match(serviceWorkerSource,/mizane-v100/);
 });
 
 

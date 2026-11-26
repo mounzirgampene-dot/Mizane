@@ -89,11 +89,11 @@ export function viewAssistant() {
       <div id="import-result" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <h2>🧾 Lire une facture et préparer son écriture</h2>
-      <p class="muted">Joignez une facture ou un reçu. L'IA extrait les informations visibles et propose une écriture. Vérifiez les comptes, les montants et la date avant toute inscription : aucune écriture n'est enregistrée automatiquement.</p>
+      <h2>🧠 Copilote comptable — analyser un justificatif</h2>
+      <p class="muted">Joignez une facture, un reçu ou un document de transaction. Le copilote extrait les faits, signale les incertitudes et prépare une écriture détaillée et modifiable. Aucune écriture n'est enregistrée automatiquement.</p>
       <div class="row">
         <div><label>Photo du justificatif</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp"></div>
-        <div><label>Précisions facultatives</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
+        <div><label>Contexte de l’opération (facultatif)</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
       </div>
       <div class="actions"><button id="invoice-analyze" ${configured ? "" : "disabled"}>${configured ? "Analyser le justificatif" : "Configurez une clé IA pour activer la lecture"}</button></div>
       <div id="invoice-result" style="margin-top:10px"></div>
@@ -135,32 +135,17 @@ export function viewAssistant() {
       const imageData = await imageFileToDataUrl(file);
       const note = document.getElementById("invoice-note").value.trim();
       const proposal = await suggestEntry(store, note, imageData);
-      const lines = Array.isArray(proposal.lines) ? proposal.lines : [];
-      const lineRows = lines.map((line) => '<tr><td>' + esc(line.account) + '</td><td>' + esc(line.label || '') + '</td><td>' + esc(line.debit || 0) + '</td><td>' + esc(line.credit || 0) + '</td></tr>').join("");
-      const checked = validateEntry(store, proposal);
-      out.innerHTML = '<p><strong>Proposition extraite — vérification obligatoire</strong></p>' +
-        '<p class="muted">Contrôlez chaque compte, chaque montant, la date et le traitement de la TVA sur le justificatif original.</p>' +
-        '<div class="row"><div><label>Date de l’écriture</label><input type="date" id="invoice-entry-date" value="' + esc(proposal.date || '') + '"></div>' +
-        '<div><label>Journal</label><select id="invoice-entry-journal">' + ['ACH','VTE','BAN','CAI','OD'].map((j) => '<option value="' + j + '"' + (proposal.journal === j ? ' selected' : '') + '>' + j + '</option>').join("") + '</select></div></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead><tbody>' + lineRows + '</tbody></table></div>' +
-        (checked.ok ? '<p class="ok-msg">Contrôle technique initial : écriture équilibrée et comptes reconnus.</p>' : '<p class="errors">Points à corriger : ' + esc(checked.errors.join(' · ')) + '</p>') +
-        '<p class="muted">Le contrôle technique ne certifie pas l’exactitude de l’interprétation fiscale ni la conformité juridique de l’écriture.</p>' +
-        '<div class="actions"><button id="invoice-entry-save">Vérifier et enregistrer cette écriture</button></div>';
-      document.getElementById("invoice-entry-save").addEventListener("click", () => {
-        const entry = { ...proposal, date: document.getElementById("invoice-entry-date").value, journal: document.getElementById("invoice-entry-journal").value };
-        const validation = validateEntry(store, entry);
-        if (!validation.ok) {
-          out.insertAdjacentHTML("afterbegin", '<p class="errors">Enregistrement refusé : ' + esc(validation.errors.join(' · ')) + '</p>');
-          return;
-        }
-        const posted = postEntry(store, entry);
-        if (!posted.ok) {
-          out.insertAdjacentHTML("afterbegin", '<p class="errors">' + esc(posted.errors.join(' · ')) + '</p>');
-          return;
-        }
+      out.innerHTML = '<p><strong>Proposition IA — chaque champ est modifiable</strong></p>' +
+        '<p class="muted">L’IA sépare les faits visibles des incertitudes. Corrigez les comptes, libellés, montants, date et journal. Vous pouvez ajouter ou supprimer des lignes. Rien ne sera enregistré avant votre validation explicite.</p>' +
+        draftCardMarkup(proposal, 0, 'Écriture issue du justificatif') +
+        '<p class="muted">Le contrôle technique vérifie la structure et l’équilibre ; il ne certifie ni l’authenticité du document ni sa conformité fiscale ou juridique.</p>' +
+        '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer l’écriture</button></div>';
+      bindDraftEditors(out, drafts => {
+        const posted = postEntry(store, drafts[0]);
+        if (!posted.ok) { toast(posted.errors.join(' · ')); return; }
         saveStore(store);
-        toast("Écriture enregistrée après validation. Vérifiez le grand livre et la pièce originale.");
-        router.go("entries");
+        toast('Écriture enregistrée après validation.');
+        router.go('entries');
       });
     } catch (err) {
       out.innerHTML = '<p class="errors">' + esc(err.message || "Lecture du justificatif impossible.") + '</p>';

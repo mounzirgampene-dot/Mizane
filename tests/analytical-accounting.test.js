@@ -10,7 +10,9 @@ const allocations = [{ id: "a1", entryId: 10, lineIndex: 0, centerId: "c1", perc
 const next = { id: "a2", entryId: 10, lineIndex: 0, centerId: "c2", percentage: 40 };
 assert.equal(validateAnalyticalAllocation(next, { centers, allocations, entries, accountTypes }).ok, true);
 assert.equal(validateAnalyticalAllocation({ ...next, percentage: 41 }, { centers, allocations, entries, accountTypes }).ok, false);
-assert.equal(validateAnalyticalAllocation({ ...next, lineIndex: 1 }, { centers, allocations, entries, accountTypes }).ok, false);\nassert.equal(validateAnalyticalAllocation({ ...next, centerId: "c1" }, { centers, allocations: [], entries, accountTypes }).ok, false);\nassert.equal(validateAnalyticalAllocation({ ...next, entryId: 11, lineIndex: 1, centerId: "c1" }, { centers, allocations: [], entries, accountTypes }).ok, false);
+assert.equal(validateAnalyticalAllocation({ ...next, lineIndex: 1 }, { centers, allocations, entries, accountTypes }).ok, false);
+assert.equal(validateAnalyticalAllocation({ ...next, centerId: "c1" }, { centers, allocations: [], entries, accountTypes }).ok, false);
+assert.equal(validateAnalyticalAllocation({ ...next, entryId: 11, lineIndex: 1, centerId: "c1" }, { centers, allocations: [], entries, accountTypes }).ok, false);
 const report = buildAnalyticalReport({ centers, allocations: [...allocations, next, { id: "a3", entryId: 11, lineIndex: 1, centerId: "c2", percentage: 100 }], entries, accountTypes, startDate: "2026-01-01", endDate: "2026-12-31" });
 assert.equal(report.rows.find(row => row.id === "c1").expenses, 600);
 assert.equal(report.rows.find(row => row.id === "c2").expenses, 400);

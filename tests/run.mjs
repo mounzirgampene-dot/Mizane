@@ -2549,17 +2549,39 @@ test("prévisions financières : projections cumulées et ventilation stricte pa
     manual: [{ id: "m1", date: "2026-11-26", label: "Loyer", amount: 25, direction: "out" }, { id: "m2", date: "2026-11-27", label: "Flux EUR non converti", amount: 500, direction: "in", currency: "EUR" }],
   });
   assert.equal(report.ok, true);
-  assert.equal(report.projections.find(item => item.days === 30).amount, 1575);
-  assert.equal(report.projections.find(item => item.days === 30).inflows, 1150);
+  assert.equal(report.projections.find(item => item.days === 30).amount, 1525);
+  assert.equal(report.projections.find(item => item.days === 30).inflows, 1100);
   assert.equal(report.projections.find(item => item.days === 30).outflows, 575);
   assert.deepEqual(report.receivablesByCurrency, { EUR: 100, MAD: 50 });
   assert.deepEqual(report.payablesByCurrency, { EUR: 50 });
   assert.equal(report.events.some(item => item.id === "m2"), false);
   assert.equal(report.monthly[0].outflows, 25);
-  assert.equal(report.monthly[0].inflows, 50);
+  assert.equal(report.monthly[0].inflows, 0);\n  assert.equal(report.overdueReceivables.count, 1);\n  assert.equal(report.overdueReceivables.amountByCurrency.MAD, 50);\n  assert.equal(report.events.some(item => item.id === "f2"), false);
   assert.equal(report.monthly[1].inflows, 1100);
   assert.equal(report.monthly[1].outflows, 550);
   assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});
+  const cautious = buildFinancialForecast({
+    baseCurrency: "MAD", openingCash: 200, asOf: "2026-11-25",
+    receivables: [
+      { id: "late", dueDate: "2026-11-20", currency: "MAD", originalAmount: 100, baseAmount: 100 },
+      { id: "no-date", dueDate: "", currency: "EUR", originalAmount: 80, baseAmount: 880 },
+      { id: "no-rate", dueDate: "2026-12-01", currency: "EUR", originalAmount: 50, baseAmount: null },
+      { id: "future", dueDate: "2026-11-26", currency: "MAD", originalAmount: 25, baseAmount: 25 },
+    ],
+    payables: [
+      { id: "late-pay", dueDate: "2026-11-22", currency: "MAD", originalAmount: 40, baseAmount: 40 },
+      { id: "undated-pay", dueDate: "", currency: "MAD", originalAmount: 30, baseAmount: 30 },
+      { id: "future-pay", dueDate: "2026-11-27", currency: "MAD", originalAmount: 10, baseAmount: 10 },
+    ],
+    manual: [{ id: "m", date: "2026-11-26", label: "Loyer", amount: 5, direction: "out" }],
+  });
+  assert.equal(cautious.projections[0].amount, 220);
+  assert.equal(cautious.overdueReceivables.amountByCurrency.MAD, 100);
+  assert.equal(cautious.overduePayables.amountByCurrency.MAD, 40);
+  assert.equal(cautious.undatedReceivables.count, 1);
+  assert.equal(cautious.undatedPayables.count, 1);
+  assert.equal(cautious.unconvertedReceivables, 1);
+  assert.deepEqual(cautious.events.map(item => item.id), ["future", "m", "future-pay"]);
   assert.equal(buildFinancialForecast({baseCurrency:"MAD",openingCash:0,asOf:"2026-02-30"}).ok, false);
 });
 

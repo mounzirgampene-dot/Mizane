@@ -160,16 +160,18 @@ export function imageFileToDataUrl(file, maxDim = 1280) {
 
 // Texte libre (+ photo optionnelle) -> écriture proposée (JSON) revue par l'utilisateur avant validation.
 export async function suggestEntry(store, text, imageDataUrl = null) {
-  const userContent = imageDataUrl
+  const imageList = Array.isArray(imageDataUrl) ? imageDataUrl.filter(Boolean).slice(0, 4) : imageDataUrl ? [imageDataUrl] : [];
+  const prompt = "Analyse ce justificatif (facture, reçu, ticket ou document de transaction), relève uniquement les faits réellement visibles et prépare une écriture détaillée. Renvoie un JSON avec documentFacts {date, total, currency, reference, counterparty}, date, journal, reference, lines, sourceFacts et uncertainties. N’invente aucun montant, compte, date, devise, tiers ou taux fiscal. Si une donnée est absente ou illisible, laisse-la vide et signale-la dans uncertainties.";
+  const userContent = imageList.length
     ? [
-        { type: "text", text: "Lis ce justificatif (facture, reçu, ticket ou document de transaction), relève uniquement les faits visibles et prépare une écriture détaillée. Renvoie un JSON avec date, journal, reference, lines, sourceFacts (faits visibles) et uncertainties (données absentes, ambiguës ou illisibles). N’invente aucun montant, compte, date, devise ou taux fiscal." + (text ? "\nPrécisions fournies par l’utilisateur : " + text : "") },
-        { type: "image_url", image_url: imageDataUrl },
+        { type: "text", text: prompt + (text ? "\nContexte ou texte extrait du document :\n" + text : "") },
+        ...imageList.map(image => ({ type: "image_url", image_url: image })),
       ]
-    : "Analyse cette opération et prépare une écriture comptable détaillée. N'invente aucune donnée. Renvoie uniquement un JSON contenant date, journal, reference, lines, sourceFacts et uncertainties :\n" + text;
+    : prompt + "\nAnalyse le texte du document et prépare l’écriture.\n" + text;
   const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content: userContent },
-  ], { json: true, model: imageDataUrl ? visionModel(store) : undefined });
+  ], { json: true, model: imageList.length ? visionModel(store) : undefined });
   try {
     const parsed = JSON.parse(content);
     const proposal = parsed.lines ? parsed : parsed.ecriture?.lines ? parsed.ecriture : parsed.entry?.lines ? parsed.entry : null;
@@ -178,6 +180,7 @@ export async function suggestEntry(store, text, imageDataUrl = null) {
       aiReview: {
         sourceFacts: Array.isArray(parsed.sourceFacts) ? parsed.sourceFacts.slice(0, 20) : [],
         uncertainties: Array.isArray(parsed.uncertainties) ? parsed.uncertainties.slice(0, 20) : [],
+        documentFacts: parsed.documentFacts && typeof parsed.documentFacts === "object" ? parsed.documentFacts : {},
       },
     };
   } catch (_e) { /* fallthrough */ }
@@ -208,14 +211,15 @@ export async function importEntriesFromText(store, text) {
     { role: "system", content: systemPrompt(store) },
     { role: "user", content:
       "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
-      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}],\"sourceFacts\":[],\"uncertainties\":[]} ]}. " +
-      "Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Renseigne sourceFacts avec les éléments réellement présents dans le texte et uncertainties avec les champs absents, ambigus ou illisibles. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
+      "{\"documentFacts\":{\"date\":\"\",\"total\":null,\"currency\":\"\",\"reference\":\"\",\"counterparty\":\"\"},\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}],\"sourceFacts\":[],\"uncertainties\":[]} ]}. " +
+      "Renseigne documentFacts avec la date, le total TTC ou total du document, la devise, la référence et le tiers uniquement lorsqu’ils sont explicitement présents ; sinon laisse les champs vides/null. Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Renseigne sourceFacts avec les éléments réellement présents dans le texte et uncertainties avec les champs absents, ambigus ou illisibles. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
   ], { json: true });
   let parsed;
   try { parsed = JSON.parse(content); } catch (_e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
   const arr = parsed.entries || parsed.ecritures || [];
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("Aucune écriture trouvée dans la réponse IA.");
-  return arr.map((entry) => ({ ...entry, date: validDate(entry?.date) ? entry.date : "", aiReview: { sourceFacts: Array.isArray(entry?.sourceFacts) ? entry.sourceFacts.slice(0, 20) : [], uncertainties: Array.isArray(entry?.uncertainties) ? entry.uncertainties.slice(0, 20) : [] } }));
+  const documentFacts = parsed.documentFacts && typeof parsed.documentFacts === "object" ? parsed.documentFacts : {};
+  return arr.map((entry) => ({ ...entry, date: validDate(entry?.date) ? entry.date : "", aiReview: { sourceFacts: Array.isArray(entry?.sourceFacts) ? entry.sourceFacts.slice(0, 20) : [], uncertainties: Array.isArray(entry?.uncertainties) ? entry.uncertainties.slice(0, 20) : [], documentFacts: entry?.documentFacts && typeof entry.documentFacts === "object" ? entry.documentFacts : documentFacts } }));
 }
 
 export function buildAiAuditSnapshot(store) {

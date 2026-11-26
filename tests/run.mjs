@@ -1946,7 +1946,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
   assert.match(stockUiSource,/buildStockReplenishmentReport/);
   assert.match(stockUiSource,/data-stock-threshold/);
-  assert.match(serviceWorkerSource,/"js\\/stock-replenishment\\.js"/);
+  assert.ok(serviceWorkerSource.includes('"js/stock-replenishment.js"'));
   assert.match(serviceWorkerSource,/mizane-v107/g);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);

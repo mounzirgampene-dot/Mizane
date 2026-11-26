@@ -8,6 +8,7 @@ const validDate = value => {
   return d.toISOString().slice(0,10)===value;
 };
 const currencyOf=(value,fallback)=>String(value||fallback||"MAD").trim().toUpperCase();
+const dimensionKey=(type,id)=>String(type)+"::"+String(id);
 
 export function validateAnalyticalBudgets(lines=[],{centers=[],projects=[],accounts=[],baseCurrency="MAD"}={}){
  const errors=[],normalized=[],seen=new Set();
@@ -56,7 +57,6 @@ export function buildAnalyticalBudgetReport({lines=[],entries=[],allocations=[],
   if(type==="project"){const p=projects.find(x=>String(x.id)===id);return p?.name||"Projet supprimé";}
   return id;
  };
- const monthMap=new Map(months.map(m=>[m,{}]));
  const rows=validation.lines.map(line=>{
   const key=[line.account,line.type,line.dimensionType,line.dimensionId,line.currency].join("|");
   const actualByMonth=Object.fromEntries(months.map(m=>[m,0]));

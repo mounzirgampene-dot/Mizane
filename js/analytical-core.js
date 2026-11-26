@@ -24,6 +24,8 @@ export function validateAnalyticalAllocation(allocation, { centers = [], allocat
   if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100) errors.push("Le pourcentage doit être compris entre 0 et 100.");
   const type = line ? accountTypes[String(line.account)] : null;
   if (line && !["expense", "income"].includes(type)) errors.push("Seuls les comptes de charges ou de produits peuvent être affectés.");
+  if (line && center && center.type === "cost" && type !== "expense") errors.push("Un centre de coûts ne peut recevoir que des charges.");
+  if (line && center && center.type === "profit" && type !== "income") errors.push("Un centre de profit ne peut recevoir que des produits.");
   if (line && Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0) errors.push("Ligne comptable à double sens non admissible.");
   const used = allocations.filter(item => String(item.entryId) === String(allocation?.entryId) && Number(item.lineIndex) === lineIndex && item.id !== allocation?.id).reduce((sum, item) => sum + Number(item.percentage || 0), 0);
   if (used + percentage > 100.000001) errors.push("Le cumul des affectations de cette ligne dépasserait 100 %.");

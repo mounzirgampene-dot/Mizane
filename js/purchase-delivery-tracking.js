@@ -5,6 +5,11 @@
 const n = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const round4 = value => Math.round((n(value) + Number.EPSILON) * 10000) / 10000;
 const openStatuses = new Set(["ordered", "partially_received"]);
+const validISODate = value => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) return false;
+  const parsed = new Date(value + "T00:00:00.000Z");
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+};
 
 export function addDeliveryDays(date, days) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) || !Number.isInteger(Number(days)) || Number(days) < 0 || Number(days) > 3650) return "";
@@ -22,7 +27,7 @@ export function summarizePurchaseOrder(order, today = new Date().toISOString().s
   const remainingBase = round4(Math.max(0, orderedBase - receivedBase));
   const progress = orderedBase > 0 ? Math.min(100, Math.round(receivedBase / orderedBase * 10000) / 100) : 100;
   const expected = String(order.expectedDeliveryDate || "");
-  const validExpected = /^\d{4}-\d{2}-\d{2}$/.test(expected) && !Number.isNaN(Date.parse(expected + "T00:00:00Z"));
+  const validExpected = validISODate(expected) && validISODate(today);
   const isOpen = openStatuses.has(order.status) && remainingBase > 0;
   const daysLate = validExpected && isOpen && expected < today ? Math.floor((Date.parse(today + "T00:00:00Z") - Date.parse(expected + "T00:00:00Z")) / 86400000) : 0;
   const daysUntil = validExpected ? Math.ceil((Date.parse(expected + "T00:00:00Z") - Date.parse(today + "T00:00:00Z")) / 86400000) : null;

@@ -11,7 +11,7 @@ const entries=[
 const allocations=[
  {id:"a1",entryId:1,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
  {id:"a2",entryId:1,lineIndex:1,centerId:"c2",projectId:"p2",percentage:100},
- {id:"a3",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"indirect"},
+ {id:"a3",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"indirect"},\n {id:"a3b",entryId:2,lineIndex:0,centerId:"c1",projectId:"p1",percentage:50,costNature:"unclassified"},
  {id:"a4",entryId:3,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
  {id:"a5",entryId:4,lineIndex:0,centerId:"c1",projectId:"p1",percentage:100,costNature:"direct"},
 ];
@@ -30,7 +30,7 @@ assert.equal(report.byDepartment.find(x=>x.name==="Fabrication"&&x.currency==="M
 assert.equal(report.byDepartment.find(x=>x.name==="Fabrication"&&x.currency==="MAD").indirectCosts,200);
 assert.equal(report.byDepartment.find(x=>x.name==="Ventes"&&x.currency==="MAD").income,2500);
 assert.equal(report.byCenter.find(x=>x.name==="Production"&&x.currency==="EUR").directCosts,100);
-assert.equal(report.byCenter.find(x=>x.name==="Production"&&x.currency==="MAD").result,-1200);
+assert.equal(report.byCenter.find(x=>x.name==="Production"&&x.currency==="MAD").result,-1400);
 const filtered=buildAnalyticalDecisionReport({centers,projects,allocations,entries,accountTypes,startDate:"2026-01-10",endDate:"2026-01-10"});
 assert.equal(filtered.currencies.length,1);
 assert.equal(filtered.currencies[0].income,2500);

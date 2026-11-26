@@ -1946,6 +1946,11 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
   assert.match(stockUiSource,/buildStockReplenishmentReport/);
   assert.match(stockUiSource,/data-stock-threshold/);
+  assert.match(stockUiSource,/stock-replenishment-draft/);
+  assert.match(purchasesUiSource,/openReplenishmentPurchaseOrder/);
+  assert.match(purchasesUiSource,/prepareStockReplenishmentDraftLines/);
+  assert.match(purchasesUiSource,/Confirmer la commande/);
+  assert.match(purchasesUiSource,/origin:"stock_replenishment"/);
   assert.ok(serviceWorkerSource.includes('"js/stock-replenishment.js"'));
   assert.match(serviceWorkerSource,/mizane-v107/g);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
@@ -2686,6 +2691,6 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v107"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v108"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

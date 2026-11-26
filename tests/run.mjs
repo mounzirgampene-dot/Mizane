@@ -644,7 +644,7 @@ test("toGeminiBody : conversion messages texte et image", async () => {
     { role: "system", content: "SYS" },
     { role: "user", content: "Bonjour" },
     { role: "assistant", content: "Réponse" },
-    { role: "user", content: [{ type: "text", text: "Lis" }, { type: "image_url", image_url: "data:image/jpeg;base64,QUJD" }] },
+  assert.ok(companyAiFunctionSource.includes("data:image\\/(?:jpeg|png|webp);base64"));
   ], { json: true, temperature: 0.5 });
   assert.equal(body.systemInstruction.parts[0].text, "SYS");
   assert.equal(body.contents[0].role, "user");

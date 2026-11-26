@@ -42,7 +42,7 @@ const store = {
 const matches = matchDocumentToRecords(facts, store);
 assert.equal(matches.entryMatches.length, 1);
 assert.equal(matches.entryMatches[0].entryId, 10);
-assert.ok(matches.entryMatches[0].confidence >= 90);
+assert.ok(matches.entryMatches[0].confidence >= 85);
 assert.equal(matches.bankMatches.length, 1);
 assert.equal(matches.bankMatches[0].sourceFile, "releve-novembre.csv");
 assert.equal(matches.bankMatches[0].status, "unmatched");

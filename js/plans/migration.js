@@ -53,7 +53,12 @@ export function applyPlanMigration(store, { sourcePlan, targetPlan, mapping, max
   if (snapshotBytes > maxSnapshotBytes) throw new Error("Migration non appliquée : la sauvegarde de sécurité dépasse la limite locale de " + maxSnapshotBytes.toLocaleString("fr-FR") + " caractères. Exportez vos données et réduisez le volume avant de réessayer.");
   const now = new Date().toISOString();
   const history = Array.isArray(store.settings.planMigrationHistory) ? store.settings.planMigrationHistory : [];
-  const auditReport = buildMigrationAudit({ beforeEntries, afterEntries: preview.entries, sourcePlan, targetPlan, mapping });
+  let auditReport = buildMigrationAudit({ beforeEntries, afterEntries: preview.entries, sourcePlan, targetPlan, mapping });
+  const auditBytes = JSON.stringify(auditReport).length;
+  if (auditBytes > 500000) {
+    const totalAccountRows = auditReport.accounts.length;
+    auditReport = { ...auditReport, accounts: auditReport.accounts.filter((row) => row.missingTarget || Math.abs(row.debitDifference) > 0.01 || Math.abs(row.creditDifference) > 0.01 || Math.abs(row.balanceDifference) > 0.01), accountRowsTotal: totalAccountRows, accountsTruncated: true };
+  }
   const record = {
     id: "migration-" + Date.now().toString(36),
     mappingId: mapping.id,

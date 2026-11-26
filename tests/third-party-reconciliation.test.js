@@ -75,7 +75,7 @@ staleStore.entries[0].lines[0].third = "Autre tiers";
 const staleReport = buildThirdPartyReconciliation(staleStore);
 assert.equal(staleReport.totals.staleLinkCount, 1, "un lettrage devenu incohérent est neutralisé");
 assert.equal(staleReport.totals.openDebitByCurrency.XOF, 20);
-assert.equal(staleReport.totals.openCreditByCurrency.XOF, undefined);
+assert.equal(staleReport.totals.openCreditByCurrency.XOF, 20);
 assert.equal(staleRecord.status, "active", "l'historique est conservé pour audit");
 
 console.log("✓ Lettrage tiers : ventilation partielle, séparation des tiers/devises, validation, annulation, intégrité des liens et conservation des écritures.");

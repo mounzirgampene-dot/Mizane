@@ -244,19 +244,20 @@ export function buildAiAuditSnapshot(store) {
       const rate = rawRate === "" || rawRate === null || rawRate === undefined ? NaN : Number(rawRate);
       if (taxCode && !codeRule) add("tax_code_unrecognized", "Code fiscal absent ou inactif dans le référentiel officiel à la date de l’écriture.", { taxCode });
       if (Number.isFinite(rate) && (rate < 0 || rate > 100)) add("tax_rate_invalid", "Taux fiscal hors de l’intervalle autorisé.", { rate });
-      else if (Number.isFinite(rate) && rules.length && !rules.some(rule => Math.abs(rule.rate - rate) < 0.0001)) {
+      else if (Number.isFinite(rate) && !rules.some(rule => Math.abs(rule.rate - rate) < 0.0001)) {
         add("tax_rate_unreferenced", "Taux présent sur la ligne mais non reconnu par le référentiel actif à cette date. Vérification humaine nécessaire.", { rate });
       }
       if (codeRule && Number.isFinite(rate) && Math.abs(codeRule.rate - rate) > 0.0001) {
         add("tax_code_rate_mismatch", "Le code fiscal et le taux saisi sur la ligne ne correspondent pas.", { taxCode, rate, officialRate: codeRule.rate });
       }
-      if (!Number.isFinite(rate) && (taxCode || rawTax !== undefined || rawBase !== undefined)) {
-        add("tax_data_incomplete", "Informations fiscales incomplètes : le taux explicite manque, le calcul arithmétique ne peut pas être vérifié.");
+      const effectiveRate = Number.isFinite(rate) ? rate : codeRule?.rate;
+      if (!Number.isFinite(effectiveRate) && (rawTax !== undefined || rawBase !== undefined)) {
+        add("tax_data_incomplete", "Informations fiscales incomplètes : aucun taux explicite ni code fiscal reconnu ne permet de vérifier le calcul.");
       }
       const taxAmount = rawTax === "" || rawTax === null || rawTax === undefined ? NaN : Number(rawTax);
       const base = rawBase === "" || rawBase === null || rawBase === undefined ? NaN : Number(rawBase);
-      if (Number.isFinite(taxAmount) && Number.isFinite(base) && Number.isFinite(rate) && base >= 0 && taxAmount >= 0) {
-        const expected = Math.round((base * rate / 100 + Number.EPSILON) * 100) / 100;
+      if (Number.isFinite(taxAmount) && Number.isFinite(base) && Number.isFinite(effectiveRate) && base >= 0 && taxAmount >= 0) {
+        const expected = Math.round((base * effectiveRate / 100 + Number.EPSILON) * 100) / 100;
         if (Math.abs(expected - taxAmount) > 0.02) add("tax_amount_mismatch", "Montant de taxe différent du calcul arithmétique à partir de la base et du taux explicitement enregistrés.", { expectedTax: expected, recordedTax: taxAmount });
       }
     }

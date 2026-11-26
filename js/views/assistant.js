@@ -54,7 +54,7 @@ function bindDraftEditors(root, onSave) {
     if (!event.target.closest('[data-draft-save]')) return;
     const cards = Array.from(root.querySelectorAll('[data-draft-card]')); const drafts = cards.map(readDraftCard); const checks = cards.map(refresh);
     if (!cards.length || checks.some(check => !check.ok)) { toast('Corrigez toutes les écritures avant l’enregistrement. Aucune n’a été enregistrée.'); return; }
-    const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => draft.date >= period.start && draft.date <= period.end));
+    const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => period && period.status !== "open" && draft.date >= period.startDate && draft.date <= period.endDate));
     if (closed) { toast('Au moins une écriture concerne une période clôturée. Aucun enregistrement effectué.'); return; }
     onSave(drafts);
   });

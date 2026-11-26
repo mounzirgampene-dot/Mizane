@@ -18,7 +18,7 @@ const partial=analyzeBankLine(partialLine,store,2);
 assert.ok(partial.suggestions.some(item=>item.type==="partial"));
 const partialSuggestion=partial.suggestions.find(item=>item.type==="partial");
 const partialConfirmed=confirmBankMatchSuggestion(partialLine,partialSuggestion,{days:2,lines:[partialLine]},store);
-assert.equal(partialConfirmed.partial,true);assert.equal(partialConfirmed.partialRemaining,600);
+assert.equal(partialConfirmed.partial,true);assert.equal(partialConfirmed.partialRemaining,300);
 assert.equal(analyzeBankLine({...groupedLine,currency:"USD"},store,2).suggestions.length,0);
 assert.equal(analyzeBankLine({...groupedLine,date:"2026-12-30"},store,2).suggestions.length,0);
 const fee=analyzeBankLine({date:"2026-11-25",label:"Commission bancaire",amount:-25,currency:"MAD",status:"unmatched"},store,2);

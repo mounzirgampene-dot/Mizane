@@ -25,7 +25,7 @@ function totalsByAccount(entries) {
 }
 
 function mappedExpectedTotals(entries, mapping) {
-  const rules = new Map((mapping?.rules || []).map((rule) => (rule.sourceCodes || []).map((code) => [String(code), rule])).flat());
+  const rules = new Map((mapping?.rules || []).flatMap((rule) => (rule.sourceCodes || []).map((code) => [String(code), rule])));
   const expected = new Map();
   const unmapped = [];
   for (const entry of entries || []) for (const line of entry.lines || []) {

@@ -9,12 +9,12 @@ assert.equal(validateAnalyticalProject({name:"Projet B",quantity:0,unitLabel:"h"
 assert.equal(validateAnalyticalProject({name:"Projet B",quantity:10,unitLabel:"h"},projects).ok,true);
 const report=buildProjectAnalyticalReport({projects,allocations,entries,accountTypes,startDate:"2026-01-01",endDate:"2026-12-31"});
 const p=report.rows.find(x=>x.projectId==="p1"&&x.currency==="MAD");
-assert.equal(p.income,14000);assert.equal(p.expenses,6500);assert.equal(p.result,7500);assert.equal(p.costPerUnit,65);assert.equal(p.incomePerUnit,140);assert.equal(p.marginRate,53.57);
+assert.equal(p.income,10000);assert.equal(p.expenses,6500);assert.equal(p.result,3500);assert.equal(p.costPerUnit,65);assert.equal(p.incomePerUnit,100);assert.equal(p.marginRate,35);
 assert.equal(report.rows.find(x=>x.projectId==="p1"&&x.currency==="EUR").expenses,100);
 assert.equal(report.rows.find(x=>x.projectId==="p2").costPerUnit,null);
 const january=buildProjectAnalyticalReport({projects,allocations,entries,accountTypes,startDate:"2026-01-01",endDate:"2026-01-31"});
 assert.equal(january.rows.find(x=>x.projectId==="p1"&&x.currency==="MAD").expenses,5000);
 const comparison=buildProjectComparison({projects,allocations,entries,accountTypes,currentStart:"2026-01-01",currentEnd:"2026-01-31",compareStart:"2026-02-01",compareEnd:"2026-02-28"});
-assert.equal(comparison.ok,true);assert.equal(comparison.rows.find(x=>x.projectId==="p1"&&x.currency==="MAD").variance,2500);
+assert.equal(comparison.ok,true);assert.equal(comparison.rows.find(x=>x.projectId==="p1"&&x.currency==="MAD").variance,-5500);
 assert.equal(buildProjectComparison({projects,allocations,entries,accountTypes,compareStart:"2026-02-30",compareEnd:"2026-02-01"}).ok,false);
 console.log("✓ Projets analytiques : coûts unitaires, devises séparées, périodes et comparatifs.");

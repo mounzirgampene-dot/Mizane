@@ -13,6 +13,7 @@ import { suggestSupplierInvoiceAccounts } from "./purchase-account-mapping.js";
 import { allAccounts } from "./plans.js";
 import { addSupplierPaymentTerms, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "./supplier-payables.js";
 import { prepareStockReplenishmentDraftLines } from "./stock-replenishment.js";
+import { addDeliveryDays, buildPurchaseDeliveryDashboard, summarizePurchaseOrder } from "./purchase-delivery-tracking.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -286,6 +287,9 @@ function totals(lines) {
 function statusLabel(status) {
   return ({ draft:"Brouillon", ordered:"Commandée", partially_received:"Partiellement reçue", received:"Reçue", validated:"Validée", cancelled:"Annulée" })[status] || status;
 }
+function deliveryStateLabel(state) {
+  return ({late:"En retard",due_today:"À livrer aujourd’hui",due_soon:"À livrer sous 7 jours",missing_date:"Date à renseigner",on_track:"Dans les délais",received:"Réceptionnée",draft:"Brouillon",cancelled:"Annulée"})[state] || "—";
+}
 function newNumber(type) {
   const p = data();
   const year = new Date().getFullYear();
@@ -297,6 +301,12 @@ function renderList() {
   const docs = [...p.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || Number(b.id)-Number(a.id));
   const orders = docs.filter(doc => doc.type === "order");
   const invoices = docs.filter(doc => doc.type === "invoice");
+  const deliveryDashboard = buildPurchaseDeliveryDashboard(orders, today());
+  const deliverySummaryById = new Map(deliveryDashboard.summaries.map(item => [String(item.orderId), item]));
+  const deliveryAlertRows = deliveryDashboard.alerts.map(item => {
+    const order = orders.find(doc => String(doc.id) === String(item.orderId));
+    return `<tr><td>${esc(item.number)}</td><td>${esc(supplierName(order?.supplierId))}</td><td>${esc(item.expectedDeliveryDate || "À planifier")}</td><td>${esc(deliveryStateLabel(item.deliveryState))}</td><td class="num">${item.remainingBase}</td><td><button class="secondary" data-delivery-open="${esc(item.orderId)}">Suivre</button></td></tr>`;
+  }).join("");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
   const payablesSchedule=buildSupplierPayablesSchedule(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice),supplierName:supplierName(invoice.supplierId)})));
@@ -305,12 +315,17 @@ function renderList() {
   const bucketLabels={upcoming:"À venir",due_today:"À payer aujourd’hui",overdue_1_30:"Retard 1–30 jours",overdue_31_60:"Retard 31–60 jours",overdue_61_90:"Retard 61–90 jours",overdue_90_plus:"Retard supérieur à 90 jours",undated:"Sans échéance"};
   const payablesRows=payablesSchedule.items.map(item=>`<tr><td>${esc(item.number)}</td><td>${esc(item.supplierName||supplierName(item.supplierId))}</td><td>${esc(item.dueDate||"Non définie")}</td><td>${esc(bucketLabels[item.bucket]||item.bucket)}</td><td class="num">${money(item.balance)} ${esc(item.currency)}</td><td><button class="secondary" data-payable-open="${esc(item.invoiceId)}">Ouvrir</button></td></tr>`).join("");
   const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
-  const rows = docs.map(doc => `<tr>
-    <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
-    <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
-    <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):"—")}</td><td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
-    <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
-  </tr>`).join("");
+  const rows = docs.map(doc => {
+    const delivery = doc.type === "order" ? deliverySummaryById.get(String(doc.id)) : null;
+    return `<tr>
+      <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
+      <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
+      <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):(delivery?.expectedDeliveryDate||"—"))}</td>
+      <td>${esc(statusLabel(doc.status))}${delivery?.isOpen ? '<br><small class="muted">'+esc(deliveryStateLabel(delivery.deliveryState))+'</small>' : ""}</td>
+      <td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
+      <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
+    </tr>`;
+  }).join("");
   $app.innerHTML = `
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
@@ -324,6 +339,15 @@ function renderList() {
       </div>
       <p><strong>Dettes fournisseurs comptabilisées :</strong> ${esc(outstandingSummary)}</p>
     </section>
+    <section class="card"><h2>Suivi des livraisons fournisseurs</h2>
+      <div class="grid cols-3">
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.late}</strong><br><span class="muted">Commandes en retard</span></div>
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.dueSoon + deliveryDashboard.totals.dueToday}</strong><br><span class="muted">Livraisons à échéance sous 7 jours</span></div>
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.partial}</strong><br><span class="muted">Commandes partiellement reçues</span></div>
+      </div>
+      <p>${deliveryDashboard.totals.missingDate} commande(s) en cours sans date prévisionnelle. Les alertes sont recalculées à chaque ouverture du module et ne déclenchent aucun envoi externe.</p>
+      <div class="table-wrap"><table><thead><tr><th>Commande</th><th>Fournisseur</th><th>Livraison prévue</th><th>Alerte</th><th>Reliquat (base)</th><th>Action</th></tr></thead><tbody>${deliveryAlertRows||'<tr><td colspan="6">Aucune alerte de livraison.</td></tr>'}</tbody></table></div>
+    </section>
     <section class="card"><h2>Échéancier des dettes fournisseurs</h2><div class="grid cols-3"><div class="calculator-result"><strong>${payablesSchedule.totals.overdue}</strong><br><span class="muted">Factures en retard</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.dueToday}</strong><br><span class="muted">À payer aujourd’hui</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.upcoming}</strong><br><span class="muted">Échéances à venir</span></div></div><p><strong>Décaissements prévus sur 30 jours :</strong> ${esc(currencySummary(forecast.amountByCurrency))}</p><div class="table-wrap"><table><thead><tr><th>Facture</th><th>Fournisseur</th><th>Échéance</th><th>Situation</th><th>Solde dû</th><th>Action</th></tr></thead><tbody>${payablesRows||'<tr><td colspan=6>Aucune dette fournisseur échue ou à venir.</td></tr>'}</tbody></table></div></section><section class="card"><h2>Documents d'achat</h2>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>Échéance</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="8">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
@@ -335,6 +359,7 @@ function renderList() {
   document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
   $app.querySelectorAll("[data-payable-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.payableOpen))));
+  $app.querySelectorAll("[data-delivery-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.deliveryOpen))));
 }
 function openSupplier() {
   const p = data();
@@ -342,7 +367,7 @@ function openSupplier() {
     <label>Nom / raison sociale</label><input id="ps-name" maxlength="180" required>
     <div class="grid cols-2"><div><label>Code fournisseur</label><input id="ps-code" maxlength="40"></div><div><label>Identifiant fiscal</label><input id="ps-tax" maxlength="80"></div></div>
     <div class="grid cols-2"><div><label>Téléphone</label><input id="ps-phone" maxlength="60"></div><div><label>E-mail</label><input id="ps-email" type="email" maxlength="180"></div></div>
-    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
+    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Délai de livraison habituel (jours, facultatif)</label><input id="ps-lead-time" type="number" min="0" max="3650" step="1" placeholder="Non renseigné"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
     <div class="actions"><button id="ps-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#ps-save").addEventListener("click", () => {
     const name = box.querySelector("#ps-name").value.trim();
@@ -351,7 +376,10 @@ function openSupplier() {
     if (code && p.suppliers.some(item => item.code.toLowerCase() === code.toLowerCase())) { box.querySelector("#ps-error").textContent = "Ce code fournisseur existe déjà."; return; }
     const paymentTermsDays=Number(box.querySelector("#ps-terms").value);
     if(!Number.isInteger(paymentTermsDays)||paymentTermsDays<0||paymentTermsDays>3650){box.querySelector("#ps-error").textContent="Le délai de paiement doit être compris entre 0 et 3 650 jours.";return;}
-    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, active:true, createdAt:new Date().toISOString() });
+    const leadInput=box.querySelector("#ps-lead-time").value.trim();
+    const leadTimeDays=leadInput===""?null:Number(leadInput);
+    if(leadTimeDays!==null&&(!Number.isInteger(leadTimeDays)||leadTimeDays<0||leadTimeDays>3650)){box.querySelector("#ps-error").textContent="Le délai de livraison doit être compris entre 0 et 3 650 jours.";return;}
+    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, leadTimeDays, active:true, createdAt:new Date().toISOString() });
     box.closest("dialog").close(); persist("Fournisseur enregistré."); renderList();
   });
 }
@@ -368,7 +396,8 @@ function openDocument(type, options = {}) {
     ${options.fromReplenishment ? '<p class="muted">Les quantités sont proposées en unité de base. Choisissez le fournisseur, vérifiez les entrepôts et renseignez les prix unitaires avant d’enregistrer. Aucun envoi ni mouvement de stock ne sera déclenché.</p>' : ""}
     <div class="grid cols-2"><div><label>Fournisseur</label><select id="pd-supplier">${options.fromReplenishment ? '<option value="">Sélectionner un fournisseur…</option>' : ""}${suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("")}</select></div>
     <div><label>Date</label><input id="pd-date" type="date" value="${today()}"></div></div>
-    ${type === "invoice" ? `<div class="grid cols-2"><div><label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select></div><div><label>Échéance de paiement</label><input id="pd-due-date" type="date" value="${addSupplierPaymentTerms(today(),p.suppliers[0]?.paymentTermsDays ?? 30)}"></div></div>` : ""}
+    ${type === "order" ? '<div class="grid cols-2"><div><label>Livraison prévisionnelle</label><input id="pd-expected-delivery" type="date"><small class="muted">Calculée depuis le délai fournisseur s’il est renseigné ; modifiable.</small></div><div><label>Commentaire de livraison</label><input id="pd-delivery-note" maxlength="240" placeholder="Consignes ou créneau prévu"></div></div>' : ""}
+    ${type === "invoice" ? `<div class="grid cols-2"><div><label>Commande à rapprocher (facultatif)</label><select id="pd-order"><option value="">Facture sans commande liée</option>${orders.map(o => `<option value="${o.id}">${esc(o.number)} — ${esc(supplierName(o.supplierId))}</option>`).join("")}</select></div><div><label>Échéance de paiement</label><input id="pd-due-date" type="date" value="${addSupplierPaymentTerms(today(),p.suppliers[0]?.paymentTermsDays ?? 30)}"></div></div>` : type === "order" ? '<div class="grid cols-2"><div><label>Livraison prévisionnelle</label><input id="pd-expected-delivery" type="date"><small class="muted">Préremplie uniquement si un délai de livraison fournisseur est renseigné ; modifiable avant enregistrement.</small></div><div><label>Commentaire de livraison (facultatif)</label><input id="pd-delivery-note" maxlength="240" placeholder="Consignes ou créneau prévu"></div></div>' : ""}
     <label>${type === "invoice" ? "Référence de facture fournisseur *" : "Référence de commande fournisseur"}</label><input id="pd-reference" maxlength="120" ${type === "invoice" ? "required" : ""} placeholder="${type === "invoice" ? "N° de facture du fournisseur" : "N° de commande fournisseur"}">
     <label>Devise</label><input id="pd-currency" maxlength="3" value="${esc(store.settings.currency || "MAD")}">
     ${type === "invoice" ? '<div class="grid cols-2"><div><label>Taux de conversion vers ' + esc(store.settings.currency || "MAD") + '</label><input id="pd-exchange-rate" type="number" min="0.000001" step="0.000001" value="1"></div><div><label>Taux de taxe fournisseur (%)</label><input id="pd-tax-rate" type="number" min="0" max="100" step="0.01" value="0"></div></div><label><input id="pd-tax-recoverable" type="checkbox" checked> Taxe récupérable</label><h3>Imputation comptable proposée automatiquement</h3><p class="muted">Les comptes sont préremplis selon le plan ' + esc(suggestedAccounts.planName) + ' ; vérifiez les suggestions et adaptez-les si nécessaire avant validation.</p><div class="grid cols-2"><div><label>Compte fournisseur (passif)</label><select id="pd-account-supplier">' + accountOptions("liability", suggestedAccounts?.accounts.supplier || "", "supplier") + '</select></div><div><label>Compte de stock (actif, inventaire permanent)</label><select id="pd-account-stock">' + accountOptions("asset", suggestedAccounts?.accounts.stock || "", "stock") + '</select></div><div><label>Compte d’achats (charge, inventaire périodique)</label><select id="pd-account-purchases">' + accountOptions("expense", suggestedAccounts?.accounts.purchases || "", "purchases") + '</select></div><div><label>TVA récupérable (actif)</label><select id="pd-account-vat">' + accountOptions("asset", suggestedAccounts?.accounts.inputVat || "", "inputVat") + '</select></div><div><label>Prestations de services (charge)</label><select id="pd-account-services">' + accountOptions("expense", suggestedAccounts?.accounts.services || "", "services") + '</select></div><div><label>Immobilisations (actif)</label><select id="pd-account-fixed-assets">' + accountOptions("asset", suggestedAccounts?.accounts.fixedAssets || "", "fixedAssets") + '</select></div></div><p class="muted">Les marchandises sont imputées au stock ou aux achats selon le mode d’inventaire ; les services et immobilisations utilisent leurs comptes dédiés.</p>' : ""}
@@ -396,6 +425,7 @@ function openDocument(type, options = {}) {
   box.querySelector("#pd-add-line").addEventListener("click", () => { tbody.insertAdjacentHTML("beforeend", lineRow(tbody.children.length)); bindRows(); updateTotal(); });
   box.querySelector("#pd-add-extra-line")?.addEventListener("click", () => { extraTbody.insertAdjacentHTML("beforeend", extraLineRow(extraTbody.children.length)); bindExtraRows(); updateTotal(); });
   if(type==="invoice"){const dueInput=box.querySelector("#pd-due-date");const refreshDueDate=()=>{const supplier=p.suppliers.find(item=>String(item.id)===box.querySelector("#pd-supplier").value);dueInput.value=addSupplierPaymentTerms(box.querySelector("#pd-date").value||today(),supplier?.paymentTermsDays??30);};box.querySelector("#pd-date").addEventListener("change",refreshDueDate);box.querySelector("#pd-supplier").addEventListener("change",refreshDueDate);}
+  if(type==="order"){const eta=box.querySelector("#pd-expected-delivery");const refreshEta=()=>{const supplier=p.suppliers.find(item=>String(item.id)===box.querySelector("#pd-supplier").value);eta.value=supplier?.leadTimeDays==null?"":addDeliveryDays(box.querySelector("#pd-date").value||today(),supplier.leadTimeDays);};box.querySelector("#pd-date").addEventListener("change",refreshEta);box.querySelector("#pd-supplier").addEventListener("change",refreshEta);refreshEta();}
   box.querySelector("#pd-currency").addEventListener("input", () => {
     if (type === "invoice") {
       const currency = box.querySelector("#pd-currency").value.trim().toUpperCase();
@@ -435,7 +465,10 @@ function openDocument(type, options = {}) {
       const matchingError = validateInvoiceAgainstOrder(order, candidate);
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
-    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(p.suppliers.find(item=>item.id===supplierId)?.paymentTermsDays??30)}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:options.fromReplenishment ? "draft" : type === "order" ? "ordered" : "draft", ...(options.fromReplenishment ? { origin:"stock_replenishment", replenishmentCreatedAt:new Date().toISOString() } : {}), createdAt:new Date().toISOString() };
+    const expectedDeliveryDate=type==="order"?box.querySelector("#pd-expected-delivery").value:"";
+    if(type==="order"&&expectedDeliveryDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(expectedDeliveryDate)||Number.isNaN(Date.parse(expectedDeliveryDate+"T00:00:00Z")))){box.querySelector("#pd-error").textContent="La date prévisionnelle de livraison est invalide.";return;}
+    const supplier=p.suppliers.find(item=>Number(item.id)===supplierId);
+    const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(supplier?.paymentTermsDays??30)}:{}), ...(type==="order"?{expectedDeliveryDate:expectedDeliveryDate||null,deliveryNote:box.querySelector("#pd-delivery-note").value.trim(),supplierLeadTimeDays:supplier?.leadTimeDays??null}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:options.fromReplenishment ? "draft" : type === "order" ? "ordered" : "draft", ...(options.fromReplenishment ? { origin:"stock_replenishment", replenishmentCreatedAt:new Date().toISOString() } : {}), createdAt:new Date().toISOString() };
     if (type === "invoice") {
       const exchangeRate = Number(box.querySelector("#pd-exchange-rate").value), taxRate = Number(box.querySelector("#pd-tax-rate").value);
       if (!(exchangeRate > 0) || !Number.isFinite(exchangeRate)) { box.querySelector("#pd-error").textContent = "Le taux de conversion doit être strictement positif."; return; }
@@ -479,6 +512,21 @@ function openSupplierDueDateEditor(invoice) {
   const {box}=modal(`<h2>Modifier l’échéance — ${esc(invoice.number)}</h2><p class="muted">Cette modification ajuste le suivi de trésorerie sans modifier l’écriture comptable.</p><label>Nouvelle date d’échéance</label><input id="psde-date" type="date" value="${esc(invoice.dueDate||invoice.date||today())}"><div id="psde-error" class="errors"></div><div class="actions"><button id="psde-save">Enregistrer l’échéance</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!addSupplierPaymentTerms(value,0)){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
 }
+function openOrderDeliveryEditor(doc) {
+  const html = '<h2>Prévision de livraison — '+esc(doc.number)+'</h2>'+
+    '<div class="grid cols-2"><div><label>Date prévisionnelle</label><input id="pde-date" type="date" value="'+esc(doc.expectedDeliveryDate||'')+'"></div>'+
+    '<div><label>Consignes / suivi</label><input id="pde-note" maxlength="240" value="'+esc(doc.deliveryNote||'')+'"></div></div>'+
+    '<p class="muted">Cette modification actualise le suivi interne uniquement. Elle ne contacte pas le fournisseur.</p>'+
+    '<div id="pde-error" class="errors"></div><div class="actions"><button id="pde-save">Enregistrer le suivi</button><button class="secondary" data-close>Annuler</button></div>';
+  const {box}=modal(html);
+  box.querySelector('#pde-save').addEventListener('click',()=>{
+    const date=box.querySelector('#pde-date').value;
+    if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z')))){box.querySelector('#pde-error').textContent='La date prévisionnelle est invalide.';return;}
+    const previous=doc.expectedDeliveryDate||null; doc.expectedDeliveryDate=date||null; doc.deliveryNote=box.querySelector('#pde-note').value.trim();
+    doc.deliveryUpdates||=[]; doc.deliveryUpdates.push({previousDate:previous,newDate:doc.expectedDeliveryDate,updatedAt:new Date().toISOString()});
+    persist('Suivi de livraison mis à jour.'); box.closest('dialog').close(); renderList();
+  });
+}
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);
   if (!doc) return;
@@ -487,7 +535,7 @@ function openDetail(id) {
   const lines = doc.lines.map(line => {
     const item = product(line.productId);
     const kind=line.lineType==="service"?"Service":line.lineType==="fixed_asset"?"Immobilisation":"Marchandise";
-    return `<tr><td>${kind}</td><td>${esc(line.description || item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "—")}</td><td class="num">${line.quantity} ${esc(line.unit || "")}</td><td class="num">${money(line.unitCost)}</td><td class="num">${line.lineType==="service"||line.lineType==="fixed_asset"?"—":round(line.baseQuantity)+" "+esc(item?.base_unit||"")}</td></tr>`;
+    return `<tr><td>${kind}</td><td>${esc(line.description || item?.name || "Article")}</td><td>${esc(warehouse(line.warehouseId)?.name || "—")}</td><td class="num">${line.quantity} ${esc(line.unit || "")}</td><td class="num">${money(line.unitCost)}</td><td class="num">${line.lineType==="service"||line.lineType==="fixed_asset"?"—":round(line.baseQuantity)+" "+esc(item?.base_unit||"")}</td><td class="num">${line.lineType==="service"||line.lineType==="fixed_asset"?"—":round(num(line.receivedBase))+" / "+round(Math.max(0,num(line.baseQuantity)-num(line.receivedBase)))}</td></tr>`;
   }).join("");
   const remaining = doc.lines.reduce((sum,line) => {
     if (line.lineType === "service" || line.lineType === "fixed_asset") return sum;
@@ -497,15 +545,20 @@ function openDetail(id) {
       doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
+  const orderTracking=doc.type==="order"?summarizePurchaseOrder(doc,today()):null;
+  const receiptHistoryRows=(doc.receiptHistory||[]).map(receipt=>"<tr><td>"+esc(receipt.date||"—")+"</td><td>"+esc(new Date(receipt.recordedAt||receipt.date||Date.now()).toLocaleString("fr-FR"))+"</td><td>"+(receipt.lines||[]).map(line=>esc(product(line.productId)?.name||line.productId)+" : "+round(line.quantity)).join("<br>")+"</td></tr>").join("");
+  const deliveryUpdateRows=(doc.deliveryUpdates||[]).map(update=>"<tr><td>"+esc(update.previousDate||"Non renseignée")+"</td><td>"+esc(update.newDate||"Non renseignée")+"</td><td>"+esc(new Date(update.updatedAt||Date.now()).toLocaleString("fr-FR"))+"</td></tr>").join("");
   const creditNoteRows=(doc.creditNotes||[]).map(note=>`<tr><td>${esc(note.date)}</td><td>${esc(note.number)}</td><td>${money(note.payableAmount??note.total)} ${esc(doc.currency||"")}</td><td>${note.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const paymentRows=(doc.payments||[]).map(payment=>`<tr><td>${esc(payment.date)}</td><td>${money(payment.amount)} ${esc(doc.currency||"")}</td><td>${payment.method==="cash"?"Caisse":"Banque"}</td><td>${payment.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
+    ${orderTracking?"<section class=\"card\"><h3>Suivi de livraison</h3><p>Prévision : <strong>"+esc(orderTracking.expectedDeliveryDate||"Non renseignée")+"</strong> · Situation : <strong>"+esc(deliveryStateLabel(orderTracking.deliveryState))+"</strong></p><p>Quantité commandée : "+orderTracking.orderedBase+" · Reçue : "+orderTracking.receivedBase+" · Reliquat : <strong>"+orderTracking.remainingBase+"</strong> · Avancement : "+orderTracking.progress+" %</p><p>"+esc(doc.deliveryNote||"Aucune consigne de livraison.")+"</p><p>Réceptions enregistrées : "+orderTracking.receiptCount+"</p></section>":""}
     ${doc.type==="invoice"?`<p>Échéance : <strong>${esc(doc.dueDate||"Non définie")}</strong> · Délai fournisseur : ${Number.isInteger(doc.paymentTermsDays)?doc.paymentTermsDays+" jours":"Non renseigné"}</p><p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
-    <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th><th>Reçu / reliquat (base)</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
+    ${doc.type==="order"?"<h3>Historique des réceptions partielles</h3><div class=\"table-wrap\"><table><thead><tr><th>Date de réception</th><th>Enregistrée le</th><th>Quantités reçues</th></tr></thead><tbody>"+(receiptHistoryRows||"<tr><td colspan=\"3\">Aucune réception enregistrée.</td></tr>")+"</tbody></table></div><h3>Historique des dates prévisionnelles</h3><div class=\"table-wrap\"><table><thead><tr><th>Ancienne date</th><th>Nouvelle date</th><th>Modifiée le</th></tr></thead><tbody>"+(deliveryUpdateRows||"<tr><td colspan=\"3\">Aucune modification de date.</td></tr>")+"</tbody></table></div>":""}
     <div id="pd-detail-actions" class="actions"></div><div id="pd-detail-error" class="errors"></div>
     <div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
   const actions = box.querySelector("#pd-detail-actions");
@@ -516,6 +569,7 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Modifier l’échéance", () => openSupplierDueDateEditor(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
+  if (doc.type === "order" && ["draft","ordered","partially_received"].includes(doc.status) && orderTracking?.remainingBase>0) addAction("Mettre à jour la livraison prévue", () => openOrderDeliveryEditor(doc));
   if (doc.type === "order" && doc.status === "draft") addAction("Confirmer la commande", () => {
     doc.status = "ordered";
     doc.confirmedAt = new Date().toISOString();
@@ -528,9 +582,9 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
-async function postReceipt(doc, requestedLines, box, sourceType) {
+async function postReceipt(doc, requestedLines, box, sourceType, receiptDate = null) {
   const pendingKey = sourceType === "supplier_invoice" ? "pendingInvoiceReceipt" : "pendingReceipt";
-  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id), attempted:false }; persist(); }
+  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id), documentDate:receiptDate || doc.date || today(), attempted:false }; persist(); }
   const pending = doc[pendingKey];
   const requestKey = String(doc.id) + ":" + pendingKey;
   if (activeReceiptOperations.has(requestKey)) return;
@@ -557,7 +611,7 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
     pending.attempted = true;
     persist();
     const result = await postCloudStockDocument({
-      operationUid:pending.operationUid, documentType:"receipt", documentDate:doc.date,
+      operationUid:pending.operationUid, documentType:"receipt", documentDate:pending.documentDate || doc.date,
       reference:doc.reference || doc.number, note:"Réception fournisseur — " + supplierName(doc.supplierId),
       sourceType:pending.sourceType, sourceId:pending.sourceId,
       lines:pending.lines,
@@ -578,8 +632,16 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
       }
     }
     if (linkedOrder) linkedOrder.status = linkedOrder.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
+    if (doc.type === "order") {
+      doc.receiptHistory ||= [];
+      doc.receiptHistory.push({date:pending.documentDate||today(),recordedAt:new Date().toISOString(),operationUid:pending.operationUid,lines:pending.lines.map(line=>({productId:line.product_id,warehouseId:line.warehouse_id,quantity:num(line.quantity)}))});
+    }
     delete doc[pendingKey];
-    if (doc.type === "order") doc.status = doc.lines.every(line => num(line.receivedBase) >= line.baseQuantity) ? "received" : "partially_received";
+    if (doc.type === "order") {
+      const fullyReceived=doc.lines.every(line => line.lineType==="service"||line.lineType==="fixed_asset"||num(line.receivedBase)>=num(line.baseQuantity));
+      doc.status=fullyReceived?"received":"partially_received";
+      if(fullyReceived) doc.receivedAt=new Date().toISOString();
+    }
     persist("Entrée de stock fournisseur confirmée.");
     box?.closest("dialog")?.close(); renderList();
   } catch (error) {
@@ -593,7 +655,8 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
   }
 }
 function openReceipt(doc) {
-  const { box } = modal(`<h2>Réception fournisseur — ${esc(doc.number)}</h2><p>Renseignez uniquement les quantités reçues aujourd'hui. Le reliquat restera à recevoir.</p>
+  const { box } = modal(`<h2>Réception fournisseur — ${esc(doc.number)}</h2><p>Renseignez uniquement les quantités reçues à cette date. Le reliquat restera à recevoir.</p>
+    <div><label>Date de réception physique</label><input id="pr-date" type="date" value="${today()}"></div>
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Restant (base)</th><th>Reçu (base)</th><th>Lot / série</th></tr></thead><tbody>${doc.lines.map((line,index) => ({line,index})).filter(({line}) => line.lineType !== "service" && line.lineType !== "fixed_asset").map(({line,index}) => {
       const item=product(line.productId), left=Math.max(0,line.baseQuantity-num(line.receivedBase));
       return `<tr data-receive-line="${index}"><td>${esc(item?.name||"Article")}</td><td>${round(left)}</td><td><input class="pr-qty" type="number" min="0" max="${left}" step="0.0001" value="${left}"></td><td><input class="pr-trace" placeholder="${item?.tracking === "serial" ? "Séries séparées par virgule" : item?.tracking === "lot" ? "Code lot" : "Facultatif"}"></td></tr>`;
@@ -612,7 +675,7 @@ function openReceipt(doc) {
       lines.push({ line_index:index, product_id:source.productId, warehouse_id:source.warehouseId, quantity:qty, unit_cost:source.baseUnitCost, lot_code:item?.tracking === "lot" ? trace : null, serial_numbers:serials });
     }
     if (!lines.length) { box.querySelector("#pd-detail-error").textContent="Saisissez au moins une quantité reçue."; return; }
-    postReceipt(doc, lines, box, "supplier_receipt");
+    postReceipt(doc, lines, box, "supplier_receipt", box.querySelector("#pr-date").value || today());
   });
 }
 async function postSupplierAccounting(doc, box) {

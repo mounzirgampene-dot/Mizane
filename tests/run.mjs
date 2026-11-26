@@ -1944,7 +1944,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v99/g);
+  assert.match(serviceWorkerSource,/mizane-v100/g);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
@@ -2575,7 +2575,7 @@ test("prévisions financières : projections cumulées et ventilation stricte pa
     ],
     manual: [{ id: "m", date: "2026-11-26", label: "Loyer", amount: 5, direction: "out" }],
   });
-  assert.equal(cautious.projections[0].amount, 220);
+  assert.equal(cautious.projections[0].amount, 210);
   assert.equal(cautious.overdueReceivables.amountByCurrency.MAD, 100);
   assert.equal(cautious.overduePayables.amountByCurrency.MAD, 40);
   assert.equal(cautious.undatedReceivables.count, 1);

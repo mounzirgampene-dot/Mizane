@@ -68,7 +68,7 @@ export function buildAnalyticalReport({ centers = [], allocations = [], entries 
       const type = accountTypes[String(line.account)];
       if (!["expense", "income"].includes(type)) return;
       const amount = type === "expense" ? Number(line.debit || 0) - Number(line.credit || 0) : Number(line.credit || 0) - Number(line.debit || 0);
-      const assigned = used.get(String(entry.id) + ":" + lineIndex) || 0;
+      const assigned = Math.min(100, used.get(String(entry.id) + ":" + lineIndex) || 0);
       if (Math.abs(amount) > 0.001 && assigned < 99.999999) unallocated.push({ entryId: entry.id, lineIndex, date: entry.date, journal: entry.journal, account: String(line.account), label: line.label || "", type, amount: round2(amount), remainingPercentage: round2(100 - assigned), remainingAmount: round2(amount * (100 - assigned) / 100) });
     });
   }

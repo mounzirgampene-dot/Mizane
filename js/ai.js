@@ -208,8 +208,8 @@ export async function importEntriesFromText(store, text) {
     { role: "system", content: systemPrompt(store) },
     { role: "user", content:
       "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
-      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}]}. " +
-      "Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
+      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}],\"sourceFacts\":[],\"uncertainties\":[]} ]}. " +
+      "Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Renseigne sourceFacts avec les éléments réellement présents dans le texte et uncertainties avec les champs absents, ambigus ou illisibles. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
   ], { json: true });
   let parsed;
   try { parsed = JSON.parse(content); } catch (_e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }

@@ -172,7 +172,7 @@ export function viewAssistant() {
         proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Écriture issue du justificatif ' + (index + 1))).join('') +
         documentMatchesMarkup(facts, store) +
         '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écriture(s)</button></div>';
-      bindDraftEditors(out, drafts => {
+      bindDraftEditors(out, async drafts => {
         const posted = [];
         if (drafts.length === 1) {
           const result = postEntry(store, drafts[0]);

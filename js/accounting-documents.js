@@ -36,7 +36,7 @@ export async function putLocalAccountingDocument({id,file,entryIds}={}){
  return checked.document;
 }
 export async function listLocalAccountingDocuments(entryId){
- const db=await openDb();try{const rows=await runTransaction(db,"readonly",store=>store.getAll());return(rows||[]).filter(row=>row.entryIds?.includes(Number(entryId))).map(({blob,...row})=>row);}finally{db.close();}
+ const db=await openDb();try{const rows=await runTransaction(db,"readonly",store=>store.getAll());return(rows||[]).filter(row=>row.entryIds?.includes(Number(entryId))).map(row=>{const metadata={...row};delete metadata.blob;return metadata;});}finally{db.close();}
 }
 export async function getLocalAccountingDocument(id){
  const db=await openDb();try{const row=await runTransaction(db,"readonly",store=>store.get(String(id)));return row?{blob:row.blob,fileName:row.fileName}:null;}finally{db.close();}

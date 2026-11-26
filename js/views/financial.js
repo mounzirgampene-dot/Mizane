@@ -18,7 +18,7 @@ function receivables(start, end) {
   });
   if (!report.ok) return [];
   return report.rows.map(row => ({
-    number: row.number, customer: row.customer, dueDate: row.dueDate,
+    id: row.invoiceId, number: row.number, customer: row.customer, dueDate: row.dueDate, forecastDueDate: row.forecastDueDate, dueDateMissing: row.dueDateMissing,
     amount: row.baseAmount ?? 0, currency: row.currency,
     originalAmount: row.outstandingAmount, days: row.overdueDays,
     overdue: row.overdue, bucket: row.bucket, baseAmount: row.baseAmount,
@@ -97,7 +97,7 @@ export function viewFinancial(period = null) {
   const financialForecast = buildFinancialForecast({
     baseCurrency: store.settings.currency,
     openingCash: currentCash,
-    receivables: forecastReceivables.map(item => ({ id: item.number, number: item.number, customer: item.customer, dueDate: item.dueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.amount })),
+    receivables: forecastReceivables.map(item => ({ id: item.id, number: item.number, customer: item.customer, dueDate: item.forecastDueDate, currency: item.currency, originalAmount: item.originalAmount, baseAmount: item.baseAmount })),
     payables: payablesForecast,
     manual,
     asOf: today(),
@@ -123,7 +123,7 @@ export function viewFinancial(period = null) {
     amount:round(docs.filter(item=>bucket(item.days)===name).reduce((sum,item)=>sum+item.amount,0)),
   })),[{key:"amount",label:"Créances"}],money);
   const customerChart = renderHorizontalBars("Principales créances clients",customers.slice(0,10).map(item=>({label:item.name,amount:item.amount})),[{key:"amount",label:"Montant"}],money);
-  const forecastChart = renderHorizontalBars("Trésorerie projetée",forecastTotals.map(item=>({label:"À "+item.days+" jours",amount:Math.max(0,item.amount)})),[{key:"amount",label:"Solde projeté"}],money);
+  const forecastChart = renderHorizontalBars("Trésorerie projetée",forecastTotals.map(item=>({label:"À "+item.days+" jours",amount:item.amount})),[{key:"amount",label:"Solde projeté"}],money);
   $app.innerHTML = `
     <h1>Pilotage financier</h1>
     ${periodControls("pilotage",exerciceStart,exerciceEnd,period?.compare !== false)}
@@ -171,7 +171,19 @@ export function viewFinancial(period = null) {
       <h2>Prévisions de trésorerie — devise de référence : ${esc(store.settings.currency)}</h2>
       <p class="muted">Les factures clients ouvertes sont intégrées automatiquement à leur échéance après conversion au taux enregistré sur la facture. Les prévisions manuelles sont saisies dans la devise de référence.</p>
       <div class="grid cols-3">${forecastTotals.map(item => "<div class=\"card kpi\"><div class=\"label\">Solde projeté à " + item.days + " jours</div><div class=\"value\">" + money(item.amount) + "</div></div>").join("")}</div>
-      <p class="muted">Les projections sont exprimées dans la devise de référence de l’entreprise. Les créances et dettes restent également ventilées dans leurs devises d’origine.</p>
+      <p class="muted">Les projections sont exprimées dans la devise de référence de l’entreprise. Les créances et dettes restent également ventilées dans leurs devises d’origine. Une facture échue n’est pas supposée encaissée ou payée aujourd’hui : elle reste signalée séparément jusqu’à la saisie d’une date prévisionnelle fiable.</p>
+      <div class="grid cols-2">
+        <section class="card"><h3>Points de vigilance</h3>
+          <p>${financialForecast.overdueReceivables.count} créance(s) échue(s) non projetée(s) automatiquement · ${financialForecast.overduePayables.count} dette(s) échue(s) non projetée(s).</p>
+          <p>${financialForecast.undatedReceivables.count} créance(s) sans échéance renseignée · ${financialForecast.undatedPayables.count} dette(s) fournisseur(s) sans échéance.</p>
+          <p>${financialForecast.unconvertedReceivables} créance(s) et ${financialForecast.unconvertedPayables} dette(s) exclues faute de contre-valeur fiable · ${financialForecast.duplicateEvents} doublon(s) ignoré(s).</p>
+          ${financialForecast.hasNegativeProjection ? '<p class="errors">Attention : au moins une projection fait apparaître une trésorerie négative.</p>' : '<p class="ok-msg">Aucune trésorerie négative détectée dans les horizons affichés.</p>'}
+        </section>
+        <section class="card"><h3>Soldes échus non intégrés aux flux futurs</h3>
+          <p><strong>Créances :</strong> ${Object.entries(financialForecast.overdueReceivables.amountByCurrency).map(([code,value]) => esc(value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" "+code)).join(" · ") || "Aucune"}</p>
+          <p><strong>Dettes :</strong> ${Object.entries(financialForecast.overduePayables.amountByCurrency).map(([code,value]) => esc(value.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" "+code)).join(" · ") || "Aucune"}</p>
+        </section>
+      </div>
       <div class="grid cols-2">
         <section class="table-wrap"><h3>Créances ouvertes par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${receivableCurrencyRows || '<tr><td colspan="2">Aucune créance.</td></tr>'}</tbody></table></section>
         <section class="table-wrap"><h3>Dettes fournisseurs à échéance par devise</h3><table><thead><tr><th>Devise</th><th class="num">Montant</th></tr></thead><tbody>${payableCurrencyRows || '<tr><td colspan="2">Aucune dette.</td></tr>'}</tbody></table></section>
@@ -186,7 +198,7 @@ export function viewFinancial(period = null) {
           <div class="nogrow"><button type="submit">Ajouter</button></div>
         </div>
       </form>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th>Nature</th><th class="num">Montant</th><th>Action</th></tr></thead>
+      <div class="actions"><button type="button" class="secondary" id="forecast-export">Exporter les flux CSV</button><button type="button" class="secondary" id="forecast-print">Imprimer / PDF</button></div>\n      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th>Nature</th><th class="num">Montant</th><th>Action</th></tr></thead>
       <tbody>${forecast.length ? forecast.map(item => "<tr><td>" + esc(item.date) + "</td><td>" + esc(item.label) + (item.automatic ? " <span class=\"tag\">Facture</span>" : "") + "</td><td>" + (item.direction === "in" ? "Encaissement" : "Décaissement") + "</td><td class=\"num\">" + money(item.amount) + "</td><td>" + (item.automatic ? "Automatique" : "<button class=\"danger small\" data-forecast-delete=\"" + esc(item.id) + "\">Supprimer</button>") + "</td></tr>").join("") : "<tr><td colspan=\"5\" class=\"muted\">Aucun flux prévisionnel.</td></tr>"}</tbody></table></div>
       <p class="muted">Les prévisions manuelles sont enregistrées dans les paramètres synchronisés de l'entreprise. Les projections ne constituent pas une écriture comptable.</p>
     </section>
@@ -218,6 +230,15 @@ export function viewFinancial(period = null) {
     toast("Prévision enregistrée et prête à être synchronisée.");
     viewFinancial();
   });
+  document.getElementById("forecast-export")?.addEventListener("click", () => {
+    const quote = value => '"' + String(value ?? "").replace(/"/g, '""') + '"';
+    const rows = [["Date","Libellé","Nature","Montant","Devise","Origine"], ...forecast.map(item => [item.date,item.label,item.direction === "in" ? "Encaissement" : "Décaissement",item.amount,item.currency,item.source])];
+    const csv = "\\uFEFF" + rows.map(row => row.map(quote).join(";")).join("\\r\\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a"); link.href = url; link.download = "mizane-previsions-tresorerie.csv"; link.click();
+    URL.revokeObjectURL(url);
+  });
+  document.getElementById("forecast-print")?.addEventListener("click", () => window.print());
   $app.querySelectorAll("[data-forecast-delete]").forEach(button => button.addEventListener("click", () => {
     store.settings.cashForecast = store.settings.cashForecast.filter(item => String(item.id) !== button.dataset.forecastDelete);
     saveStore(store);

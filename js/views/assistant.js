@@ -318,7 +318,9 @@ export function viewSettings() {
     if (!current) return toast("Sélectionnez un rapprochement enregistré.");
     if (!confirm("Approuver toutes les règles de ce rapprochement ? Vérifiez les comptes et les équivalences avant de confirmer.")) return;
     try {
-      const updated = validatePlanMapping({ ...current, status: "approved", rules: current.rules.map((rule) => ({ ...rule, status: "approved" })), updatedAt: new Date().toISOString() }, conversionCatalog(), conversionVersions());
+      const approvedAt = new Date().toISOString();
+      const validated = validatePlanMapping({ ...current, status: "approved", rules: current.rules.map((rule) => ({ ...rule, status: "approved" })), updatedAt: approvedAt }, conversionCatalog(), conversionVersions());
+      const updated = { ...validated, approvedAt, approvedBy: current.approvedBy || null, approvalEvents: [...(current.approvalEvents || []), { at: approvedAt, actor: current.approvedBy || null }] };
       s.planMappings = s.planMappings.map((item) => item.id === id ? updated : item);
       saveStore(store); toast("Rapprochement approuvé. Vous pouvez lancer une simulation.");
       router.render();

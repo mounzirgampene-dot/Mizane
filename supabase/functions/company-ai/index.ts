@@ -7,6 +7,7 @@ const providers = {
   groq: { endpoint:"https://api.groq.com/openai/v1/chat/completions", models:["llama-3.3-70b-versatile","meta-llama/llama-4-scout-17b-16e-instruct","openai/gpt-oss-120b","llama-3.1-8b-instant"] },
   gemini: { endpoint:"https://generativelanguage.googleapis.com/v1beta", models:["gemini-3.8-flash","gemini-3.7-flash","gemini-3.5-flash"] },
 };
+const AI_ALLOWED_ROLES = new Set(["admin","accountant"]);
 const validUuid=(v)=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 Deno.serve(async (req)=>{
  const origin=req.headers.get("Origin");
@@ -28,7 +29,7 @@ Deno.serve(async (req)=>{
  if(!Object.hasOwn(providers,provider))return json(400,{error:"Fournisseur IA non pris en charge."});
  const {data:member,error:memberError}=await admin.from("company_memberships").select("role,status").eq("company_id",companyId).eq("user_id",authData.user.id).maybeSingle();
  if(memberError)return json(500,{error:"Vérification des droits impossible."});
- if(!member||member.status!=="active"||!["admin","accountant","reader"].includes(member.role))return json(403,{error:"Accès refusé à cette entreprise."});
+ if(!member||member.status!=="active"||!AI_ALLOWED_ROLES.has(member.role))return json(403,{error:"L’assistant IA connecté est réservé aux administrateurs et aux comptables de cette entreprise."});
  if(action==="configure"){
    if(!["admin","accountant"].includes(member.role))return json(403,{error:"Seuls l’administrateur et le comptable peuvent configurer la clé IA."});
    if(typeof body.api_key!=="string"||body.api_key.length>4096)return json(400,{error:"Clé API invalide."});

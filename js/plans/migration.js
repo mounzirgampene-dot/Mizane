@@ -66,7 +66,7 @@ export function applyPlanMigration(store, { sourcePlan, targetPlan, mapping, max
     mappingSnapshot: clone(mapping),
     approvedBy: mapping.approvedBy || null,
     approvedAt: mapping.approvedAt || null,
-    events: [{ type: "applied", at: now, actor: null }],
+    events: [...(mapping.approvalEvents || []).map((event) => ({ type: "approved", at: event.at, actor: event.actor || null })), { type: "applied", at: now, actor: null }],
     auditReport,
     sourcePlanId: sourcePlan.id,
     targetPlanId: targetPlan.id,

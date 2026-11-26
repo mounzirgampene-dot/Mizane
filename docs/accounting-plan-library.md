@@ -2,7 +2,7 @@
 
 ## État de cette première livraison
 
-La bibliothèque contient huit choix :
+La bibliothèque contient treize choix :
 
 - SYSCOHADA (OHADA)
 - Plan comptable général (France)
@@ -13,7 +13,7 @@ La bibliothèque contient huit choix :
 - Modèle sectoriel indicatif — Agriculture
 - Modèle sectoriel indicatif — Association / ONG
 
-Les quatre premiers restent les référentiels nationaux ou régionaux déjà intégrés. Les quatre suivants sont des trames de démarrage génériques, non officielles et non rattachées automatiquement à un pays. Elles ne doivent pas être présentées comme conformes à un texte national sans validation préalable.
+Les quatre premiers restent les référentiels nationaux ou régionaux déjà intégrés. Les neuf suivants sont des trames de démarrage génériques, non officielles et non rattachées automatiquement à un pays. Elles ne doivent pas être présentées comme conformes à un texte national sans validation préalable.
 
 ## Règles de conception
 
@@ -77,3 +77,10 @@ Les entrées de ce lot décrivent les cadres de reporting et leur autorité. Ell
 | Hong Kong | HKFRS, HKFRS for Private Entities et SME-FRF/SME-FRS | HKICPA — https://www.hkicpa.org.hk/en/Standards-setting/Standards/Members-Handbook-and-Due-Process/Due-Process/Financial-reporting |
 
 Comme pour les lots précédents, il s'agit de cadres de reporting documentés, non de plans de comptes universels. Les cadres simplifiés ne peuvent être sélectionnés qu'après contrôle de l'éligibilité de l'entité. Aucune nomenclature fictive n'est ajoutée.
+
+
+## Lot 4 — cinq modèles sectoriels indicatifs supplémentaires
+
+MIZANE propose désormais neuf modèles sectoriels indicatifs : commerce, services, agriculture, association/ONG, industrie/fabrication, BTP/construction, hôtellerie/restauration, santé/clinique et transport/logistique.
+
+Les cinq nouveaux modèles ajoutent des comptes de base pour les stocks, immobilisations, tiers, charges et produits propres aux activités visées. Ils ne remplacent pas les normes nationales, les règles de valorisation, les obligations sectorielles ni les plans réglementaires éventuellement imposés aux banques, assureurs, établissements de santé ou sociétés cotées. Ils doivent être adaptés et validés par un professionnel compétent avant toute utilisation réelle.

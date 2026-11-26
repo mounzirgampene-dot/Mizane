@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { parseBankStatement, bankStatementLineKey } from "../js/bank-statement-import.js";
+import { matchBankLines } from "../js/finance.js";
 
 const csv = `Date;Libellé;Montant;Référence;Devise
 26/11/2026;"Virement client; facture 18";1 250,50;VIR-18;MAD
@@ -20,6 +21,15 @@ assert.equal(bankStatementLineKey(parsed.lines[0]), bankStatementLineKey(parsed.
 
 const debitCredit = parseBankStatement("Date,Description,Debit,Credit\n2026-11-26,Frais,12.50,\n2026-11-27,Virement,,1000.00");
 assert.deepEqual(debitCredit.lines.map(line=>line.amount),[-12.5,1000]);
+const sparseDebitCredit = parseBankStatement("Date,Description,Debit,Credit\\n2026-11-26,Frais,12.50,\\n2026-11-27,Virement,,1000.00");
+assert.deepEqual(sparseDebitCredit.lines.map(line=>line.amount),[-12.5,1000]);
+const bankStore = { settings: { currency: "MAD" }, entries: [
+  { id: 1, date: "2026-11-26", lines: [{ account: "512", debit: 100, credit: 0, currency: "MAD" }] },
+  { id: 2, date: "2026-11-26", lines: [{ account: "512", debit: 100, credit: 0, currency: "EUR" }] },
+] };
+assert.equal(matchBankLines(bankStore, [{ date:"2026-11-26", label:"Entrée MAD", amount:100, currency:"MAD" }], 0)[0].match, 1);
+assert.equal(matchBankLines(bankStore, [{ date:"2026-11-26", label:"Entrée EUR", amount:100, currency:"EUR" }], 0)[0].match, 2);
+assert.equal(matchBankLines(bankStore, [{ date:"2026-11-26", label:"Entrée USD", amount:100, currency:"USD" }], 0)[0].match, null, "aucun rapprochement inter-devises");
 
 const ofx = `OFXHEADER:100
 DATA:OFXSGML

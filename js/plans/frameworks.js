@@ -62,6 +62,67 @@ export const ACCOUNTING_FRAMEWORKS = {
     sourceLabel: "AASB — Accounting Standards portal",
     note: "Le portail officiel présente les versions applicables par période. AASB définit les règles de reporting et ne constitue pas un plan de comptes universel."
   }
+  ,
+  "japan-gaap": {
+    id: "japan-gaap",
+    name: "Japanese GAAP — J-GAAP / Designated IFRS / JMIS",
+    jurisdictions: ["JP"],
+    authority: "Accounting Standards Board of Japan (ASBJ) et Financial Services Agency (FSA)",
+    status: "framework-verified",
+    standard: "J-GAAP constitue le cadre de référence général ; les sociétés cotées peuvent, pour leurs états consolidés, recourir également aux Designated IFRS, JMIS ou US GAAP sous les conditions applicables.",
+    effectiveFrom: null,
+    sourceUrl: "https://www.asb-j.jp/en/accounting_standards.html",
+    sourceLabel: "ASBJ — Accounting Standards",
+    note: "Le catalogue ASBJ signale des révisions publiées en 2026, notamment sur les instruments financiers et les impôts courants. Ces normes de reporting ne constituent pas un plan de comptes universel."
+  },
+  "china-cas": {
+    id: "china-cas",
+    name: "Accounting Standards for Business Enterprises — China CAS",
+    jurisdictions: ["CN"],
+    authority: "Ministry of Finance of the People's Republic of China (MOF)",
+    status: "framework-verified",
+    standard: "Système national de normes comptables pour les entreprises, avec interprétations et dispositions sectorielles publiées par le ministère des Finances.",
+    effectiveFrom: null,
+    sourceUrl: "https://kjs.mof.gov.cn/zt/kjzzss/qykjzzjs/index.htm",
+    sourceLabel: "MOF — Accounting Standards for Business Enterprises",
+    note: "Le MOF a publié en septembre 2026 un projet de révision de la liste des comptes et traitements principaux pour consultation. Ce projet n'est pas traité comme une règle en vigueur ; aucun nouveau plan chinois n'est activé sur la base de ce seul projet."
+  },
+  "korea-gaap": {
+    id: "korea-gaap",
+    name: "Korean GAAP — K-IFRS / K-GAAP",
+    jurisdictions: ["KR"],
+    authority: "Korea Accounting Standards Board (KASB) et autorités publiques compétentes",
+    status: "framework-verified",
+    standard: "K-IFRS s'applique obligatoirement aux sociétés cotées et à certaines entités d'intérêt public ; K-GAAP / Accounting Standards for Non-Public Entities concerne les autres entités selon leur situation.",
+    effectiveFrom: null,
+    sourceUrl: "https://www.ifrs.org/use-around-the-world/use-of-ifrs-standards-by-jurisdiction/view-jurisdiction/south-korea/",
+    sourceLabel: "IFRS Foundation — South Korea jurisdiction profile",
+    note: "Le référentiel dépend du statut de l'entité. K-IFRS et K-GAAP sont des cadres normatifs et ne constituent pas un plan de comptes universel."
+  },
+  "mexico-nif": {
+    id: "mexico-nif",
+    name: "Normas de Información Financiera — NIF 2026",
+    jurisdictions: ["MX"],
+    authority: "Consejo Mexicano de Normas de Información Financiera y de Sostenibilidad (CINIF)",
+    status: "framework-verified",
+    standard: "Édition NIF 2026, comprenant les normes en vigueur au 1er janvier 2026 et les améliorations publiées pour l'exercice.",
+    effectiveFrom: "2026-01-01",
+    sourceUrl: "https://cinif.org.mx/normatividad_NIF2026.php",
+    sourceLabel: "CINIF — Normatividad NIF 2026",
+    note: "Le CINIF publie le corpus NIF applicable au reporting financier mexicain. Il s'agit de normes de reconnaissance, évaluation et présentation, pas d'un plan de comptes unique."
+  },
+  "nz-ifrs": {
+    id: "nz-ifrs",
+    name: "New Zealand Accounting Standards — NZ IFRS / PBE",
+    jurisdictions: ["NZ"],
+    authority: "External Reporting Board (XRB) et New Zealand Accounting Standards Board (NZASB)",
+    status: "framework-verified",
+    standard: "Cadre à plusieurs niveaux distinguant notamment les entités à but lucratif et les Public Benefit Entities (PBE), avec normes et dates d'application selon la catégorie.",
+    effectiveFrom: null,
+    sourceUrl: "https://www.xrb.govt.nz/standards/recently-issued/new-accounting-standards/",
+    sourceLabel: "XRB — Recently issued accounting standards",
+    note: "Le XRB publie les normes et leurs dates obligatoires d'application, y compris des normes nouvelles applicables à partir de 2027 et 2029. Le cadre NZ IFRS/PBE ne constitue pas un plan de comptes national universel."
+  }
 };
 
 export function getAccountingFramework(id) {

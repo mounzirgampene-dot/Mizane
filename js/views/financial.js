@@ -163,7 +163,7 @@ export function viewFinancial(period = null) {
       <div class="table-wrap"><table><thead><tr><th>Facture</th><th>Client</th><th>Échéance</th><th>Retard</th><th>Tranche</th><th class="num">Solde d'origine</th><th class="num">Contre-valeur</th></tr></thead><tbody>${collectionReport.rows.map(item => {
         const original = Number(item.outstandingAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " " + item.currency;
         const label = collectionReport.bucketLabels[item.bucket];
-        return "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + esc(item.dueDate) + "</td><td>" + (item.overdue ? item.overdueDays + " j" : "À échoir") + "</td><td>" + esc(label) + "</td><td class=\"num\">" + original + "</td><td class=\"num\">" + (item.baseAmount == null ? "Taux manquant" : money(item.baseAmount)) + "</td></tr>";
+        return "<tr><td>" + esc(item.number) + "</td><td>" + esc(item.customer) + "</td><td>" + (item.dueDateMissing ? "Non renseignée (date de facture utilisée pour l’ancienneté)" : esc(item.dueDate)) + "</td><td>" + (item.overdue ? item.overdueDays + " j" : "À échoir") + "</td><td>" + esc(label) + "</td><td class=\"num\">" + original + "</td><td class=\"num\">" + (item.baseAmount == null ? "Taux manquant" : money(item.baseAmount)) + "</td></tr>";
       }).join("") || "<tr><td colspan=\"7\" class=\"muted\">Aucune créance ouverte.</td></tr>"}</tbody></table></div>
       <p class="muted">${collectionReport.totals.overdueInvoices} facture(s) en retard. ${collectionReport.totals.unconvertedInvoices} facture(s) sans taux de conversion exploitable ne sont pas incluses dans les totaux convertis.</p>
     </section>

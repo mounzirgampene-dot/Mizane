@@ -64,3 +64,16 @@ Les entrées de ce lot décrivent les cadres de reporting et leur autorité. Ell
 **Précaution Chine :** le ministère des Finances a publié en septembre 2026 un projet de révision de la liste des comptes et traitements comptables pour consultation. Ce projet est explicitement identifié comme un texte de consultation, et non comme une nomenclature entrée en vigueur. Les changements proposés ne sont donc pas activés dans MIZANE.
 
 **Précaution Japon et Corée :** plusieurs cadres coexistent selon le type d'entité et le statut de cotation. Le choix final devra dépendre de la qualification de l'entreprise, pas seulement du pays sélectionné.
+
+
+## Lot 3 — cinq cadres d'Asie du Sud-Est et d'Asie (26 novembre 2026)
+
+| Juridiction | Cadre identifié | Autorité / source |
+|---|---|---|
+| Singapour | SFRS(I), FRS, SFRS for Small Entities et Charities Accounting Standard | ACRA — https://www.acra.gov.sg/regulations/accounting-standards-financial-reporting-surveillance/accounting-standards/ |
+| Philippines | PFRS, PAS et cadres PFRS pour PME | FSRSC — https://www.pfsrsc.org/government-organization-our-standards |
+| Indonésie | SAK Indonesia, SAK Internasional, SAK EP et SAK EMKM | IAI — https://web.iaiglobal.or.id/Berita-IAI/detail/standar_akuntansi_keuangan_indonesia |
+| Thaïlande | TFRS et TFRS for Non-Publicly Accountable Entities | TFAC — https://acpro-std.tfac.or.th/standard/1/Thai-Financial-Reporting-Standards |
+| Hong Kong | HKFRS, HKFRS for Private Entities et SME-FRF/SME-FRS | HKICPA — https://www.hkicpa.org.hk/en/Standards-setting/Standards/Members-Handbook-and-Due-Process/Due-Process/Financial-reporting |
+
+Comme pour les lots précédents, il s'agit de cadres de reporting documentés, non de plans de comptes universels. Les cadres simplifiés ne peuvent être sélectionnés qu'après contrôle de l'éligibilité de l'entité. Aucune nomenclature fictive n'est ajoutée.

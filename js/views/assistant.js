@@ -17,6 +17,49 @@ import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
+function draftLineMarkup(line, index) {
+  return '<tr class="draft-line" data-line-index="' + index + '">' +
+    '<td><input aria-label="Compte" data-line-field="account" maxlength="20" value="' + esc(line.account || '') + '" placeholder="Compte"></td>' +
+    '<td><input aria-label="Libellé" data-line-field="label" maxlength="180" value="' + esc(line.label || '') + '" placeholder="Libellé"></td>' +
+    '<td><input aria-label="Débit" data-line-field="debit" type="number" min="0" step="0.01" value="' + (line.debit ? esc(line.debit) : '') + '"></td>' +
+    '<td><input aria-label="Crédit" data-line-field="credit" type="number" min="0" step="0.01" value="' + (line.credit ? esc(line.credit) : '') + '"></td>' +
+    '<td><button type="button" class="danger small" data-draft-action="remove-line" aria-label="Supprimer la ligne">×</button></td></tr>';
+}
+function draftCardMarkup(entry, index, title) {
+  const lines = Array.isArray(entry.lines) ? entry.lines : [];
+  const facts = entry.aiReview && Array.isArray(entry.aiReview.sourceFacts) ? entry.aiReview.sourceFacts : [];
+  const uncertainties = entry.aiReview && Array.isArray(entry.aiReview.uncertainties) ? entry.aiReview.uncertainties : [];
+  return '<section class="card ai-draft-card" data-draft-card="' + index + '" style="margin:12px 0">' +
+    '<h3>' + esc(title || ('Écriture proposée ' + (index + 1))) + '</h3>' +
+    (facts.length ? '<p class="muted"><strong>Éléments relevés :</strong> ' + esc(facts.join(' · ')) + '</p>' : '') +
+    (uncertainties.length ? '<p class="warn"><strong>À vérifier :</strong> ' + esc(uncertainties.join(' · ')) + '</p>' : '') +
+    '<div class="row"><div><label>Date</label><input type="date" data-header="date" value="' + esc(entry.date || '') + '"></div>' +
+    '<div><label>Journal</label><select data-header="journal">' + ['ACH','VTE','BAN','CAI','OD'].map(j => '<option value="' + j + '"' + (entry.journal === j ? ' selected' : '') + '>' + j + '</option>').join('') + '</select></div>' +
+    '<div><label>Référence</label><input data-header="reference" maxlength="120" value="' + esc(entry.reference || '') + '"></div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th></th></tr></thead><tbody data-draft-lines>' + lines.map((line,i) => draftLineMarkup(line,i)).join('') + '</tbody></table></div>' +
+    '<div class="actions"><button type="button" class="secondary small" data-draft-action="add-line">+ Ajouter une ligne</button></div>' +
+    '<div class="draft-validation muted" aria-live="polite"></div></section>';
+}
+function readDraftCard(card) {
+  return { date: card.querySelector('[data-header="date"]').value, journal: card.querySelector('[data-header="journal"]').value, reference: card.querySelector('[data-header="reference"]').value.trim(),
+    lines: Array.from(card.querySelectorAll('.draft-line')).map(row => ({ account: row.querySelector('[data-line-field="account"]').value.trim(), label: row.querySelector('[data-line-field="label"]').value.trim(), debit: row.querySelector('[data-line-field="debit"]').value, credit: row.querySelector('[data-line-field="credit"]').value })) };
+}
+function bindDraftEditors(root, onSave) {
+  const refresh = card => { const result = validateEntry(store, readDraftCard(card)); const target = card.querySelector('.draft-validation'); target.innerHTML = result.ok ? '<span class="ok-msg">Contrôle technique réussi : écriture équilibrée et comptes reconnus.</span>' : '<span class="errors">' + esc(result.errors.join(' · ')) + '</span>'; return result; };
+  root.addEventListener('input', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('change', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('click', event => {
+    const action = event.target.closest('[data-draft-action]');
+    if (action) { const card = action.closest('[data-draft-card]'); if (!card) return; if (action.dataset.draftAction === 'add-line') { const body = card.querySelector('[data-draft-lines]'); body.insertAdjacentHTML('beforeend', draftLineMarkup({}, body.querySelectorAll('.draft-line').length)); refresh(card); } else if (action.dataset.draftAction === 'remove-line') { action.closest('.draft-line').remove(); refresh(card); } return; }
+    if (!event.target.closest('[data-draft-save]')) return;
+    const cards = Array.from(root.querySelectorAll('[data-draft-card]')); const drafts = cards.map(readDraftCard); const checks = cards.map(refresh);
+    if (!cards.length || checks.some(check => !check.ok)) { toast('Corrigez toutes les écritures avant l’enregistrement. Aucune n’a été enregistrée.'); return; }
+    const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => draft.date >= period.start && draft.date <= period.end));
+    if (closed) { toast('Au moins une écriture concerne une période clôturée. Aucun enregistrement effectué.'); return; }
+    onSave(drafts);
+  });
+}
+
 let assistantHistoryCompanyId = "";
 
 export function viewAssistant() {

@@ -2560,6 +2560,13 @@ test("prévisions financières : projections cumulées et ventilation stricte pa
   assert.equal(report.monthly[1].inflows, 1100);
   assert.equal(report.monthly[1].outflows, 550);
   assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});
+  const receivableAging = buildReceivablesReport({
+    asOf: "2026-11-25", baseCurrency: "MAD",
+    documents: [{ id: 90, number: "F90", type: "invoice", status: "issued", date: "2026-11-01", totals: { ttc: 100 }, currency: "MAD" }],
+  });
+  assert.equal(receivableAging.rows[0].dueDate, "2026-11-01");
+  assert.equal(receivableAging.rows[0].forecastDueDate, "");
+  assert.equal(receivableAging.rows[0].dueDateMissing, true);
   const cautious = buildFinancialForecast({
     baseCurrency: "MAD", openingCash: 200, asOf: "2026-11-25",
     receivables: [

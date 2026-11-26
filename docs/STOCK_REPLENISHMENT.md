@@ -48,3 +48,12 @@ Un export CSV du rapport est disponible, y compris en lecture seule.
 - Aucune modification des mouvements, valorisations CUMP/FIFO, réservations ou écritures comptables.
 - Les seuils locaux hors entreprise restent enregistrés dans le profil local.
 - La migration ne doit être appliquée que sur MIZANE-DEV. Production reste exclue.
+
+
+## Brouillons de commandes fournisseurs
+
+Les alertes peuvent alimenter le formulaire Achats existant pour préparer un brouillon de commande fournisseur. Le calcul déduit les quantités non encore reçues des commandes déjà ouvertes, y compris les brouillons, afin de limiter les doublons. Les commandes annulées et les factures ne sont pas considérées comme des commandes ouvertes.
+
+Chaque ligne est proposée dans l'unité de base de l'article. L'entrepôt suggéré est celui dont la disponibilité est la plus faible parmi les entrepôts actifs ; l'utilisateur peut le modifier. Le fournisseur n'est jamais choisi automatiquement et le coût unitaire reste à renseigner. Les services et les entrepôts inactifs sont exclus.
+
+Le document est enregistré au statut « Brouillon » et reste sans effet sur le stock. L'utilisateur doit ouvrir le document dans Achats puis cliquer sur « Confirmer la commande » pour le faire passer au statut « Commandée ». Cette confirmation ne transmet pas la commande au fournisseur ; elle autorise seulement le suivi des réceptions dans MIZANE. Aucun mouvement de stock, paiement, facture ou engagement externe n'est généré par la préparation du brouillon.

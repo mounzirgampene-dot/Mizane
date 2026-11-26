@@ -35,7 +35,7 @@ const first = report.proposals[0];
 const applied = applyThirdPartyLettrage(store, first);
 assert.equal(applied.status, "active");
 report = buildThirdPartyReconciliation(store);
-assert.ok(report.totals.openDebit + report.totals.openCredit < 380, "les montants lettrés sont déduits des soldes ouverts");
+assert.ok(Object.values(report.totals.openDebitByCurrency).reduce((sum,value)=>sum+value,0) + Object.values(report.totals.openCreditByCurrency).reduce((sum,value)=>sum+value,0) < 380, "les montants lettrés sont déduits des soldes ouverts");
 assert.throws(() => applyThirdPartyLettrage(store, first), /n'est plus disponible/);
 reverseThirdPartyLettrage(store, applied.id);
 report = buildThirdPartyReconciliation(store);
@@ -51,4 +51,31 @@ currencyStore.entries = [
   { id:2,date:"2026-01-02",journal:"BAN",reference:"B",lines:[{account:"401",third:"X",debit:20,credit:0,currency:"USD"}] },
 ];
 assert.equal(buildThirdPartyReconciliation(currencyStore).totals.proposals, 0, "les devises différentes ne sont jamais compensées");
-console.log("✓ Lettrage tiers : ventilation partielle, séparation des tiers/devises, validation, annulation et conservation des écritures.");
+
+const mixedCurrencyStore = newStore();
+mixedCurrencyStore.settings.currency = "XOF";
+mixedCurrencyStore.entries = [
+  { id: 1, date: "2026-01-01", journal: "ACH", reference: "A", lines: [{ account: "401", third: "T", credit: 30, debit: 0, currency: "EUR" }] },
+  { id: 2, date: "2026-01-02", journal: "ACH", reference: "B", lines: [{ account: "401", third: "T", credit: 40, debit: 0, currency: "USD" }] },
+];
+const mixedReport = buildThirdPartyReconciliation(mixedCurrencyStore);
+assert.deepEqual(mixedReport.totals.openCreditByCurrency, { EUR: 30, USD: 40 }, "les soldes ouverts sont séparés par devise");
+
+// Une modification ultérieure d'une ligne ne doit pas hériter silencieusement
+// d'un lettrage qui pointait auparavant vers le même index.
+const staleStore = newStore();
+staleStore.settings.currency = "XOF";
+staleStore.entries = [
+  { id: 1, date: "2026-01-01", journal: "ACH", reference: "A", lines: [{ account: "401", third: "T", credit: 20, debit: 0 }] },
+  { id: 2, date: "2026-01-02", journal: "BAN", reference: "B", lines: [{ account: "401", third: "T", debit: 20, credit: 0 }] },
+];
+const staleProposal = buildThirdPartyReconciliation(staleStore).proposals[0];
+const staleRecord = applyThirdPartyLettrage(staleStore, staleProposal);
+staleStore.entries[0].lines[0].third = "Autre tiers";
+const staleReport = buildThirdPartyReconciliation(staleStore);
+assert.equal(staleReport.totals.staleLinkCount, 1, "un lettrage devenu incohérent est neutralisé");
+assert.equal(staleReport.totals.openDebitByCurrency.XOF, 20);
+assert.equal(staleReport.totals.openCreditByCurrency.XOF, 20);
+assert.equal(staleRecord.status, "active", "l'historique est conservé pour audit");
+
+console.log("✓ Lettrage tiers : ventilation partielle, séparation des tiers/devises, validation, annulation, intégrité des liens et conservation des écritures.");

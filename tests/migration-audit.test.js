@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { buildMigrationAudit, migrationAuditRows } from "../js/plans/migration-audit.js";
 
-const sourcePlan = { id: "source", accounts: [["401", "Fournisseurs", "liability"], ["600", "Achats", "expense"]] };
+const sourcePlan = { id: "source", accounts: [["401", "Fournisseurs", "liability"], ["402", "Autres fournisseurs", "liability"], ["600", "Achats", "expense"]] };
 const targetPlan = { id: "target", accounts: [["4010", "Fournisseurs", "liability"], ["601", "Achats", "expense"], ["602", "Frais", "expense"]] };
 const beforeEntries = [{ id: 1, lines: [
   { account: "401", debit: 0, credit: 100 },
@@ -28,15 +28,15 @@ assert.equal(report.accounts.find((row) => row.code === "601").expectedDebit, 60
 assert.equal(migrationAuditRows(report).length, 3);
 
 const manyToOne = { ...mapping, rules: [
-  { relation: "many-to-one", sourceCodes: ["401", "600"], targetCodes: ["601"] },
+  { relation: "many-to-one", sourceCodes: ["401", "402"], targetCodes: ["4010"] },
 ] };
 const manyToOneReport = buildMigrationAudit({
-  beforeEntries: [{ id: 2, lines: [{ account: "401", debit: 30, credit: 0 }, { account: "600", debit: 70, credit: 0 }] }],
-  afterEntries: [{ id: 2, lines: [{ account: "601", debit: 100, credit: 0 }] }],
+  beforeEntries: [{ id: 2, lines: [{ account: "401", debit: 30, credit: 100 }, { account: "402", debit: 70, credit: 0 }] }],
+  afterEntries: [{ id: 2, lines: [{ account: "4010", debit: 100, credit: 100 }] }],
   sourcePlan, targetPlan, mapping: manyToOne,
 });
 assert.equal(manyToOneReport.status, "conforme");
-assert.equal(manyToOneReport.accounts.find((row) => row.code === "601").expectedDebit, 100);
+assert.equal(manyToOneReport.accounts.find((row) => row.code === "4010").expectedDebit, 100);
 
 const mismatch = buildMigrationAudit({
   beforeEntries,

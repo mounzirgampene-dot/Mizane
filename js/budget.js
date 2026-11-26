@@ -2,6 +2,7 @@
 import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildBudgetReport, validateBudgetLines } from "./budget-core.js";
+import { buildBudgetOutlook } from "./budget-outlook-core.js";
 
 const fiscalStart = () => store.settings.exerciceStart || new Date().getFullYear() + "-01-01";
 const fiscalEnd = () => store.settings.exerciceEnd || new Date().getFullYear() + "-12-31";
@@ -32,6 +33,7 @@ export function viewBudget() {
   const start = fiscalStart(), end = fiscalEnd();
   const accounts = accountOptions();
   const report = buildBudgetReport({ lines: plan.lines, entries: store.entries || [], startDate: start, endDate: end, currency: store.settings.currency });
+  const outlook = buildBudgetOutlook({ report, asOf: new Date().toISOString().slice(0, 10) });
   const accountMap = new Map(accounts.map(item => [String(item.code), item]));
   const total = report.ok ? report.totals : { budgetExpenses: 0, actualExpenses: 0, budgetIncome: 0, actualIncome: 0, netBudget: 0, netActual: 0, netVariance: 0 };
   const monthRows = report.ok ? report.months.map(month => {

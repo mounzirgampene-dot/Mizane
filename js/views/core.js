@@ -7,7 +7,7 @@ import { notifyDetectedAnomalies } from "../notifications.js";
 import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
 import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
 import { listLocalAccountingDocuments, getLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
-import { listCloudAccountingDocumentsForEntry, downloadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
+import { listCloudAccountingDocumentsForEntry, listCloudAccountingDocuments, downloadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -312,6 +312,12 @@ export function viewEntries() {
   const rows = [...store.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   $app.innerHTML = `
     <h1>Écritures (${rows.length})</h1>
+    <section class="card" id="accounting-document-vault">
+      <h2>Coffre documentaire — recherche globale</h2>
+      <p class="muted">Retrouvez les justificatifs par nom, type, date, tiers, référence, journal ou note. Les documents locaux restent propres à cet appareil ; les documents du coffre privé sont limités à l’entreprise active.</p>
+      <div class="row"><div><label for="accounting-document-search">Recherche</label><input id="accounting-document-search" type="search" placeholder="Facture, fournisseur, référence, journal…"></div><div><label for="accounting-document-type-filter">Type</label><select id="accounting-document-type-filter"><option value="">Tous les types</option><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option><option value="other">Autre</option></select></div></div>
+      <div id="accounting-document-results"><p class="muted">Chargement du coffre documentaire…</p></div>
+    </section>
     <div class="card table-wrap">
       ${rows.length === 0 ? `<p class="muted">Aucune écriture. <button class="small" data-act="demo">Charger la démo</button></p>` : `
       <table>
@@ -336,6 +342,21 @@ export function viewEntries() {
       <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
+  const vaultSearch=document.getElementById("accounting-document-search"),vaultType=document.getElementById("accounting-document-type-filter"),vaultResults=document.getElementById("accounting-document-results");
+  if(vaultSearch&&vaultType&&vaultResults){
+    Promise.all([listLocalAccountingDocuments().catch(()=>[]),listCloudAccountingDocuments().catch(error=>{vaultResults.innerHTML='<p class="warn">Coffre partagé indisponible : '+esc(error?.message||"erreur")+'</p>';return[];})]).then(([localDocs,cloudDocs])=>{
+      const documents=[...(cloudDocs||[]).map(doc=>({...doc,kind:"cloud"})),...(localDocs||[]).map(doc=>({...doc,kind:"local"}))];
+      const labels={supplier_invoice:"Facture fournisseur",customer_invoice:"Facture client",receipt:"Reçu / quittance",bank_statement:"Relevé bancaire",tax_document:"Document fiscal",contract:"Contrat",other:"Autre"};
+      const render=()=>{
+        const term=vaultSearch.value.trim().toLocaleLowerCase(),type=vaultType.value;
+        const filtered=documents.filter(doc=>(!type||doc.type===type)&&(!term||[doc.fileName,doc.type,doc.documentDate,doc.counterparty,doc.reference,doc.journal,doc.notes].some(value=>String(value||"").toLocaleLowerCase().includes(term))));
+        vaultResults.innerHTML=filtered.length?'<div class="table-wrap"><table><thead><tr><th>Document</th><th>Type</th><th>Date</th><th>Tiers</th><th>Référence</th><th>Journal</th><th>Stockage</th><th>Actions</th></tr></thead><tbody>'+filtered.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+esc(labels[doc.type]||"Autre")+'</td><td>'+esc(doc.documentDate||"—")+'</td><td>'+esc(doc.counterparty||"—")+'</td><td>'+esc(doc.reference||"—")+'</td><td>'+esc(doc.journal||"—")+'</td><td>'+(doc.kind==="cloud"?"Coffre entreprise":"Appareil")+'</td><td><button class="small secondary" data-vault-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-vault-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+'</tbody></table></div>':'<p class="muted">Aucun document ne correspond à la recherche.</p>';
+        vaultResults.querySelectorAll("[data-vault-download]").forEach(action=>action.addEventListener("click",async()=>{try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.vaultDownload):await getLocalAccountingDocument(action.dataset.vaultDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}catch(error){toast(error?.message||"Téléchargement impossible.");}}));
+        vaultResults.querySelectorAll("[data-vault-delete]").forEach(action=>action.addEventListener("click",async()=>{try{if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(action.dataset.vaultDelete);else await deleteLocalAccountingDocument(action.dataset.vaultDelete);toast("Pièce justificative supprimée.");router.render();}catch(error){toast(error?.message||"Suppression impossible.");}}));
+      };
+      vaultSearch.addEventListener("input",render);vaultType.addEventListener("change",render);render();
+    });
+  }
   $app.querySelectorAll("[data-accounting-documents]").forEach((button) => {
     button.addEventListener("click", async () => {
       const entryId=Number(button.dataset.accountingDocuments),entry=store.entries.find(item=>Number(item.id)===entryId);

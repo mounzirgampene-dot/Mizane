@@ -141,17 +141,19 @@ function dateScore(days) {
   if (!Number.isFinite(days) || days > 45) return -100;
   return days <= 1 ? 25 : days <= 7 ? 20 : days <= 30 ? 12 : 5;
 }
-function matchReason(amount, days, similarity) {
+function matchReason(amount, days, similarity, currencyKnown, dateKnown) {
   const reasons = [];
   if (amount != null) reasons.push("montant compatible");
   if (Number.isFinite(days)) reasons.push("date à " + Math.round(days) + " jour(s)");
   if (similarity > 0) reasons.push("libellé ou référence similaire");
+  if (!currencyKnown) reasons.push("devise non confirmée");
+  if (!dateKnown) reasons.push("date non confirmée");
   return reasons.join(" · ");
 }
 
 export function matchDocumentToRecords(facts, store) {
   const total = validAmount(facts?.total);
-  const currency = String(facts?.currency || store?.settings?.currency || "").trim().toUpperCase();
+  const currency = String(facts?.currency || "").trim().toUpperCase();
   const date = String(facts?.date || "");
   const searchText = [facts?.reference, facts?.counterparty].filter(Boolean).join(" ");
   const entryMatches = [];
@@ -160,19 +162,19 @@ export function matchDocumentToRecords(facts, store) {
     const days = date ? dayDistance(date, entry.date) : Infinity;
     if (Number.isFinite(days) && days > 45) continue;
     const amounts = entryAmounts(entry, store?.settings?.currency);
-    const comparable = amounts.filter(item => !currency || item.currency === currency);
-    if (currency && amounts.length && !comparable.length) continue;
+    const comparable = currency ? amounts.filter(item => item.currency === currency) : amounts.length === 1 ? amounts : [];
+    if ((currency && amounts.length && !comparable.length) || (!currency && amounts.length > 1)) continue;
     const bestAmount = total == null ? 0 : Math.max(-100, ...comparable.map(item => amountScore(total, item.amount)));
     if (bestAmount < 0) continue;
     const label = [entry.reference, ...(entry.lines || []).flatMap(line => [line.label, line.third])].filter(Boolean).join(" ");
     const similarity = textSimilarity(searchText, label);
-    const score = Math.max(0, bestAmount) + Math.max(0, dateScore(days)) + similarity;
+    const score = Math.max(0, bestAmount) + Math.max(0, dateScore(days)) + similarity - (currency ? 0 : 10) - (date ? 0 : 10);
     if (score < 35) continue;
     entryMatches.push({
       entryId: entry.id, date: entry.date, reference: entry.reference || "",
       amount: comparable.find(item => total != null && amountScore(total, item.amount) === bestAmount)?.amount ?? comparable[0]?.amount ?? null,
       currency: currency || comparable[0]?.currency || "", confidence: Math.min(99, score),
-      reason: matchReason(total, days, similarity),
+      reason: matchReason(total, days, similarity, Boolean(currency), Boolean(date)),
     });
   }
   entryMatches.sort((a, b) => b.confidence - a.confidence || Number(a.entryId) - Number(b.entryId));
@@ -181,22 +183,22 @@ export function matchDocumentToRecords(facts, store) {
   for (const session of store?.settings?.bankReconciliations || []) {
     for (let lineIndex = 0; lineIndex < (session.lines || []).length; lineIndex++) {
       const line = session.lines[lineIndex];
-      const lineCurrency = String(line.currency || store?.settings?.currency || "").trim().toUpperCase();
-      if (currency && lineCurrency && lineCurrency !== currency) continue;
+      const lineCurrency = String(line.currency || "").trim().toUpperCase();
+      if (currency && (!lineCurrency || lineCurrency !== currency)) continue;
       const days = date ? dayDistance(date, line.date) : Infinity;
       if (Number.isFinite(days) && days > 45) continue;
       const lineAmount = Math.abs(Number(line.amount) || 0);
       const amount = total == null ? 0 : amountScore(total, lineAmount);
       if (amount < 0 || (total == null && !searchText)) continue;
       const similarity = textSimilarity(searchText, line.label || "");
-      const score = Math.max(0, amount) + Math.max(0, dateScore(days)) + similarity;
+      const score = Math.max(0, amount) + Math.max(0, dateScore(days)) + similarity - (currency ? 0 : 10) - (date ? 0 : 10);
       if (score < 35) continue;
       bankMatches.push({
         sessionId: session.id || "", sourceFile: session.sourceFile || "Relevé bancaire",
         lineIndex, date: line.date, label: line.label || "", amount: lineAmount,
         currency: lineCurrency, status: line.status || "unmatched",
         matchedEntryIds: (line.matches || []).map(item => item.entryId).concat(line.match ? [line.match] : []),
-        confidence: Math.min(99, score), reason: matchReason(total, days, similarity),
+        confidence: Math.min(99, score), reason: matchReason(total, days, similarity, Boolean(currency && lineCurrency), Boolean(date)),
       });
     }
   }

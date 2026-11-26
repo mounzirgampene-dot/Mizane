@@ -106,9 +106,9 @@ export function viewDashboard(readOnly = false) {
     downloadBlob(new Blob(["\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-controle-comptable.csv");
   });
   document.getElementById("accounting-controls-xls")?.addEventListener("click", () => {
-    const table = $app.querySelector("#accounting-control-panel table");
-    if (!table) return toast("Aucune table de contrôle à exporter.");
-    exportXLS("Contrôle comptable — " + store.settings.companyName, table.outerHTML, "mizane-controle-comptable.xls");
+    const panel = $app.querySelector("#accounting-control-panel");
+    if (!panel) return toast("Aucun rapport de contrôle à exporter.");
+    exportXLS("Contrôle comptable — " + store.settings.companyName, panel.outerHTML, "mizane-controle-comptable.xls");
   });
   document.getElementById("accounting-controls-print")?.addEventListener("click", () => {
     const panel = $app.querySelector("#accounting-control-panel");

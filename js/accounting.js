@@ -28,6 +28,7 @@ export function newStore() {
       aiModel: "gemini-3.8-flash",
       aiEndpoint: "https://generativelanguage.googleapis.com/v1beta",
       customAccounts: [],
+      customPlans: [],
     },
     thirds: [],
     entries: [],

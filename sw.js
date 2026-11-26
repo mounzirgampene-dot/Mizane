@@ -54,6 +54,7 @@ const ASSETS = [
   "js/invoice.js",
   "js/print.js",
   "js/plans.js",
+  "js/plans/custom.js",
   "js/plans/syscohada.js",
   "js/plans/pcg.js",
   "js/plans/nct.js",

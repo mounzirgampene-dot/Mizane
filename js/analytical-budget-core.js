@@ -8,7 +8,6 @@ const validDate = value => {
   return d.toISOString().slice(0,10)===value;
 };
 const currencyOf=(value,fallback)=>String(value||fallback||"MAD").trim().toUpperCase();
-const dimensionKey=(type,id)=>String(type||"")+":"+String(id||"");
 
 export function validateAnalyticalBudgets(lines=[],{centers=[],projects=[],accounts=[],baseCurrency="MAD"}={}){
  const errors=[],normalized=[],seen=new Set();

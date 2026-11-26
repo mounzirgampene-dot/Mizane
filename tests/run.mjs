@@ -1944,7 +1944,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/postSupplierInvoiceJournalEntry/);
   assert.match(purchasesUiSource,/ACHAT FOURNISSEUR/);
   assert.match(purchaseAccountingSource,/accountMatchesPurpose/);
-  assert.match(serviceWorkerSource,/mizane-v95/g);
+  assert.match(serviceWorkerSource,/mizane-v96/g);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
@@ -2154,7 +2154,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v95/);
+  assert.match(serviceWorkerSource,/mizane-v96/);
 });
 
 
@@ -2644,5 +2644,6 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
   assert.match(taxDocumentManageFunctionSource, /\.remove\(storagePaths\.slice\(/);
 });
 
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/accounting-controls.js"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

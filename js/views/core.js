@@ -5,6 +5,7 @@ import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { notifyDetectedAnomalies } from "../notifications.js";
 import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
+import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -15,6 +16,8 @@ export function viewDashboard(readOnly = false) {
   const is = incomeStatement(store, exerciceStart, exerciceEnd);
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
   const anomalies = checkAnomalies(store);
+  const controlReport = buildAccountingControlReport(store, { start: exerciceStart, end: exerciceEnd });
+  const controlRows = accountingControlRows(controlReport);
   if (anomalies.length) notifyDetectedAnomalies(anomalies).catch(error => console.warn("Signalement des anomalies comptables impossible :", error?.message || error));
   const cash = cashBalance(store, "", new Date().toISOString().slice(0, 10));
   const balanced = Math.abs(tb.totals.debit - tb.totals.credit) < 0.001;
@@ -66,6 +69,28 @@ export function viewDashboard(readOnly = false) {
       <p class="muted">Les montants commerciaux restent séparés par devise. Les alertes de stock ne sont calculées que pour les articles disposant d’un seuil minimum renseigné.</p>
     </section>
     <div class="card">
+          <section class="card" id="accounting-control-panel">
+      <h2>Contrôle comptable automatisé</h2>
+      <p class="muted">Analyse en lecture seule de l’exercice ${esc(exerciceStart)} → ${esc(exerciceEnd)}. Les alertes sont des signaux de contrôle à examiner ; elles ne modifient aucune écriture.</p>
+      <div class="grid cols-3">
+        <div class="kpi"><div class="value">${controlReport.bySeverity.critical}</div><div class="label">Anomalies critiques</div></div>
+        <div class="kpi"><div class="value">${controlReport.bySeverity.warning}</div><div class="label">Points à vérifier</div></div>
+        <div class="kpi"><div class="value">${controlReport.bySeverity.info}</div><div class="label">Informations / vigilance</div></div>
+      </div>
+      <p class="${controlReport.totals.balanced ? "ok-msg" : "errors"}">${controlReport.totals.balanced ? "✓ Totaux débit/crédit équilibrés sur la période." : "⚠ Écart de balance : " + money(controlReport.totals.debit) + " / " + money(controlReport.totals.credit)}</p>
+      <p class="muted">${controlReport.totals.periodEntries} écriture(s) sur la période · ${controlReport.totals.accounts} compte(s) mouvementé(s) · ${controlReport.totals.journals} journal(aux) · ${controlReport.totals.outOfPeriodCount} écriture(s) hors période détectée(s).</p>
+      ${controlReport.warnings.length ? '<div class="table-wrap"><table><thead><tr><th>Gravité</th><th>Date</th><th>Journal</th><th>Écriture</th><th>Anomalie</th></tr></thead><tbody>' + controlReport.warnings.slice(0, 20).map(item => '<tr><td>' + esc(item.severity === "critical" ? "Critique" : item.severity === "warning" ? "À vérifier" : "Information") + '</td><td>' + esc(item.date || "—") + '</td><td>' + esc(item.journal || "—") + '</td><td>' + esc(item.entryId ?? "—") + '</td><td>' + esc(item.message) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="ok-msg">Aucune anomalie détectée par les contrôles activés.</p>'}
+      <h3>Contrôle par journal</h3>
+      <div class="table-wrap"><table><thead><tr><th>Journal</th><th>Écritures</th><th class="num">Débit</th><th class="num">Crédit</th><th>État</th></tr></thead><tbody>${controlReport.journals.map(row => '<tr><td>' + esc(row.journal) + '</td><td>' + row.entries + '</td><td class="num">' + money(row.debit) + '</td><td class="num">' + money(row.credit) + '</td><td>' + (row.balanced ? "Équilibré" : "Écart : " + money(row.difference)) + '</td></tr>').join("") || '<tr><td colspan="5" class="muted">Aucun mouvement sur la période.</td></tr>'}</tbody></table></div>
+      <details style="margin-top:12px"><summary>Soldes et mouvements par compte (${controlReport.balances.length})</summary><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Type</th><th class="num">Débit</th><th class="num">Crédit</th><th class="num">Solde</th><th>Contrôle</th></tr></thead><tbody>${controlReport.balances.map(row => '<tr><td>' + esc(row.code) + '</td><td>' + esc(row.type) + '</td><td class="num">' + money(row.debit) + '</td><td class="num">' + money(row.credit) + '</td><td class="num">' + money(row.balance) + '</td><td>' + (row.abnormalSide ? "Sens inhabituel — à examiner" : "—") + '</td></tr>').join("")}</tbody></table></div></details>
+      <div class="actions">
+        <button class="secondary" id="accounting-controls-csv">Exporter les alertes CSV</button>
+        <button class="secondary" id="accounting-controls-xls">Exporter le rapport Excel</button>
+        <button class="secondary" id="accounting-controls-print">Imprimer le rapport / PDF</button>
+      </div>
+      <p class="muted">Les soldes de sens inhabituel sont signalés à titre indicatif : les comptes correcteurs et situations particulières nécessitent une appréciation comptable. Le contrôle ne remplace pas la révision par un professionnel.</p>
+    </section>
+    <div class="card">
       <h2>État de la comptabilité</h2>
       <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée" : "⚠ Balance déséquilibrée : " + money(tb.totals.debit) + " / " + money(tb.totals.credit)}</p>
       <p class="muted">Plan comptable : ${esc(store.settings.plan)} · La trésorerie affichée correspond au solde des comptes de classe 5 à la date du jour.</p>
@@ -76,6 +101,20 @@ export function viewDashboard(readOnly = false) {
       </div>
     </div>
   `;
+  document.getElementById("accounting-controls-csv")?.addEventListener("click", () => {
+    const rows = controlRows.length ? controlRows : [{ gravite: "—", type: "aucune_anomalie", date: "", journal: "", ecriture: "", compte: "", anomalie: "Aucune anomalie détectée." }];
+    downloadBlob(new Blob(["\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-controle-comptable.csv");
+  });
+  document.getElementById("accounting-controls-xls")?.addEventListener("click", () => {
+    const panel = $app.querySelector("#accounting-control-panel");
+    if (!panel) return toast("Aucun rapport de contrôle à exporter.");
+    exportXLS("Contrôle comptable — " + store.settings.companyName, panel.outerHTML, "mizane-controle-comptable.xls");
+  });
+  document.getElementById("accounting-controls-print")?.addEventListener("click", () => {
+    const panel = $app.querySelector("#accounting-control-panel");
+    if (!panel) return;
+    printHTML("Contrôle comptable — " + store.settings.companyName, panel.innerHTML);
+  });
 }
 function lineRowHTML(l, i) {
   return `

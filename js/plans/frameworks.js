@@ -134,7 +134,7 @@ export const ACCOUNTING_FRAMEWORKS = {
     effectiveFrom: "2026-01-01",
     sourceUrl: "https://www.acra.gov.sg/regulations/accounting-standards-financial-reporting-surveillance/accounting-standards/",
     sourceLabel: "ACRA — Guide to accounting standards",
-    note: "ACRA publie les cadres et leurs périodes d'application. Les normes de reporting ne constituent pas une nomenclature de comptes universelle."
+    note: "ACRA publie les cadres et leurs périodes d'application. Les normes de reporting ne constituent pas un plan de comptes universel."
   },
   "philippines-pfrs": {
     id: "philippines-pfrs",

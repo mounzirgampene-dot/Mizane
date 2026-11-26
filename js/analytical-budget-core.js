@@ -106,9 +106,9 @@ export function buildAnalyticalBudgetReport({lines=[],entries=[],allocations=[],
  });
  const alerts=rows.filter(x=>["warning","critical"].includes(x.severity)).map(x=>({key:x.key,dimensionName:x.dimensionName,dimensionType:x.dimensionType,currency:x.currency,account:x.account,type:x.type,severity:x.severity,projectedVariance:x.projectedVariance,forecastExecutionRate:x.forecastExecutionRate}));
  const monthly=months.map(month=>{
-  const subset=rows.flatMap(r=>r.monthly.filter(x=>x.month===month).map(x=>({...x,type:r.type,currency:r.currency})));
+  const subset=rows.flatMap(r=>r.monthly.filter(x=>x.month===month).map(x=>({...x,type:r.type,currency:r.currency,dimensionType:r.dimensionType})));
   const byAxisCurrency={};
-  for(const x of subset){const key=x.type+"::"+x.currency;if(!byAxisCurrency[key])byAxisCurrency[key]={type:x.type,currency:x.currency,budget:0,actual:0};byAxisCurrency[key].budget=round2(byAxisCurrency[key].budget+x.budget);byAxisCurrency[key].actual=round2(byAxisCurrency[key].actual+x.actual);}
+  for(const x of subset){const key=x.dimensionType+"::"+x.type+"::"+x.currency;if(!byAxisCurrency[key])byAxisCurrency[key]={dimensionType:x.dimensionType,type:x.type,currency:x.currency,budget:0,actual:0};byAxisCurrency[key].budget=round2(byAxisCurrency[key].budget+x.budget);byAxisCurrency[key].actual=round2(byAxisCurrency[key].actual+x.actual);}
   return{month,byAxisCurrency};
  });
  return{ok:true,errors:[],period:{startDate,endDate,asOf},months:monthly,dimensions,currencies,lines:rows,alerts,elapsedMonths:months.filter(m=>m<=asOf.slice(0,7)).length,remainingMonths:months.filter(m=>m>asOf.slice(0,7)).length};

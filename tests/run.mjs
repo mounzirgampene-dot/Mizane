@@ -2665,7 +2665,7 @@ test("assistant IA cloud : accès strictement réservé aux administrateurs et c
   assert.match(companyAiFunctionSource, /const AI_ALLOWED_ROLES = new Set\(\["admin","accountant"\]\)/);
   assert.match(companyAiFunctionSource, /!AI_ALLOWED_ROLES\.has\(member\.role\)/);
   assert.doesNotMatch(companyAiFunctionSource, /\["admin","accountant","reader"\]/);
-  assert.match(companyAiFunctionSource, /action==="configure"[\s\S]*AI_ALLOWED_ROLES\.has\(member\.role\)/);
+  assert.ok(companyAiFunctionSource.indexOf("!AI_ALLOWED_ROLES.has(member.role)") < companyAiFunctionSource.indexOf("if(action===\"configure\")"));
   assert.match(companyAiFunctionSource, /mizane_get_company_ai_secret/);
 });
 

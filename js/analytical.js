@@ -44,14 +44,14 @@ export function viewAnalytical() {
       <section class="card kpi"><div class="label">Résultat analytique</div><div class="value">${money(report.totals.result)}</div></section>
     </div>
     <section class="card">
-      <section class="card">
       <h2>Projets, activités et départements</h2>
       <p class="muted">Créez des axes analytiques complémentaires aux centres. La quantité de référence est saisie explicitement pour calculer les coûts et produits unitaires.</p>
       <div class="row"><div><label>Nom du projet / activité</label><input id="aa-project-name" maxlength="120" placeholder="Ex. Projet A"></div><div><label>Activité</label><input id="aa-project-activity" maxlength="100" placeholder="Ex. Fabrication"></div><div><label>Département</label><input id="aa-project-department" maxlength="100" placeholder="Ex. Production"></div></div>
       <div class="row"><div><label>Quantité de référence</label><input id="aa-project-quantity" type="number" min="0" step="0.001" placeholder="Ex. 500"></div><div><label>Unité</label><input id="aa-project-unit" maxlength="30" placeholder="pièces, heures, tonnes…"></div><div class="nogrow"><button id="aa-project-add">Créer le projet</button></div></div>
       <div class="table-wrap"><table><thead><tr><th>Projet / activité</th><th>Département</th><th class="num">Quantité</th><th>Unité</th><th></th></tr></thead><tbody>${projects.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong><div class="muted">'+esc(p.activity||"")+'</div></td><td>'+esc(p.department||"—")+'</td><td class="num">'+esc(p.quantity??"—")+'</td><td>'+esc(p.unitLabel||"—")+'</td><td><button class="danger small" data-aa-project-delete="'+esc(p.id)+'">Supprimer</button></td></tr>').join("")||'<tr><td colspan="5" class="muted">Aucun projet défini.</td></tr>'}</tbody></table></div>
     </section>
-    <h2>Centres analytiques</h2>
+    <section class="card">
+      <h2>Centres analytiques</h2>
       <p class="muted">Créez des centres de coûts, de profit ou mixtes : services, départements, projets, agences ou activités.</p>
       <div class="row"><div><label>Nom du centre</label><input id="aa-center-name" maxlength="100" placeholder="Ex. Service commercial"></div><div><label>Type</label><select id="aa-center-type"><option value="cost">Centre de coûts</option><option value="profit">Centre de profit</option><option value="mixed">Centre mixte</option></select></div><div class="nogrow"><button id="aa-center-add">Créer le centre</button></div></div>
       ${centers.length ? '<div class="table-wrap"><table><thead><tr><th>Centre</th><th>Type</th><th>Affectations</th></tr></thead><tbody>' + centers.map(center => '<tr><td>' + esc(center.name) + '</td><td>' + typeLabel(center.type) + '</td><td>' + allocations.filter(item => item.centerId === center.id).length + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="muted">Aucun centre créé.</p>'}
@@ -63,13 +63,13 @@ export function viewAnalytical() {
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte</th><th>Centre</th><th>Projet / activité</th><th class="num">Part</th><th>Action</th></tr></thead><tbody>${allocationRows || '<tr><td colspan="6" class="muted">Aucune affectation enregistrée.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card">
-      <section class="card">
       <h2>Coûts, marges et résultats par projet / activité</h2>
       <p class="muted">Les montants proviennent des affectations rattachées aux projets. Le coût unitaire correspond aux charges affectées divisées par la quantité de référence renseignée.</p>
       <div class="table-wrap"><table><thead><tr><th>Projet</th><th>Devise</th><th class="num">Produits</th><th class="num">Charges</th><th class="num">Résultat</th><th class="num">Coût / unité</th><th class="num">Produit / unité</th><th class="num">Marge</th></tr></thead><tbody>${projectReport.rows.map(r=>'<tr><td><strong>'+esc(r.name)+'</strong><div class="muted">'+esc(r.activity||"")+' · '+esc(r.department||"")+'</div></td><td>'+esc(r.currency)+'</td><td class="num">'+money(r.income)+'</td><td class="num">'+money(r.expenses)+'</td><td class="num">'+money(r.result)+'</td><td class="num">'+(r.costPerUnit===null?"—":money(r.costPerUnit))+'</td><td class="num">'+(r.incomePerUnit===null?"—":money(r.incomePerUnit))+'</td><td class="num">'+(r.marginRate===null?"—":r.marginRate+" %")+'</td></tr>').join("")||'<tr><td colspan="8" class="muted">Aucune affectation liée à un projet pour cette période.</td></tr>'}</tbody></table></div>
       <div class="row"><div><label>Début période comparée</label><input id="aa-compare-start" type="date"></div><div><label>Fin période comparée</label><input id="aa-compare-end" type="date"></div><div class="nogrow"><button id="aa-compare-run">Comparer les périodes</button></div></div><div id="aa-compare-result" class="muted" aria-live="polite">Choisissez une période de comparaison.</div>
     </section>
-    <h2>Résultats par centre</h2>
+    <section class="card">
+      <h2>Résultats par centre</h2>
       <div class="table-wrap"><table><thead><tr><th>Centre</th><th class="num">Produits</th><th class="num">Charges</th><th class="num">Résultat</th><th>Affectations</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">Aucun résultat analytique pour cette période.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card"><h2>Clés de répartition réutilisables</h2><p class="muted">Une clé définit une ventilation à 100 % entre les centres affichés. Son application crée des affectations traçables sans modifier les écritures générales.</p>

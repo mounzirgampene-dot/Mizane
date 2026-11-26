@@ -466,7 +466,7 @@ function openDocument(type, options = {}) {
       if (matchingError) { box.querySelector("#pd-error").textContent = matchingError; return; }
     }
     const expectedDeliveryDate=type==="order"?box.querySelector("#pd-expected-delivery").value:"";
-    if(type==="order"&&expectedDeliveryDate&&(!/^\\d{4}-\\d{2}-\\d{2}$/.test(expectedDeliveryDate)||Number.isNaN(Date.parse(expectedDeliveryDate+"T00:00:00Z")))){box.querySelector("#pd-error").textContent="La date prévisionnelle de livraison est invalide.";return;}
+    if(type==="order"&&expectedDeliveryDate&&(!/^\d{4}-\d{2}-\d{2}$/.test(expectedDeliveryDate)||Number.isNaN(Date.parse(expectedDeliveryDate+"T00:00:00Z")))){box.querySelector("#pd-error").textContent="La date prévisionnelle de livraison est invalide.";return;}
     const supplier=p.suppliers.find(item=>Number(item.id)===supplierId);
     const doc = { id:p.nextId++, type, number:newNumber(type), supplierId, supplierName:supplierName(supplierId), orderId, date:box.querySelector("#pd-date").value || today(), ...(type==="invoice"?{dueDate:box.querySelector("#pd-due-date").value,paymentTermsDays:Number(supplier?.paymentTermsDays??30)}:{}), ...(type==="order"?{expectedDeliveryDate:expectedDeliveryDate||null,deliveryNote:box.querySelector("#pd-delivery-note").value.trim(),supplierLeadTimeDays:supplier?.leadTimeDays??null}:{}), reference:box.querySelector("#pd-reference").value.trim(), currency:box.querySelector("#pd-currency").value.trim().toUpperCase() || store.settings.currency || "MAD", lines:lines.map(line=>({...line,receivedBase:0,stockPostedBase:0})), total:totals(lines), status:options.fromReplenishment ? "draft" : type === "order" ? "ordered" : "draft", ...(options.fromReplenishment ? { origin:"stock_replenishment", replenishmentCreatedAt:new Date().toISOString() } : {}), createdAt:new Date().toISOString() };
     if (type === "invoice") {
@@ -521,7 +521,7 @@ function openOrderDeliveryEditor(doc) {
   const {box}=modal(html);
   box.querySelector('#pde-save').addEventListener('click',()=>{
     const date=box.querySelector('#pde-date').value;
-    if(date&&(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z')))){box.querySelector('#pde-error').textContent='La date prévisionnelle est invalide.';return;}
+    if(date&&(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z')))){box.querySelector('#pde-error').textContent='La date prévisionnelle est invalide.';return;}
     const previous=doc.expectedDeliveryDate||null; doc.expectedDeliveryDate=date||null; doc.deliveryNote=box.querySelector('#pde-note').value.trim();
     doc.deliveryUpdates||=[]; doc.deliveryUpdates.push({previousDate:previous,newDate:doc.expectedDeliveryDate,updatedAt:new Date().toISOString()});
     persist('Suivi de livraison mis à jour.'); box.closest('dialog').close(); renderList();

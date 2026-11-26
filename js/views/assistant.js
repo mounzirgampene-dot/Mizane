@@ -12,6 +12,7 @@ import { saveStore, exportJSON, importJSON, resetStore, demoData, downloadBlob }
 import { validateCustomPlan, createCustomPlan } from "../plans/custom.js";
 import { validatePlanMapping, dryRunPlanMigration } from "../plans/mapping.js";
 import { suggestAccountMatches, buildConversionRules } from "../plans/conversion-assistant.js";
+import { applyPlanMigration, undoPlanMigration } from "../plans/migration.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -167,7 +168,9 @@ export function viewSettings() {
   const defaultConversionTarget = conversionPlans.find((p) => p.id !== defaultConversionSource)?.id || "";
   const conversionOptions = conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionSource ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("");
   const conversionMappings = (s.planMappings || []).map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + ' — ' + esc(m.sourcePlanId) + ' → ' + esc(m.targetPlanId) + ' (' + esc(m.status) + ')</option>').join("");
-  const conversionCard = '<div class="card" id="accounting-conversion-card"><h2>Assistant de conversion entre référentiels</h2><p class="muted">Préparez un rapprochement entre deux plans. Les suggestions reposent sur le code, le libellé et le type comptable ; elles ne constituent pas une équivalence juridique ou comptable certifiée. Toute règle doit être vérifiée et approuvée explicitement.</p><div class="row"><div><label>Plan source</label><select id="conversion-source">' + conversionOptions + '</select></div><div><label>Plan cible</label><select id="conversion-target">' + conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionTarget ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("") + '</select></div><div class="nogrow"><button id="conversion-prepare">Analyser les comptes</button></div></div><div id="conversion-suggestions" style="margin-top:12px"></div><div class="row" style="margin-top:14px"><div><label>Nom du rapprochement</label><input id="conversion-label" maxlength="120" placeholder="Ex. SYSCOHADA vers PCG"></div><div class="nogrow"><button id="conversion-save" disabled>Enregistrer en brouillon</button></div></div><hr><h3>Rapprochements enregistrés</h3><div class="row"><div><label>Rapprochement</label><select id="conversion-mapping">' + conversionMappings + '</select></div><div class="nogrow"><button class="secondary" id="conversion-approve">Approuver les règles</button></div><div class="nogrow"><button id="conversion-preview">Simuler la conversion</button></div></div><div id="conversion-result" style="margin-top:12px"></div></div>';
+  const activePlanMigration = [...(s.planMigrationHistory || [])].reverse().find((item) => item.status === "applied");
+  const migrationHistoryHtml = activePlanMigration ? '<div class="card" style="margin-top:12px"><strong>Migration récente : </strong>' + esc(activePlanMigration.mappingLabel) + '<p class="muted">' + esc(activePlanMigration.sourcePlanId) + ' → ' + esc(activePlanMigration.targetPlanId) + ' · ' + activePlanMigration.entryCount + ' écriture(s) · ' + esc(activePlanMigration.appliedAt) + '</p><button class="secondary" id="conversion-undo">Annuler la dernière migration et restaurer les écritures</button></div>' : '<p class="muted" style="margin-top:12px">Aucune migration appliquée récemment.</p>';
+  const conversionCard = '<div class="card" id="accounting-conversion-card"><h2>Assistant de conversion entre référentiels</h2><p class="muted">Préparez un rapprochement entre deux plans. Les suggestions reposent sur le code, le libellé et le type comptable ; elles ne constituent pas une équivalence juridique ou comptable certifiée. Toute règle doit être vérifiée et approuvée explicitement.</p><div class="row"><div><label>Plan source</label><select id="conversion-source">' + conversionOptions + '</select></div><div><label>Plan cible</label><select id="conversion-target">' + conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionTarget ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("") + '</select></div><div class="nogrow"><button id="conversion-prepare">Analyser les comptes</button></div></div><div id="conversion-suggestions" style="margin-top:12px"></div><div class="row" style="margin-top:14px"><div><label>Nom du rapprochement</label><input id="conversion-label" maxlength="120" placeholder="Ex. SYSCOHADA vers PCG"></div><div class="nogrow"><button id="conversion-save" disabled>Enregistrer en brouillon</button></div></div><hr><h3>Rapprochements enregistrés</h3><div class="row"><div><label>Rapprochement</label><select id="conversion-mapping">' + conversionMappings + '</select></div><div class="nogrow"><button class="secondary" id="conversion-approve">Approuver les règles</button></div><div class="nogrow"><button id="conversion-preview">Simuler la conversion</button></div></div><div id="conversion-result" style="margin-top:12px"></div>' + migrationHistoryHtml + '</div>';
 
   $app.innerHTML = `
     <h1>Paramètres</h1>
@@ -305,9 +308,41 @@ export function viewSettings() {
       const source = getConversionPlan(mapping.sourcePlanId), target = getConversionPlan(mapping.targetPlanId);
       const result = dryRunPlanMigration({ entries: store.entries || [], sourcePlan: source, targetPlan: target, mapping });
       const report = { mapping: mapping.label, generatedAt: new Date().toISOString(), sourceEntries: result.sourceEntryCount, migratedEntries: result.migratedEntryCount, blockedEntries: result.blockedEntryCount, canApply: result.canApply, errors: result.errors, warnings: result.warnings, unmapped: result.unmapped, entries: result.entries };
-      document.getElementById("conversion-result").innerHTML = '<p><strong>Résultat de la simulation</strong> — ' + result.migratedEntryCount + ' écriture(s) simulée(s), ' + result.blockedEntryCount + ' bloquée(s), ' + result.unmapped.length + ' compte(s) non rapproché(s).</p>' + (result.canApply ? '<p class="ok-msg">Contrôles réussis : aucune modification n’a été appliquée aux écritures originales.</p>' : '<p class="warn">Conversion incomplète : ne procédez pas à une migration. Corrigez les règles et les anomalies ci-dessous.</p>') + (result.errors.length ? '<ul class="errors">' + result.errors.slice(0, 30).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + (result.warnings.length ? '<ul class="muted">' + result.warnings.slice(0, 20).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + '<div class="actions"><button class="secondary" id="conversion-export-report">Exporter le rapport JSON</button></div>';
+      document.getElementById("conversion-result").innerHTML = '<p><strong>Résultat de la simulation</strong> — ' + result.migratedEntryCount + ' écriture(s) simulée(s), ' + result.blockedEntryCount + ' bloquée(s), ' + result.unmapped.length + ' compte(s) non rapproché(s).</p>' + (result.canApply ? '<p class="ok-msg">Contrôles réussis : toutes les écritures sont équilibrées. Aucune modification n’a encore été appliquée.</p><button id="conversion-apply">Appliquer la migration en toute sécurité</button>' : '<p class="warn">Conversion incomplète : aucune migration possible. Corrigez les règles et les anomalies ci-dessous.</p>') + (result.errors.length ? '<ul class="errors">' + result.errors.slice(0, 30).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + (result.warnings.length ? '<ul class="muted">' + result.warnings.slice(0, 20).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + '<div class="actions"><button class="secondary" id="conversion-export-report">Exporter le rapport JSON</button></div>';
       document.getElementById("conversion-export-report").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), "mizane-simulation-conversion.json"));
+      const applyButton = document.getElementById("conversion-apply");
+      if (applyButton) applyButton.addEventListener("click", () => {
+        if (!confirm("CONFIRMATION DE MIGRATION\\n\\nLes " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
+        const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+        try {
+          const applied = applyPlanMigration(store, { sourcePlan: source, targetPlan: target, mapping });
+          if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : la migration a été annulée en mémoire. Libérez de l'espace et exportez vos données.");
+          refreshPlan();
+          toast("Migration appliquée : " + applied.migratedEntryCount + " écriture(s) convertie(s).");
+          router.render();
+        } catch (error) {
+          store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan();
+          document.getElementById("conversion-result").insertAdjacentHTML("beforeend", '<p class="errors">' + esc(error.message) + '</p>');
+        }
+      });
     } catch (error) { document.getElementById("conversion-result").innerHTML = '<p class="errors">' + esc(error.message) + '</p>'; }
+  });
+
+  const undoMigrationButton = document.getElementById("conversion-undo");
+  if (undoMigrationButton) undoMigrationButton.addEventListener("click", () => {
+    if (!activePlanMigration) return;
+    if (!confirm("Annuler la migration " + activePlanMigration.mappingLabel + " et restaurer exactement les écritures d'origine ? Cette action est possible uniquement si les écritures n'ont pas changé depuis la migration.")) return;
+    const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+    try {
+      const undone = undoPlanMigration(store, activePlanMigration.id);
+      if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : le retour arrière a été annulé.");
+      refreshPlan();
+      toast("Retour arrière effectué : " + undone.restoredEntryCount + " écriture(s) restaurée(s).");
+      router.render();
+    } catch (error) {
+      store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan();
+      toast(error.message);
+    }
   });
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);

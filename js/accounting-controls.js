@@ -35,11 +35,13 @@ export function buildAccountingControlReport(store, options = {}) {
     const totals = entryTotals({ lines });
     if (Math.abs(totals.debit - totals.credit) > 0.001) add("desequilibre", "critical", entry, "Écriture non équilibrée : débit " + totals.debit + " / crédit " + totals.credit + ".");
     if (inRange) { totalDebit += totals.debit; totalCredit += totals.credit; }
-    const journal = journalTotals.get(String(entry?.journal || "—")) || { journal: String(entry?.journal || "—"), entries: 0, debit: 0, credit: 0 };
-    journal.entries++;
-    journal.debit += totals.debit;
-    journal.credit += totals.credit;
-    journalTotals.set(journal.journal, journal);
+    if (inRange) {
+      const journal = journalTotals.get(String(entry?.journal || "—")) || { journal: String(entry?.journal || "—"), entries: 0, debit: 0, credit: 0 };
+      journal.entries++;
+      journal.debit += totals.debit;
+      journal.credit += totals.credit;
+      journalTotals.set(journal.journal, journal);
+    }
 
     const normalized = lines.map(line => ({
       account: String(line?.account || "").trim(),
@@ -57,10 +59,12 @@ export function buildAccountingControlReport(store, options = {}) {
         continue;
       }
       const debit = Number(line?.debit) || 0, credit = Number(line?.credit) || 0;
-      const row = accountMovements.get(code) || { code, debit: 0, credit: 0, type: accountType(store, code) };
-      row.debit += debit;
-      row.credit += credit;
-      accountMovements.set(code, row);
+      if (inRange) {
+        const row = accountMovements.get(code) || { code, debit: 0, credit: 0, type: accountType(store, code) };
+        row.debit += debit;
+        row.credit += credit;
+        accountMovements.set(code, row);
+      }
       if (debit > 0 && credit > 0) add("double_sens", "critical", entry, "Ligne " + (index + 1) + " : débit et crédit sont renseignés simultanément.", { account: code });
       if (debit < 0 || credit < 0) add("montant_negatif", "critical", entry, "Ligne " + (index + 1) + " : montant négatif détecté.", { account: code });
       if (!String(line?.label || "").trim()) add("libelle_absent", "info", entry, "Ligne " + (index + 1) + " sans libellé explicatif.", { account: code });

@@ -507,6 +507,21 @@ function openSupplierDueDateEditor(invoice) {
   const {box}=modal(`<h2>Modifier l’échéance — ${esc(invoice.number)}</h2><p class="muted">Cette modification ajuste le suivi de trésorerie sans modifier l’écriture comptable.</p><label>Nouvelle date d’échéance</label><input id="psde-date" type="date" value="${esc(invoice.dueDate||invoice.date||today())}"><div id="psde-error" class="errors"></div><div class="actions"><button id="psde-save">Enregistrer l’échéance</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#psde-save").addEventListener("click",()=>{const value=box.querySelector("#psde-date").value;if(!addSupplierPaymentTerms(value,0)){box.querySelector("#psde-error").textContent="Saisissez une date d’échéance valide.";return;}invoice.dueDate=value;invoice.dueDateUpdatedAt=new Date().toISOString();persist("Échéance fournisseur mise à jour.");box.closest("dialog").close();openDetail(invoice.id);});
 }
+function openOrderDeliveryEditor(doc) {
+  const html = '<h2>Prévision de livraison — '+esc(doc.number)+'</h2>'+
+    '<div class="grid cols-2"><div><label>Date prévisionnelle</label><input id="pde-date" type="date" value="'+esc(doc.expectedDeliveryDate||'')+'"></div>'+
+    '<div><label>Consignes / suivi</label><input id="pde-note" maxlength="240" value="'+esc(doc.deliveryNote||'')+'"></div></div>'+
+    '<p class="muted">Cette modification actualise le suivi interne uniquement. Elle ne contacte pas le fournisseur.</p>'+
+    '<div id="pde-error" class="errors"></div><div class="actions"><button id="pde-save">Enregistrer le suivi</button><button class="secondary" data-close>Annuler</button></div>';
+  const {box}=modal(html);
+  box.querySelector('#pde-save').addEventListener('click',()=>{
+    const date=box.querySelector('#pde-date').value;
+    if(date&&(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)||Number.isNaN(Date.parse(date+'T00:00:00Z')))){box.querySelector('#pde-error').textContent='La date prévisionnelle est invalide.';return;}
+    const previous=doc.expectedDeliveryDate||null; doc.expectedDeliveryDate=date||null; doc.deliveryNote=box.querySelector('#pde-note').value.trim();
+    doc.deliveryUpdates||=[]; doc.deliveryUpdates.push({previousDate:previous,newDate:doc.expectedDeliveryDate,updatedAt:new Date().toISOString()});
+    persist('Suivi de livraison mis à jour.'); box.closest('dialog').close(); renderList();
+  });
+}
 function openDetail(id) {
   const doc = data().documents.find(item => item.id === id);
   if (!doc) return;
@@ -525,15 +540,19 @@ function openDetail(id) {
       doc.orderId ? linkedReceived : num(line.receivedBase);
     return sum + Math.max(0,line.baseQuantity - received);
   },0);
+  const orderTracking=doc.type==="order"?summarizePurchaseOrder(doc,today()):null;
+  const receiptHistoryRows=(doc.receiptHistory||[]).map(receipt=>"<tr><td>"+esc(receipt.date||"—")+"</td><td>"+esc(new Date(receipt.recordedAt||receipt.date||Date.now()).toLocaleString("fr-FR"))+"</td><td>"+(receipt.lines||[]).map(line=>esc(product(line.productId)?.name||line.productId)+" : "+round(line.quantity)).join("<br>")+"</td></tr>").join("");
   const creditNoteRows=(doc.creditNotes||[]).map(note=>`<tr><td>${esc(note.date)}</td><td>${esc(note.number)}</td><td>${money(note.payableAmount??note.total)} ${esc(doc.currency||"")}</td><td>${note.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const paymentRows=(doc.payments||[]).map(payment=>`<tr><td>${esc(payment.date)}</td><td>${money(payment.amount)} ${esc(doc.currency||"")}</td><td>${payment.method==="cash"?"Caisse":"Banque"}</td><td>${payment.status==="posted"?"Comptabilisé":"À vérifier"}</td></tr>`).join("");
   const supplierBalance=doc.type==="invoice"?supplierInvoiceBalance(doc):0;
   const { box } = modal(`<h2>${esc(doc.number)}</h2><p>${doc.type === "order" ? "Commande fournisseur" : "Facture fournisseur"} · ${esc(supplierName(doc.supplierId))} · ${esc(doc.date)}</p>
     <p>État : <strong>${esc(statusLabel(doc.status))}</strong> · Total : <strong>${money(doc.total)} ${esc(doc.currency)}</strong></p>
+    ${orderTracking?"<section class=\"card\"><h3>Suivi de livraison</h3><p>Prévision : <strong>"+esc(orderTracking.expectedDeliveryDate||"Non renseignée")+"</strong> · Situation : <strong>"+esc(deliveryStateLabel(orderTracking.deliveryState))+"</strong></p><p>Quantité commandée : "+orderTracking.orderedBase+" · Reçue : "+orderTracking.receivedBase+" · Reliquat : <strong>"+orderTracking.remainingBase+"</strong> · Avancement : "+orderTracking.progress+" %</p><p>"+esc(doc.deliveryNote||"Aucune consigne de livraison.")+"</p><p>Réceptions enregistrées : "+orderTracking.receiptCount+"</p></section>":""}
     ${doc.type==="invoice"?`<p>Échéance : <strong>${esc(doc.dueDate||"Non définie")}</strong> · Délai fournisseur : ${Number.isInteger(doc.paymentTermsDays)?doc.paymentTermsDays+" jours":"Non renseigné"}</p><p>Montant TTC dû : ${money(supplierInvoicePayable(doc))} · Réglé : ${money(supplierInvoicePaid(doc))} · Avoirs : ${money((doc.creditNotes||[]).reduce((sum,note)=>sum+num(note.payableAmount??note.total),0))} · Reste : <strong>${money(supplierBalance)}</strong></p><h3>Avoirs fournisseurs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Référence</th><th>Montant</th><th>État</th></tr></thead><tbody>${creditNoteRows||"<tr><td colspan=\"4\">Aucun avoir.</td></tr>"}</tbody></table></div><h3>Historique des règlements</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Montant</th><th>Mode</th><th>État</th></tr></thead><tbody>${paymentRows||"<tr><td colspan=\"4\">Aucun règlement enregistré.</td></tr>"}</tbody></table></div>`:""}
     ${linkedOrder ? `<p>Commande liée : ${esc(linkedOrder.number)}</p>` : ""}
     <div class="table-wrap"><table><thead><tr><th>Nature</th><th>Désignation</th><th>Entrepôt</th><th>Quantité</th><th>Coût unitaire HT</th><th>Quantité de base</th></tr></thead><tbody>${lines}</tbody></table></div>
     <p>Quantité de base restant à entrer : <strong>${round(remaining)}</strong></p>
+    ${doc.type==="order"?"<h3>Historique des réceptions partielles</h3><div class=\"table-wrap\"><table><thead><tr><th>Date de réception</th><th>Enregistrée le</th><th>Quantités reçues</th></tr></thead><tbody>"+(receiptHistoryRows||"<tr><td colspan=\"3\">Aucune réception enregistrée.</td></tr>")+"</tbody></table></div>":""}
     <div id="pd-detail-actions" class="actions"></div><div id="pd-detail-error" class="errors"></div>
     <div class="actions"><button class="secondary" data-close>Fermer</button></div>`);
   const actions = box.querySelector("#pd-detail-actions");
@@ -544,6 +563,7 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Modifier l’échéance", () => openSupplierDueDateEditor(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Enregistrer un règlement", () => openSupplierPayment(doc));
   if (doc.type === "invoice" && doc.status === "validated" && doc.accountingPostedAt && supplierBalance > 0.001) addAction("Créer un avoir fournisseur", () => openSupplierCreditNote(doc));
+  if (doc.type === "order" && ["draft","ordered","partially_received"].includes(doc.status) && orderTracking?.remainingBase>0) addAction("Mettre à jour la livraison prévue", () => openOrderDeliveryEditor(doc));
   if (doc.type === "order" && doc.status === "draft") addAction("Confirmer la commande", () => {
     doc.status = "ordered";
     doc.confirmedAt = new Date().toISOString();

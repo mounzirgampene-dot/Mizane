@@ -1,6 +1,7 @@
 // MIZANE — Application transactionnelle d'une migration de plan, avec retour arrière.
 import { buildAccountCache, validateEntry } from "../accounting.js";
 import { dryRunPlanMigration } from "./mapping.js";
+import { buildMigrationAudit } from "./migration-audit.js";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 function fingerprint(value) {
@@ -52,10 +53,21 @@ export function applyPlanMigration(store, { sourcePlan, targetPlan, mapping, max
   if (snapshotBytes > maxSnapshotBytes) throw new Error("Migration non appliquée : la sauvegarde de sécurité dépasse la limite locale de " + maxSnapshotBytes.toLocaleString("fr-FR") + " caractères. Exportez vos données et réduisez le volume avant de réessayer.");
   const now = new Date().toISOString();
   const history = Array.isArray(store.settings.planMigrationHistory) ? store.settings.planMigrationHistory : [];
+  let auditReport = buildMigrationAudit({ beforeEntries, afterEntries: preview.entries, sourcePlan, targetPlan, mapping });
+  const auditBytes = JSON.stringify(auditReport).length;
+  if (auditBytes > 500000) {
+    const totalAccountRows = auditReport.accounts.length;
+    auditReport = { ...auditReport, accounts: auditReport.accounts.filter((row) => row.missingTarget || Math.abs(row.debitDifference) > 0.01 || Math.abs(row.creditDifference) > 0.01 || Math.abs(row.balanceDifference) > 0.01), accountRowsTotal: totalAccountRows, accountsTruncated: true };
+  }
   const record = {
     id: "migration-" + Date.now().toString(36),
     mappingId: mapping.id,
     mappingLabel: mapping.label,
+    mappingSnapshot: clone(mapping),
+    approvedBy: mapping.approvedBy || null,
+    approvedAt: mapping.approvedAt || null,
+    events: [{ type: "applied", at: now, actor: null }],
+    auditReport,
     sourcePlanId: sourcePlan.id,
     targetPlanId: targetPlan.id,
     status: "applied",
@@ -89,6 +101,7 @@ export function undoPlanMigration(store, migrationId = null) {
   const restored = clone(record.beforeEntries);
   record.status = "undone";
   record.undoneAt = new Date().toISOString();
+  record.events = [...(Array.isArray(record.events) ? record.events : []), { type: "undone", at: record.undoneAt, actor: null }];
   store.entries = restored;
   store.settings.plan = record.sourcePlanId;
   return { record: clone(record), restoredEntryCount: restored.length };

@@ -10,6 +10,8 @@ import {
 } from "../ai.js";
 import { saveStore, exportJSON, importJSON, resetStore, demoData, downloadBlob } from "../db.js";
 import { validateCustomPlan, createCustomPlan } from "../plans/custom.js";
+import { validatePlanMapping, dryRunPlanMigration } from "../plans/mapping.js";
+import { suggestAccountMatches, buildConversionRules } from "../plans/conversion-assistant.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -160,6 +162,13 @@ export function viewSettings() {
   const customPlanRows = (s.customPlans || []).map((p) => '<tr><td>' + esc(p.name) + (p.id === s.plan ? ' <span class="ok-msg">Actif</span>' : '') + '</td><td>' + p.accounts.length + '</td><td><div class="actions"><button class="small secondary" data-cp-activate="' + esc(p.id) + '">Activer</button><button class="small secondary" data-cp-export="' + esc(p.id) + '">Exporter</button><button class="small danger" data-cp-delete="' + esc(p.id) + '">Supprimer</button></div></td></tr>').join("");
   const customPlanEditor = customPlan ? '<div class="custom-plan-editor" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><h3>Modifier : ' + esc(customPlan.name) + '</h3><div class="row"><div><label>Nom du plan</label><input id="cp-edit-name" maxlength="100" value="' + esc(customPlan.name) + '"></div><div><label>Description</label><input id="cp-edit-description" maxlength="500" value="' + esc(customPlan.description || "") + '"></div><div class="nogrow"><button id="cp-save-meta">Enregistrer</button></div></div><h3>Ajouter un compte</h3><div class="row"><div><label>Numéro</label><input id="cp-account-code" maxlength="20" placeholder="Ex. 7085"></div><div><label>Libellé</label><input id="cp-account-label" maxlength="180" placeholder="Libellé du compte"></div><div><label>Type</label><select id="cp-account-type">' + Object.entries(ACCOUNT_TYPES).map(([k,v]) => '<option value="' + k + '">' + v + '</option>').join("") + '</select></div><div class="nogrow"><button id="cp-add-account">Ajouter</button></div></div><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Type</th><th>Action</th></tr></thead><tbody>' + customPlan.accounts.map(([code,label,type]) => '<tr><td>' + esc(code) + '</td><td>' + esc(label) + '</td><td>' + esc(ACCOUNT_TYPES[type] || type) + '</td><td><button class="small danger" data-cp-remove-account="' + esc(code) + '">Retirer</button></td></tr>').join("") + '</tbody></table></div></div>' : "";
   const customPlansCard = '<div class="card" id="custom-plans-card"><h2>Plans comptables personnalisés</h2><p class="muted">Créez une copie indépendante d’un référentiel ou d’un modèle, puis adaptez ses comptes. Les plans sont sauvegardés sur cet appareil et inclus dans la sauvegarde JSON MIZANE. Ils ne modifient jamais les référentiels officiels.</p><div class="row"><div><label>Nom du nouveau plan</label><input id="cp-new-name" maxlength="100" placeholder="Ex. Plan de la société"></div><div><label>Base à copier</label><select id="cp-new-base">' + basePlanOptions + customPlanOptions + '</select></div><div class="nogrow"><button id="cp-create">Créer une copie</button></div></div><div class="row"><div><label>Importer un plan personnalisé (.json)</label><input type="file" id="cp-import-file" accept=".json,application/json"></div><div class="nogrow"><button class="secondary" id="cp-import">Importer le plan</button></div></div>' + ((s.customPlans || []).length ? '<h3>Plans enregistrés</h3><div class="table-wrap"><table><thead><tr><th>Plan</th><th>Comptes</th><th>Actions</th></tr></thead><tbody>' + customPlanRows + '</tbody></table></div>' : '<p class="muted">Aucun plan personnalisé enregistré pour le moment.</p>') + customPlanEditor + '</div>';
+  const conversionPlans = [...Object.values(PLANS), ...(s.customPlans || [])];
+  const defaultConversionSource = conversionPlans.some((p) => p.id === s.plan) ? s.plan : (conversionPlans[0]?.id || "");
+  const defaultConversionTarget = conversionPlans.find((p) => p.id !== defaultConversionSource)?.id || "";
+  const conversionOptions = conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionSource ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("");
+  const conversionMappings = (s.planMappings || []).map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + ' — ' + esc(m.sourcePlanId) + ' → ' + esc(m.targetPlanId) + ' (' + esc(m.status) + ')</option>').join("");
+  const conversionCard = '<div class="card" id="accounting-conversion-card"><h2>Assistant de conversion entre référentiels</h2><p class="muted">Préparez un rapprochement entre deux plans. Les suggestions reposent sur le code, le libellé et le type comptable ; elles ne constituent pas une équivalence juridique ou comptable certifiée. Toute règle doit être vérifiée et approuvée explicitement.</p><div class="row"><div><label>Plan source</label><select id="conversion-source">' + conversionOptions + '</select></div><div><label>Plan cible</label><select id="conversion-target">' + conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionTarget ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("") + '</select></div><div class="nogrow"><button id="conversion-prepare">Analyser les comptes</button></div></div><div id="conversion-suggestions" style="margin-top:12px"></div><div class="row" style="margin-top:14px"><div><label>Nom du rapprochement</label><input id="conversion-label" maxlength="120" placeholder="Ex. SYSCOHADA vers PCG"></div><div class="nogrow"><button id="conversion-save" disabled>Enregistrer en brouillon</button></div></div><hr><h3>Rapprochements enregistrés</h3><div class="row"><div><label>Rapprochement</label><select id="conversion-mapping">' + conversionMappings + '</select></div><div class="nogrow"><button class="secondary" id="conversion-approve">Approuver les règles</button></div><div class="nogrow"><button id="conversion-preview">Simuler la conversion</button></div></div><div id="conversion-result" style="margin-top:12px"></div></div>';
+
   $app.innerHTML = `
     <h1>Paramètres</h1>
     <div class="card">
@@ -220,6 +229,7 @@ export function viewSettings() {
 
 
     ${customPlansCard}
+    ${conversionCard}
 
     <div class="card">
       <h2>💾 Données</h2>
@@ -233,6 +243,72 @@ export function viewSettings() {
     </div>
   `;
 
+
+  let conversionSuggestions = [];
+  const getConversionPlan = (id) => {
+    const item = conversionPlans.find((p) => p.id === id);
+    if (!item) return null;
+    return { id: item.id, name: item.name, accounts: item.accounts || [] };
+  };
+  const conversionCatalog = () => ({ ...PLANS, ...Object.fromEntries((s.customPlans || []).map((p) => [p.id, p])) });
+  const conversionVersions = () => Array.isArray(s.planVersions) ? s.planVersions : [];
+  const prepareConversion = () => {
+    const sourceId = document.getElementById("conversion-source").value;
+    const targetId = document.getElementById("conversion-target").value;
+    try {
+      const source = getConversionPlan(sourceId), target = getConversionPlan(targetId);
+      conversionSuggestions = suggestAccountMatches(source, target);
+      document.getElementById("conversion-suggestions").innerHTML = '<p>' + conversionSuggestions.length + ' compte(s) source analysé(s). Les propositions sont préremplies mais restent à confirmer.</p><div class="table-wrap"><table><thead><tr><th>Compte source</th><th>Suggestion</th><th>Confiance indicative</th><th>Décision</th></tr></thead><tbody>' + conversionSuggestions.map((item) => '<tr><td><strong>' + esc(item.source.code) + '</strong> — ' + esc(item.source.label) + '<br><small>' + esc(ACCOUNT_TYPES[item.source.type] || item.source.type) + '</small></td><td>' + (item.suggestion ? esc(item.suggestion.code + ' — ' + item.suggestion.label) : '<span class="muted">Aucune proposition fiable</span>') + (item.ambiguous ? '<br><span class="warn">Plusieurs candidats proches</span>' : '') + '</td><td>' + (item.suggestion ? item.confidence + ' %' : '—') + '</td><td><select data-conversion-source="' + esc(item.source.code) + '"><option value="">Non rapproché</option>' + item.candidates.map((candidate) => '<option value="' + esc(candidate.code) + '"' + (item.suggestion && item.suggestion.code === candidate.code ? ' selected' : '') + '>' + esc(candidate.code + ' — ' + candidate.label) + '</option>').join("") + '</select></td></tr>').join("") + '</tbody></table></div><p class="muted">Les comptes sans sélection resteront non rapprochés. Les types différents sont exclus des propositions.</p>';
+      document.getElementById("conversion-save").disabled = false;
+      document.getElementById("conversion-label").value = "Conversion " + source.name + " vers " + target.name;
+    } catch (error) {
+      conversionSuggestions = [];
+      document.getElementById("conversion-suggestions").innerHTML = '<p class="errors">' + esc(error.message) + '</p>';
+      document.getElementById("conversion-save").disabled = true;
+    }
+  };
+  document.getElementById("conversion-prepare").addEventListener("click", prepareConversion);
+  document.getElementById("conversion-save").addEventListener("click", () => {
+    if (!conversionSuggestions.length) return toast("Analysez d'abord les comptes.");
+    const sourceId = document.getElementById("conversion-source").value, targetId = document.getElementById("conversion-target").value;
+    const selections = Object.fromEntries([...document.querySelectorAll("[data-conversion-source]")].map((select) => [select.dataset.conversionSource, select.value]));
+    try {
+      const rules = buildConversionRules(conversionSuggestions, selections);
+      if (!rules.length) return toast("Aucun rapprochement sélectionné.");
+      const groupedRules = rules.filter((rule) => rule.relation === "many-to-one").length;
+      if (groupedRules && !confirm(groupedRules + " regroupement(s) plusieurs-vers-un détecté(s). Vérifiez que ces comptes peuvent légalement et comptablement être fusionnés. Continuer en brouillon ?")) return;
+      const mapping = validatePlanMapping({ id: "conversion-" + Date.now().toString(36), sourcePlanId: sourceId, targetPlanId: targetId, label: document.getElementById("conversion-label").value.trim() || ("Conversion " + sourceId + " vers " + targetId), status: "draft", rules }, conversionCatalog(), conversionVersions());
+      s.planMappings = [...(s.planMappings || []), mapping];
+      saveStore(store);
+      toast("Rapprochement enregistré en brouillon. Aucune règle n'est encore active.");
+      router.render();
+    } catch (error) { toast(error.message); }
+  });
+  document.getElementById("conversion-approve").addEventListener("click", () => {
+    const id = document.getElementById("conversion-mapping").value;
+    const current = (s.planMappings || []).find((item) => item.id === id);
+    if (!current) return toast("Sélectionnez un rapprochement enregistré.");
+    if (!confirm("Approuver toutes les règles de ce rapprochement ? Vérifiez les comptes et les équivalences avant de confirmer.")) return;
+    try {
+      const updated = validatePlanMapping({ ...current, status: "approved", rules: current.rules.map((rule) => ({ ...rule, status: "approved" })), updatedAt: new Date().toISOString() }, conversionCatalog(), conversionVersions());
+      s.planMappings = s.planMappings.map((item) => item.id === id ? updated : item);
+      saveStore(store); toast("Rapprochement approuvé. Vous pouvez lancer une simulation.");
+      router.render();
+    } catch (error) { toast(error.message); }
+  });
+  document.getElementById("conversion-preview").addEventListener("click", () => {
+    const id = document.getElementById("conversion-mapping").value;
+    const mapping = (s.planMappings || []).find((item) => item.id === id);
+    if (!mapping) return toast("Sélectionnez un rapprochement enregistré.");
+    try {
+      if (String(s.plan) !== String(mapping.sourcePlanId)) throw new Error("Le plan actif doit être le plan source du rapprochement pour simuler les écritures de cette société.");
+      const source = getConversionPlan(mapping.sourcePlanId), target = getConversionPlan(mapping.targetPlanId);
+      const result = dryRunPlanMigration({ entries: store.entries || [], sourcePlan: source, targetPlan: target, mapping });
+      const report = { mapping: mapping.label, generatedAt: new Date().toISOString(), sourceEntries: result.sourceEntryCount, migratedEntries: result.migratedEntryCount, blockedEntries: result.blockedEntryCount, canApply: result.canApply, errors: result.errors, warnings: result.warnings, unmapped: result.unmapped, entries: result.entries };
+      document.getElementById("conversion-result").innerHTML = '<p><strong>Résultat de la simulation</strong> — ' + result.migratedEntryCount + ' écriture(s) simulée(s), ' + result.blockedEntryCount + ' bloquée(s), ' + result.unmapped.length + ' compte(s) non rapproché(s).</p>' + (result.canApply ? '<p class="ok-msg">Contrôles réussis : aucune modification n’a été appliquée aux écritures originales.</p>' : '<p class="warn">Conversion incomplète : ne procédez pas à une migration. Corrigez les règles et les anomalies ci-dessous.</p>') + (result.errors.length ? '<ul class="errors">' + result.errors.slice(0, 30).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + (result.warnings.length ? '<ul class="muted">' + result.warnings.slice(0, 20).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + '<div class="actions"><button class="secondary" id="conversion-export-report">Exporter le rapport JSON</button></div>';
+      document.getElementById("conversion-export-report").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), "mizane-simulation-conversion.json"));
+    } catch (error) { document.getElementById("conversion-result").innerHTML = '<p class="errors">' + esc(error.message) + '</p>'; }
+  });
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);
     document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;

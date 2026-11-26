@@ -5,9 +5,10 @@ const target={id:"target",accounts:[["4011","Fournisseurs locaux","liability"],[
 const proposals=suggestAccountMatches(source,target);
 assert.equal(proposals.length,5);
 assert.equal(proposals[0].suggestion.code,"4011");
-assert.equal(proposals[1].suggestion.code,"6070");
-assert.equal(proposals[2].suggestion.code,"2183");
-assert.equal(proposals[3].suggestion.code,"4456");
+assert.equal(proposals[1].suggestion.code,"4011");
+assert.equal(proposals[2].suggestion.code,"6070");
+assert.equal(proposals[3].suggestion.code,"2183");
+assert.equal(proposals[4].suggestion.code,"4456");
 assert.ok(proposals.every((p)=>p.candidates.every((c)=>c.type===p.source.type)));
 assert.throws(()=>suggestAccountMatches(source,source),/différents/);
 const rules=buildConversionRules(proposals,{"401":"4011","607":"6070","218":"2183"});

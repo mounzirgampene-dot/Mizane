@@ -6,6 +6,8 @@ import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { notifyDetectedAnomalies } from "../notifications.js";
 import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
 import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
+import { listLocalAccountingDocuments, getLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
+import { listCloudAccountingDocumentsForEntry, downloadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -322,7 +324,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -334,6 +336,28 @@ export function viewEntries() {
       <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
+  $app.querySelectorAll("[data-accounting-documents]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const entryId=Number(button.dataset.accountingDocuments),entry=store.entries.find(item=>Number(item.id)===entryId);
+      if(!entry)return;
+      let localDocuments=[],cloudDocuments=[],warning="";
+      try{localDocuments=await listLocalAccountingDocuments(entryId);}catch(error){warning="Lecture locale indisponible : "+(error?.message||"erreur")+". ";}
+      try{cloudDocuments=await listCloudAccountingDocumentsForEntry(entryId)||[];}catch(error){warning+="Coffre partagé : "+(error?.message||"indisponible")+". ";}
+      const rows=[...cloudDocuments.map(doc=>({...doc,kind:"cloud"})),...localDocuments.map(doc=>({...doc,kind:"local"}))];
+      openModal('<h2>Pièces justificatives — écriture #'+entryId+'</h2>'+(warning?'<p class="warn">'+esc(warning)+'</p>':'')+
+       (rows.length?'<div class="table-wrap"><table><thead><tr><th>Fichier</th><th>Stockage</th><th>Taille</th><th>Ajouté le</th><th>Actions</th></tr></thead><tbody>'+
+       rows.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+(doc.kind==="cloud"?'Coffre privé entreprise':'Cet appareil uniquement')+'</td><td>'+(Number(doc.size)/1024/1024).toFixed(2)+' Mo</td><td>'+esc(String(doc.uploadedAt||"").slice(0,10)||"—")+'</td><td><button class="small secondary" data-accounting-doc-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-accounting-doc-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+
+       '</tbody></table></div>':'<p class="muted">Aucune pièce justificative associée à cette écriture.</p>')+'<div class="actions"><button class="secondary" data-close>Fermer</button></div>');
+      document.querySelectorAll("[data-accounting-doc-download]").forEach(action=>action.addEventListener("click",async()=>{
+       try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.accountingDocDownload):await getLocalAccountingDocument(action.dataset.accountingDocDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}
+       catch(error){toast(error?.message||"Téléchargement impossible.");}
+      }));
+      document.querySelectorAll("[data-accounting-doc-delete]").forEach(action=>action.addEventListener("click",async()=>{
+       try{const id=action.dataset.accountingDocDelete;if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(id);else await deleteLocalAccountingDocument(id);toast("Pièce justificative supprimée.");closeModal();button.click();}
+       catch(error){toast(error?.message||"Suppression impossible.");}
+      }));
+    });
+  });
   $app.querySelectorAll("[data-reverse]").forEach((b) => {
     b.addEventListener("click", () => {
       const id = Number(b.dataset.reverse);

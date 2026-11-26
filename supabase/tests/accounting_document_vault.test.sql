@@ -1,0 +1,17 @@
+begin;
+create extension if not exists pgtap;
+select plan(12);
+select has_table('public','accounting_documents','accounting document metadata table exists');
+select has_table('public','accounting_document_entry_links','document-to-entry link table exists');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.accounting_documents'::regclass),'document metadata enforces RLS');
+select ok((select relrowsecurity and relforcerowsecurity from pg_class where oid='public.accounting_document_entry_links'::regclass),'document links enforce RLS');
+select ok((select not public from storage.buckets where id='accounting-evidence'),'accounting evidence bucket is private');
+select ok((select file_size_limit=20971520 from storage.buckets where id='accounting-evidence'),'bucket limit is 20 MiB');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='accounting_documents' and policyname='accounting_documents_select_members'),'company members can read document metadata');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='accounting_documents' and policyname='accounting_documents_insert_finance_roles'),'only finance roles can add document metadata');
+select ok(exists(select 1 from pg_policies where schemaname='public' and tablename='accounting_document_entry_links' and policyname='accounting_document_links_insert_finance_roles'),'only finance roles can link documents');
+select ok(exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='accounting_evidence_select_company_members'),'private object reads are company scoped');
+select ok(exists(select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='accounting_evidence_insert_finance_roles'),'private object uploads require finance roles');
+select ok(exists(select 1 from pg_constraint where conname='accounting_document_links_entry_fk'),'document links enforce same-company entry foreign key');
+select * from finish();
+rollback;

@@ -86,7 +86,7 @@ export function matchBankLines(store, bankLines, days = 4) {
       const amount = round2((Number(l.debit) || 0) - (Number(l.credit) || 0));
       if (amount) cash.push({
         entryId: e.id, date: e.date, label: l.label || e.reference || "",
-        account: String(l.account), amount, remaining: Math.abs(amount),
+        account: String(l.account), currency: String(l.currency || store.settings?.currency || "").toUpperCase(), amount, remaining: Math.abs(amount),
       });
     }
   }
@@ -100,6 +100,7 @@ export function matchBankLines(store, bankLines, days = 4) {
     const sameSign = cash
       .map((line, index) => ({ ...line, index, delta: Math.abs(Date.parse(line.date) - bankTime) }))
       .filter((line) => Math.sign(line.amount) === Math.sign(bankAmount) &&
+        line.currency === String(bankLine.currency || store.settings?.currency || "").toUpperCase() &&
         Number.isFinite(line.delta) && line.delta <= 30 * 86400000)
       .sort((a, b) => a.delta - b.delta || a.index - b.index);
     const exact = sameSign.filter(line => line.amount === bankAmount);

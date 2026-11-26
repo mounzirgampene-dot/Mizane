@@ -1,0 +1,23 @@
+import { strict as assert } from "node:assert";
+import { validateAnalyticalCenter, validateAnalyticalAllocation, buildAnalyticalReport } from "../js/analytical-core.js";
+
+const centers = [{ id: "c1", name: "Production", type: "cost" }, { id: "c2", name: "Ventes", type: "profit" }];
+const entries = [{ id: 10, date: "2026-01-15", journal: "ACH", lines: [{ account: "601", label: "Matières", debit: 1000, credit: 0 }, { account: "401", label: "Fournisseur", debit: 0, credit: 1000 }] }, { id: 11, date: "2026-01-20", journal: "VTE", lines: [{ account: "411", label: "Client", debit: 0, credit: 500 }, { account: "701", label: "Ventes", debit: 0, credit: 500 }] }];
+const accountTypes = { "601": "expense", "401": "liability", "411": "asset", "701": "income" };
+assert.equal(validateAnalyticalCenter({ name: "production", type: "cost" }, centers).ok, false);
+assert.equal(validateAnalyticalCenter({ name: "Support", type: "cost" }, centers).ok, true);
+const allocations = [{ id: "a1", entryId: 10, lineIndex: 0, centerId: "c1", percentage: 60 }];
+const next = { id: "a2", entryId: 10, lineIndex: 0, centerId: "c2", percentage: 40 };
+assert.equal(validateAnalyticalAllocation(next, { centers, allocations, entries, accountTypes }).ok, true);
+assert.equal(validateAnalyticalAllocation({ ...next, percentage: 41 }, { centers, allocations, entries, accountTypes }).ok, false);
+assert.equal(validateAnalyticalAllocation({ ...next, lineIndex: 1 }, { centers, allocations, entries, accountTypes }).ok, false);
+const report = buildAnalyticalReport({ centers, allocations: [...allocations, next, { id: "a3", entryId: 11, lineIndex: 1, centerId: "c2", percentage: 100 }], entries, accountTypes, startDate: "2026-01-01", endDate: "2026-12-31" });
+assert.equal(report.rows.find(row => row.id === "c1").expenses, 600);
+assert.equal(report.rows.find(row => row.id === "c2").expenses, 400);
+assert.equal(report.rows.find(row => row.id === "c2").income, 500);
+assert.equal(report.rows.find(row => row.id === "c2").result, 100);
+assert.equal(report.unallocated.length, 0);
+const partial = buildAnalyticalReport({ centers, allocations, entries, accountTypes });
+assert.equal(partial.unallocated.find(row => row.entryId === 10).remainingPercentage, 40);
+assert.equal(partial.unallocated.length, 2);
+console.log("✓ Comptabilité analytique : centres, ventilation plafonnée, résultats et lignes non affectées.");

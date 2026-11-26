@@ -124,6 +124,7 @@ export function validateBackup(data) {
   if (data.settings.customAccounts != null && !Array.isArray(data.settings.customAccounts)) {
     throw new Error("La liste des comptes personnalisés est invalide.");
   }
+  const customPlans = validateCustomPlans(data.settings.customPlans);
 
   const ids = new Set();
   const entries = data.entries.map((e, index) => {
@@ -176,6 +177,7 @@ export function validateBackup(data) {
 
   return {
     ...data,
+    settings: { ...data.settings, customPlans },
     version: 1,
     thirds: Array.isArray(data.thirds) ? data.thirds : [],
     assets: Array.isArray(data.assets) ? data.assets : [],

@@ -2667,6 +2667,15 @@ test("assistant IA cloud : accès strictement réservé aux administrateurs et c
   assert.doesNotMatch(companyAiFunctionSource, /\["admin","accountant","reader"\]/);
   assert.ok(companyAiFunctionSource.indexOf("!AI_ALLOWED_ROLES.has(member.role)") < companyAiFunctionSource.indexOf("if(action===\"configure\")"));
   assert.match(companyAiFunctionSource, /mizane_get_company_ai_secret/);
+  assert.match(companyAiFunctionSource, /const validateMessages = \(messages: unknown\)/);
+  assert.match(companyAiFunctionSource, /messages\.length>30/);
+  assert.match(companyAiFunctionSource, /message\.role===\"system\"&&i!==0/);
+  assert.match(companyAiFunctionSource, /part\.text\.length>60000/);
+  assert.match(companyAiFunctionSource, /totalText>120000/);
+  assert.match(companyAiFunctionSource, /imageCount>4/);
+  assert.match(companyAiFunctionSource, /data:image\\\\\/(?:jpeg\|png\|webp);base64/);
+  assert.match(companyAiFunctionSource, /Number\(body\.temperature\)<0\|\|Number\(body\.temperature\)>1/);
+
 });
 
 const taxDocumentVaultMigration = readFileSync(new URL("../supabase/migrations/20261125172040_tax_document_vault.sql", import.meta.url), "utf8");

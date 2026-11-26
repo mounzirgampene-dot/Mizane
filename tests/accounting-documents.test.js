@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import {createAccountingDocumentMetadata,resolveAccountingDocumentMimeType} from "../js/accounting-documents.js";
+import {createAccountingDocumentMetadata,resolveAccountingDocumentMimeType,normalizeAccountingDocumentClassification} from "../js/accounting-documents.js";
+import {readFileSync} from "node:fs";
 const file={name:"facture-novembre.pdf",type:"application/pdf",size:2048};
 const valid=createAccountingDocumentMetadata({id:"doc-1",file,entryIds:[12,13,12]});
 assert.equal(valid.ok,true);assert.deepEqual(valid.document.entryIds,[12,13]);assert.equal(valid.document.mimeType,"application/pdf");
@@ -11,4 +12,17 @@ assert.equal(createAccountingDocumentMetadata({id:"doc-6",file,entryIds:[]}).ok,
 assert.equal(createAccountingDocumentMetadata({id:"doc-7",file,entryIds:[0]}).ok,false);
 assert.equal(resolveAccountingDocumentMimeType({name:"scan.PDF",type:""}),"application/pdf");
 assert.equal(resolveAccountingDocumentMimeType({name:"malware.exe",type:"application/octet-stream"}),"");
+const classified=createAccountingDocumentMetadata({id:"doc-classified",file,entryIds:[12],metadata:{type:"supplier_invoice",documentDate:"2026-11-25",counterparty:"Fournisseur Atlas",reference:"FA-2026-44",journal:"ACH",notes:"Achat de fournitures"}});
+assert.equal(classified.ok,true);
+assert.equal(classified.document.type,"supplier_invoice");
+assert.equal(classified.document.documentDate,"2026-11-25");
+assert.equal(classified.document.counterparty,"Fournisseur Atlas");
+assert.equal(classified.document.reference,"FA-2026-44");
+assert.equal(normalizeAccountingDocumentClassification({type:"unknown",documentDate:"25/11/2026",counterparty:"x".repeat(200)}).type,"other");
+assert.equal(normalizeAccountingDocumentClassification({type:"other",documentDate:"25/11/2026"}).documentDate,"");
+assert.equal(normalizeAccountingDocumentClassification({counterparty:"x".repeat(200)}).counterparty.length,160);
+const classificationMigration=readFileSync(new URL("../supabase/migrations/20261126000300_accounting_document_classification.sql",import.meta.url),"utf8");
+assert.match(classificationMigration,/accounting_documents_document_type_check/);
+assert.match(classificationMigration,/accounting_documents_company_type_date_idx/);
+assert.match(classificationMigration,/document_reference/);
 console.log("✓ Pièces comptables : formats, limites, identifiants et liens validés.");

@@ -146,7 +146,8 @@ export function viewBudget() {
   `;
   document.getElementById("analytical-budget-form")?.addEventListener("submit", event => {
     event.preventDefault();
-    const account=document.getElementById("ab-account").value, axis=document.getElementById("ab-axis").value.split("|"), monthlyAmount=Number(document.getElementById("ab-monthly").value), currency=String(document.getElementById("ab-currency").value||"").trim().toUpperCase();\n    if(axis.length===2)axis[1]=decodeURIComponent(axis[1]);
+    const account=document.getElementById("ab-account").value, axis=document.getElementById("ab-axis").value.split("|"), monthlyAmount=Number(document.getElementById("ab-monthly").value), currency=String(document.getElementById("ab-currency").value||"").trim().toUpperCase();
+    if(axis.length===2)axis[1]=decodeURIComponent(axis[1]);
     const selected=accounts.find(item=>String(item.code)===account);
     if(!selected||axis.length!==2||!Number.isFinite(monthlyAmount)||monthlyAmount<=0)return toast("Compte, axe ou montant invalide.");
     const candidate={id:"ab-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),account,type:selected.type,monthlyAmount,label:selected.label,dimensionType:axis[0],dimensionId:axis[1],currency};

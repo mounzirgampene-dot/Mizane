@@ -21,7 +21,7 @@ assert.equal(bankStatementLineKey(parsed.lines[0]), bankStatementLineKey(parsed.
 
 const debitCredit = parseBankStatement("Date,Description,Debit,Credit\n2026-11-26,Frais,12.50,\n2026-11-27,Virement,,1000.00");
 assert.deepEqual(debitCredit.lines.map(line=>line.amount),[-12.5,1000]);
-const sparseDebitCredit = parseBankStatement("Date,Description,Debit,Credit\\n2026-11-26,Frais,12.50,\\n2026-11-27,Virement,,1000.00");
+const sparseDebitCredit = parseBankStatement("Date,Description,Debit,Credit\n2026-11-26,Frais,12.50,\n2026-11-27,Virement,,1000.00");
 assert.deepEqual(sparseDebitCredit.lines.map(line=>line.amount),[-12.5,1000]);
 const bankStore = { settings: { currency: "MAD" }, entries: [
   { id: 1, date: "2026-11-26", lines: [{ account: "512", debit: 100, credit: 0, currency: "MAD" }] },

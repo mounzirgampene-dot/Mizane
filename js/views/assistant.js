@@ -1,6 +1,7 @@
 // MIZANE — Écrans : assistant IA (photo, import de texte, audit) et paramètres.
 import { validateEntry, postEntry, checkAnomalies } from "../accounting.js";
 import { PLANS, getPlan, ACCOUNT_TYPES } from "../plans.js";
+import { getCountryAccountingFramework } from "../plans/frameworks.js";
 import { COUNTRIES, getCountry } from "../countries.js";
 import {
   aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
@@ -169,6 +170,7 @@ export function viewSettings() {
             <optgroup label="Modèles sectoriels indicatifs">${Object.values(PLANS).filter((p) => p.category === "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
           </select>
           <p class="muted" id="plan-description">${esc(plan.description || (plan.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE."))}</p>
+          <div class="muted" id="country-framework-info" style="margin-top:8px"></div>
         </div>
         <div><label>Devise</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"></div>
         <div><label>Langue</label>
@@ -225,6 +227,21 @@ export function viewSettings() {
     document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;
   };
   updateVat();
+  const updateCountryFramework = () => {
+    const country = getCountry(document.getElementById("s-country").value);
+    const framework = getCountryAccountingFramework(country.code);
+    const target = document.getElementById("country-framework-info");
+    if (!framework) {
+      target.innerHTML = "";
+      return;
+    }
+    target.innerHTML = `<strong>Référentiel national identifié :</strong> ${esc(framework.name)}<br>
+      <span>${esc(framework.standard)}</span><br>
+      <span>Autorité : ${esc(framework.authority)} · Statut : référentiel vérifié, plan de comptes détaillé non intégré</span><br>
+      <a href="${esc(framework.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(framework.sourceLabel)}</a>
+      <p>Ce cadre de normes ne constitue pas automatiquement un plan de comptes. Le plan actuellement sélectionné reste actif jusqu'à l'intégration d'une nomenclature officielle et testée.</p>`;
+  };
+  updateCountryFramework();
   const updatePlanDescription = () => {
     const selectedPlan = PLANS[document.getElementById("s-plan").value];
     document.getElementById("plan-description").textContent = selectedPlan?.description ||
@@ -237,6 +254,7 @@ export function viewSettings() {
     document.getElementById("s-currency").value = c.currency;
     updateVat();
     updatePlanDescription();
+    updateCountryFramework();
   });
 
   document.getElementById("s-save").addEventListener("click", () => {

@@ -1,6 +1,6 @@
 // MIZANE — Écrans : assistant IA (photo, import de texte, audit) et paramètres.
 import { validateEntry, postEntry, checkAnomalies } from "../accounting.js";
-import { PLANS, getPlan, ACCOUNT_TYPES } from "../plans.js";
+import { PLANS, getPlan, allAccounts, ACCOUNT_TYPES } from "../plans.js";
 import { getCountryAccountingFramework } from "../plans/frameworks.js";
 import { COUNTRIES, getCountry } from "../countries.js";
 import {
@@ -378,7 +378,9 @@ export function viewSettings() {
     if ((s.customPlans || []).length >= 100) return toast("Limite de 100 plans personnalisés atteinte.");
     const baseId = document.getElementById("cp-new-base").value;
     const base = getPlan(baseId, s.customPlans);
-    const rows = Array.isArray(base.accounts) && base.accounts.length && Array.isArray(base.accounts[0]) ? base.accounts.map((a) => [...a]) : [];
+    const rows = base.category === "custom-plan"
+      ? base.accounts.map((a) => [...a])
+      : allAccounts(baseId).map((a) => [a.code, a.label, a.type]);
     for (const a of s.customAccounts || []) if (!rows.some((row) => row[0] === a.code)) rows.push([a.code, a.label, a.type]);
     try {
       const created = createCustomPlan({ id: makeCustomPlanId(), name, basePlanId: baseId, description: "Copie personnalisable de " + base.name, accounts: rows });

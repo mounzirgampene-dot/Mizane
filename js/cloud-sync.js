@@ -206,6 +206,13 @@ export function saveCloudStockWarehouse(warehouse) {
 export function updateCloudStockSettings(settings) {
   return stockRpc("stock_update_settings", { p_settings: settings });
 }
+export function updateCloudStockReorderThresholds({ productId, minimumStock, targetStock }) {
+  return stockRpc("stock_update_reorder_thresholds", {
+    p_product_id: productId,
+    p_minimum_stock: minimumStock,
+    p_target_stock: targetStock,
+  });
+}
 export function postCloudStockDocument({ operationUid, documentType, documentDate, reference = "", note = "", lines, sourceType = null, sourceId = null }) {
   return stockRpc("stock_post_document", {
     p_operation_uid: operationUid,

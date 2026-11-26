@@ -141,3 +141,14 @@ Les tests Node couvrent également les conversions, les soldes par lot, les mouv
 - Supabase DEV : migrations appliquées et scénarios de test rollbackés.
 - Cloudflare : Preview uniquement.
 - Production : non touchée ; aucune fusion dans `main` ni aucun déploiement Production.
+
+
+## Réapprovisionnement et alertes — lot DEV
+
+La migration `20261126000100_stock_replenishment_thresholds.sql` ajoute les champs `minimum_stock` et `target_stock` au catalogue des articles. Les seuils sont globaux à l'article et exprimés dans l'unité de base. La valeur par défaut zéro préserve le comportement des articles existants.
+
+La modification des seuils est exclusivement réalisée par la RPC authentifiée `stock_update_reorder_thresholds`. Le serveur vérifie le rôle d'entreprise `admin` ou `accountant`, les valeurs positives et l'ordre seuil minimum/stock cible, puis journalise l'opération. Les soldes et mouvements ne sont jamais modifiés.
+
+L'interface calcule le disponible en déduisant les réservations actives du stock physique, présente les ruptures et seuils atteints, propose une quantité indicative pour revenir au stock cible et permet l'export CSV. Les quantités de produits ayant des unités différentes ne sont jamais additionnées.
+
+Ce lot ne crée pas automatiquement de commande fournisseur. La suggestion doit être vérifiée par l'utilisateur avant tout achat.

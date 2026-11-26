@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { suggestAccountMatches, buildConversionRules } from "../js/plans/conversion-assistant.js";
-const source={id:"source",accounts:[["401","Fournisseurs","liability"],["607","Achats de marchandises","expense"],["218","Matériel informatique","asset"],["445","TVA déductible","asset"]]};
+const source={id:"source",accounts:[["401","Fournisseurs","liability"],["402","Fournisseurs locaux","liability"],["607","Achats de marchandises","expense"],["218","Matériel informatique","asset"],["445","TVA déductible","asset"]]};
 const target={id:"target",accounts:[["4011","Fournisseurs locaux","liability"],["6070","Achats marchandises","expense"],["2183","Matériel informatique","asset"],["4456","TVA récupérable","asset"],["401x","Fournisseurs divers","expense"]]};
 const proposals=suggestAccountMatches(source,target);
-assert.equal(proposals.length,4);
+assert.equal(proposals.length,5);
 assert.equal(proposals[0].suggestion.code,"4011");
 assert.equal(proposals[1].suggestion.code,"6070");
 assert.equal(proposals[2].suggestion.code,"2183");
@@ -13,5 +13,5 @@ assert.throws(()=>suggestAccountMatches(source,source),/différents/);
 const rules=buildConversionRules(proposals,{"401":"4011","607":"6070","218":"2183"});
 assert.equal(rules.length,3);
 assert.ok(rules.every((r)=>r.status==="draft"));
-assert.throws(()=>buildConversionRules(proposals,{"401":"401x"}),/incompatible/);\nconst grouped=buildConversionRules(proposals,{"401":"4011","607":"4011"});\nassert.equal(grouped.length,1);assert.equal(grouped[0].relation,"many-to-one");assert.deepEqual(grouped[0].sourceCodes,["401","607"]);
+assert.throws(()=>buildConversionRules(proposals,{"401":"401x"}),/incompatible/);\nconst grouped=buildConversionRules(proposals,{"401":"4011","402":"4011"});\nassert.equal(grouped.length,1);assert.equal(grouped[0].relation,"many-to-one");assert.deepEqual(grouped[0].sourceCodes,["401","402"]);
 console.log("✓ Suggestions de rapprochement prudentes et validation des types.");

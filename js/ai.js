@@ -219,7 +219,7 @@ export function buildAiAuditSnapshot(store) {
   let taxMetadataCount = 0;
   for (const entry of (Array.isArray(store?.entries) ? store.entries : [])) {
     if (!validDate(entry?.date)) continue;
-    if (entry.date < controls.period.start || entry.date > controls.period.end) continue;
+    if ((controls.period.start && entry.date < controls.period.start) || (controls.period.end && entry.date > controls.period.end)) continue;
     for (const [index, line] of (Array.isArray(entry.lines) ? entry.lines : []).entries()) {
       const rawRate = line?.taxRate ?? line?.vatRate;
       const taxCode = String(line?.taxCode || line?.vatCode || "").trim();
@@ -236,6 +236,10 @@ export function buildAiAuditSnapshot(store) {
         continue;
       }
       const rules = getActiveTaxRules(profile.countryCode, "VAT", entry.date);
+      if (!rules.length) {
+        add("tax_reference_missing", "Aucune règle de TVA active n’est disponible dans le référentiel pour cette date. Le contrôle du taux est indisponible.", { taxCode: taxCode || null });
+        continue;
+      }
       const codeRule = taxCode ? rules.find(rule => rule.code === taxCode) : null;
       const rate = rawRate === "" || rawRate === null || rawRate === undefined ? NaN : Number(rawRate);
       if (taxCode && !codeRule) add("tax_code_unrecognized", "Code fiscal absent ou inactif dans le référentiel officiel à la date de l’écriture.", { taxCode });
@@ -245,6 +249,9 @@ export function buildAiAuditSnapshot(store) {
       }
       if (codeRule && Number.isFinite(rate) && Math.abs(codeRule.rate - rate) > 0.0001) {
         add("tax_code_rate_mismatch", "Le code fiscal et le taux saisi sur la ligne ne correspondent pas.", { taxCode, rate, officialRate: codeRule.rate });
+      }
+      if (!Number.isFinite(rate) && (taxCode || rawTax !== undefined || rawBase !== undefined)) {
+        add("tax_data_incomplete", "Informations fiscales incomplètes : le taux explicite manque, le calcul arithmétique ne peut pas être vérifié.");
       }
       const taxAmount = rawTax === "" || rawTax === null || rawTax === undefined ? NaN : Number(rawTax);
       const base = rawBase === "" || rawBase === null || rawBase === undefined ? NaN : Number(rawBase);

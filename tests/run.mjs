@@ -2675,6 +2675,8 @@ test("assistant IA : lecture de justificatif avec validation humaine obligatoire
   assert.match(assistantAiSource, /buildAccountingControlReport/);
   assert.match(assistantAiSource, /getActiveTaxRules/);
   assert.match(assistantAiSource, /tax_code_rate_mismatch/);
+  assert.match(assistantAiSource, /const effectiveRate = Number\.isFinite\(rate\) \? rate : codeRule\?\.rate/);
+  assert.match(assistantAiSource, /tax_reference_missing/);
   assert.match(assistantAiSource, /Aucune donnée fiscale explicite détectée/);
   assert.doesNotMatch(assistantAiSource.slice(assistantAiSource.indexOf("export async function importEntriesFromText"), assistantAiSource.indexOf("export function buildAiAuditSnapshot")), /Utilise .*today|const today/);
   assert.match(assistantViewSource, /assistantHistoryCompanyId/);

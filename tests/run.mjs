@@ -2644,7 +2644,6 @@ test("coffre fiscal cloud : bucket privé, séparation entreprise et rôles", ()
   assert.match(taxDocumentManageFunctionSource, /\.remove\(storagePaths\.slice\(/);
 });
 
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/accounting-controls.js"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);
-
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/accounting-controls.js"'));

@@ -8,7 +8,8 @@ import {
   imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
   configureCompanyAI, deleteCompanyAI, refreshCompanyAIStatus,
 } from "../ai.js";
-import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
+import { saveStore, exportJSON, importJSON, resetStore, demoData, downloadBlob } from "../db.js";
+import { validateCustomPlan, createCustomPlan } from "../plans/custom.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -151,7 +152,8 @@ export function viewAssistant() {
 
 export function viewSettings() {
   const s = store.settings;
-  const plan = getPlan(s.plan);
+  const plan = getPlan(s.plan, s.customPlans);
+  const customPlan = (s.customPlans || []).find((item) => item.id === s.plan) || null;
   const pid = providerOf(store);
   $app.innerHTML = `
     <h1>Paramètres</h1>
@@ -168,6 +170,7 @@ export function viewSettings() {
           <select id="s-plan">
             <optgroup label="Référentiels nationaux et régionaux">${Object.values(PLANS).filter((p) => p.category !== "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
             <optgroup label="Modèles sectoriels indicatifs">${Object.values(PLANS).filter((p) => p.category === "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+            <optgroup label="Mes plans personnalisés">${(s.customPlans || []).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
           </select>
           <p class="muted" id="plan-description">${esc(plan.description || (plan.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE."))}</p>
           <div class="muted" id="country-framework-info" style="margin-top:8px"></div>
@@ -210,6 +213,13 @@ export function viewSettings() {
       </details>
     </div>
 
+
+  const basePlanOptions = Object.values(PLANS).map((p) => '<option value="' + esc(p.id) + '"' + (p.id === s.plan ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
+  const customPlanOptions = (s.customPlans || []).map((p) => '<option value="' + esc(p.id) + '"' + (p.id === s.plan ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
+  const customPlanRows = (s.customPlans || []).map((p) => '<tr><td>' + esc(p.name) + (p.id === s.plan ? ' <span class="ok-msg">Actif</span>' : '') + '</td><td>' + p.accounts.length + '</td><td><div class="actions"><button class="small secondary" data-cp-activate="' + esc(p.id) + '">Activer</button><button class="small secondary" data-cp-export="' + esc(p.id) + '">Exporter</button><button class="small danger" data-cp-delete="' + esc(p.id) + '">Supprimer</button></div></td></tr>').join("");
+  const customPlanEditor = customPlan ? '<div class="custom-plan-editor" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><h3>Modifier : ' + esc(customPlan.name) + '</h3><div class="row"><div><label>Nom du plan</label><input id="cp-edit-name" maxlength="100" value="' + esc(customPlan.name) + '"></div><div><label>Description</label><input id="cp-edit-description" maxlength="500" value="' + esc(customPlan.description || "") + '"></div><div class="nogrow"><button id="cp-save-meta">Enregistrer</button></div></div><h3>Ajouter un compte</h3><div class="row"><div><label>Numéro</label><input id="cp-account-code" maxlength="20" placeholder="Ex. 7085"></div><div><label>Libellé</label><input id="cp-account-label" maxlength="180" placeholder="Libellé du compte"></div><div><label>Type</label><select id="cp-account-type">' + Object.entries(ACCOUNT_TYPES).map(([k,v]) => '<option value="' + k + '">' + v + '</option>').join("") + '</select></div><div class="nogrow"><button id="cp-add-account">Ajouter</button></div></div><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Type</th><th>Action</th></tr></thead><tbody>' + customPlan.accounts.map(([code,label,type]) => '<tr><td>' + esc(code) + '</td><td>' + esc(label) + '</td><td>' + esc(ACCOUNT_TYPES[type] || type) + '</td><td><button class="small danger" data-cp-remove-account="' + esc(code) + '">Retirer</button></td></tr>').join("") + '</tbody></table></div></div>' : "";
+  const customPlansCard = '<div class="card" id="custom-plans-card"><h2>Plans comptables personnalisés</h2><p class="muted">Créez une copie indépendante d’un référentiel ou d’un modèle, puis adaptez ses comptes. Les plans sont sauvegardés sur cet appareil et inclus dans la sauvegarde JSON MIZANE. Ils ne modifient jamais les référentiels officiels.</p><div class="row"><div><label>Nom du nouveau plan</label><input id="cp-new-name" maxlength="100" placeholder="Ex. Plan de la société"></div><div><label>Base à copier</label><select id="cp-new-base">' + basePlanOptions + customPlanOptions + '</select></div><div class="nogrow"><button id="cp-create">Créer une copie</button></div></div><div class="row"><div><label>Importer un plan personnalisé (.json)</label><input type="file" id="cp-import-file" accept=".json,application/json"></div><div class="nogrow"><button class="secondary" id="cp-import">Importer le plan</button></div></div>' + ((s.customPlans || []).length ? '<h3>Plans enregistrés</h3><div class="table-wrap"><table><thead><tr><th>Plan</th><th>Comptes</th><th>Actions</th></tr></thead><tbody>' + customPlanRows + '</tbody></table></div>' : '<p class="muted">Aucun plan personnalisé enregistré pour le moment.</p>') + customPlanEditor + '</div>';
+
     <div class="card">
       <h2>💾 Données</h2>
       <div class="actions">
@@ -243,7 +253,8 @@ export function viewSettings() {
   };
   updateCountryFramework();
   const updatePlanDescription = () => {
-    const selectedPlan = PLANS[document.getElementById("s-plan").value];
+    const selectedId = document.getElementById("s-plan").value;
+    const selectedPlan = getPlan(selectedId, s.customPlans);
     document.getElementById("plan-description").textContent = selectedPlan?.description ||
       (selectedPlan?.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE.");
   };
@@ -354,12 +365,105 @@ export function viewSettings() {
   };
   renderAISettings();
 
+
+  const makeCustomPlanId = () => "custom-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+  const exportCustomPlan = (planToExport) => {
+    const payload = { format: "mizane-custom-plan", version: 1, plan: planToExport };
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), "mizane-plan-" + planToExport.id + ".json");
+  };
+  document.getElementById("cp-create").addEventListener("click", () => {
+    const name = document.getElementById("cp-new-name").value.trim();
+    if (!name) return toast("Donnez un nom au plan personnalisé.");
+    if ((s.customPlans || []).length >= 100) return toast("Limite de 100 plans personnalisés atteinte.");
+    const baseId = document.getElementById("cp-new-base").value;
+    const base = getPlan(baseId, s.customPlans);
+    const rows = Array.isArray(base.accounts) && base.accounts.length && Array.isArray(base.accounts[0]) ? base.accounts.map((a) => [...a]) : [];
+    for (const a of s.customAccounts || []) if (!rows.some((row) => row[0] === a.code)) rows.push([a.code, a.label, a.type]);
+    try {
+      const created = createCustomPlan({ id: makeCustomPlanId(), name, basePlanId: baseId, description: "Copie personnalisable de " + base.name, accounts: rows });
+      s.customPlans.push(created); s.plan = created.id; refreshPlan(); saveStore(store);
+      toast("✓ Plan personnalisé créé et activé."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.querySelectorAll("[data-cp-activate]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpActivate);
+    if (!target) return;
+    s.plan = target.id; refreshPlan(); saveStore(store); toast("Plan personnalisé activé."); router.render();
+  }));
+  document.querySelectorAll("[data-cp-export]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpExport);
+    if (target) exportCustomPlan(target);
+  }));
+  document.querySelectorAll("[data-cp-delete]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpDelete);
+    if (!target || !confirm("Supprimer le plan « " + target.name + " » ? Les écritures existantes ne seront pas supprimées.")) return;
+    s.customPlans = s.customPlans.filter((p) => p.id !== target.id);
+    if (s.plan === target.id) s.plan = PLANS[target.basePlanId] ? target.basePlanId : "syscohada";
+    refreshPlan(); saveStore(store); toast("Plan personnalisé supprimé."); router.render();
+  }));
+  document.getElementById("cp-save-meta")?.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    try {
+      const updated = validateCustomPlan({ ...target, name: document.getElementById("cp-edit-name").value, description: document.getElementById("cp-edit-description").value, updatedAt: new Date().toISOString() });
+      s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      saveStore(store); toast("Métadonnées du plan mises à jour."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.getElementById("cp-add-account")?.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    const code = document.getElementById("cp-account-code").value.trim();
+    const label = document.getElementById("cp-account-label").value.trim();
+    const type = document.getElementById("cp-account-type").value;
+    try {
+      const updated = validateCustomPlan({ ...target, accounts: [...target.accounts, [code, label, type]], updatedAt: new Date().toISOString() });
+      s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      refreshPlan(); saveStore(store); toast("Compte ajouté au plan personnalisé."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.querySelectorAll("[data-cp-remove-account]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    const code = button.dataset.cpRemoveAccount;
+    if ((store.entries || []).some((entry) => (entry.lines || []).some((line) => line.account === code))) return toast("Suppression impossible : ce compte est utilisé dans une écriture.");
+    if (!confirm("Retirer le compte " + code + " de ce plan ?")) return;
+    const updated = validateCustomPlan({ ...target, accounts: target.accounts.filter((row) => row[0] !== code), updatedAt: new Date().toISOString() });
+    s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+    refreshPlan(); saveStore(store); toast("Compte retiré."); router.render();
+  }));
+  document.getElementById("cp-import").addEventListener("click", async () => {
+    const input = document.getElementById("cp-import-file");
+    const file = input.files && input.files[0];
+    if (!file) return toast("Sélectionnez un fichier JSON de plan.");
+    try {
+      if (file.size > 2000000) throw new Error("Fichier trop volumineux (maximum 2 Mo).");
+      const raw = JSON.parse(await file.text());
+      const source = raw && raw.format === "mizane-custom-plan" ? raw.plan : raw;
+      if (raw && raw.version != null && raw.version !== 1) throw new Error("Version de fichier non prise en charge.");
+      const imported = validateCustomPlan({ ...source, id: makeCustomPlanId(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      if ((s.customPlans || []).length >= 100) throw new Error("Limite de 100 plans personnalisés atteinte.");
+      s.customPlans.push(imported); s.plan = imported.id; refreshPlan(); saveStore(store);
+      toast("Plan importé et activé."); router.render();
+    } catch (err) { toast("Import impossible : " + err.message); }
+    finally { input.value = ""; }
+  });
+
   document.getElementById("ca-add").addEventListener("click", () => {
     const code = document.getElementById("ca-code").value.trim();
     const label = document.getElementById("ca-label").value.trim();
     if (!code || !label) return toast("Numéro et libellé obligatoires.");
     if (s.customAccounts.some((a) => a.code === code) || planAccounts.some((a) => a.code === code)) return toast("Ce compte existe déjà.");
-    s.customAccounts.push({ code, label, type: document.getElementById("ca-type").value });
+    const accountType = document.getElementById("ca-type").value;
+    const activeCustom = (s.customPlans || []).find((p) => p.id === s.plan);
+    if (activeCustom) {
+      try {
+        const updated = validateCustomPlan({ ...activeCustom, accounts: [...activeCustom.accounts, [code, label, accountType]], updatedAt: new Date().toISOString() });
+        s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      } catch (err) { return toast(err.message); }
+    } else {
+      s.customAccounts.push({ code, label, type: accountType });
+    }
     refreshPlan();
     saveStore(store);
     toast("✓ Compte ajouté au plan.");

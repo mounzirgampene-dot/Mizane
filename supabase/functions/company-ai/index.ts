@@ -82,7 +82,10 @@ Deno.serve(async (req)=>{
    return json(200,{providers:configured,role:member.role});
  }
  if(action!=="chat")return json(400,{error:"Action inconnue."});
- const messageError=validateMessages(body.messages);\n if(messageError)return json(400,{error:messageError});\n if(body.temperature!==undefined&&(!Number.isFinite(Number(body.temperature))||Number(body.temperature)<0||Number(body.temperature)>1))return json(400,{error:"Température IA invalide (valeur attendue entre 0 et 1)."});\n if(body.json!==undefined&&typeof body.json!=="boolean")return json(400,{error:"Format de réponse invalide."});
+ const messageError=validateMessages(body.messages);
+ if(messageError)return json(400,{error:messageError});
+ if(body.temperature!==undefined&&(!Number.isFinite(Number(body.temperature))||Number(body.temperature)<0||Number(body.temperature)>1))return json(400,{error:"Température IA invalide (valeur attendue entre 0 et 1)."});
+ if(body.json!==undefined&&typeof body.json!=="boolean")return json(400,{error:"Format de réponse invalide."});
  const model=String(body.model||providers[provider].models[0]);
  if(!providers[provider].models.includes(model))return json(400,{error:"Modèle non autorisé."});
  const {data:key,error:keyError}=await admin.rpc("mizane_get_company_ai_secret",{p_company_id:companyId,p_provider:provider});

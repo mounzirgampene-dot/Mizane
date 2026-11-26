@@ -13,5 +13,5 @@ assert.throws(()=>suggestAccountMatches(source,source),/différents/);
 const rules=buildConversionRules(proposals,{"401":"4011","607":"6070","218":"2183"});
 assert.equal(rules.length,3);
 assert.ok(rules.every((r)=>r.status==="draft"));
-assert.throws(()=>buildConversionRules(proposals,{"401":"401x"}),/incompatible/);
+assert.throws(()=>buildConversionRules(proposals,{"401":"401x"}),/incompatible/);\nconst grouped=buildConversionRules(proposals,{"401":"4011","607":"4011"});\nassert.equal(grouped.length,1);assert.equal(grouped[0].relation,"many-to-one");assert.deepEqual(grouped[0].sourceCodes,["401","607"]);
 console.log("✓ Suggestions de rapprochement prudentes et validation des types.");

@@ -2660,6 +2660,18 @@ test("créances clients : balance âgée, règlements, avoirs et séparation des
 });
 
 
+const assistantViewSource = readFileSync(new URL("../js/views/assistant.js", import.meta.url), "utf8");
+const assistantAiSource = readFileSync(new URL("../js/ai.js", import.meta.url), "utf8");
+test("assistant IA : lecture de justificatif avec validation humaine obligatoire", () => {
+  assert.match(assistantViewSource, /suggestEntry\(store, note, imageData\)/);
+  assert.match(assistantViewSource, /validateEntry\(store, entry\)/);
+  assert.match(assistantViewSource, /postEntry\(store, entry\)/);
+  assert.ok(assistantViewSource.indexOf("validateEntry(store, entry)") < assistantViewSource.indexOf("postEntry(store, entry)"));
+  assert.match(assistantViewSource, /invoice-entry-save/);
+  assert.match(assistantAiSource, /Ne devine jamais une date, un montant, un compte, une devise ou une TVA/);
+  assert.match(assistantAiSource, /Ne déduis jamais un taux de TVA sans preuve explicite/);
+});
+
 const companyAiFunctionSource = readFileSync(new URL("../supabase/functions/company-ai/index.ts", import.meta.url), "utf8");
 test("assistant IA cloud : accès strictement réservé aux administrateurs et comptables", () => {
   assert.match(companyAiFunctionSource, /const AI_ALLOWED_ROLES = new Set\(\["admin","accountant"\]\)/);

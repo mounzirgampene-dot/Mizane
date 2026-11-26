@@ -9,6 +9,7 @@ import { viewAssistant, viewSettings } from "./views/assistant.js";
 import { viewTools, viewCalculator } from "./views/ops.js";
 import { viewFinancial } from "./views/financial.js";
 import { viewBudget } from "./budget.js";
+import { viewAnalytical } from "./analytical.js";
 import { viewBilling } from "./billing.js";
 import { viewStock } from "./stock.js";
 import { viewPurchases } from "./purchases.js";
@@ -34,7 +35,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "commercial-margins", "customer-followups", "budget", "tax", "notifications"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "commercial-margins", "customer-followups", "budget", "analytical", "tax", "notifications"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -52,6 +53,7 @@ const NAV = [
   ["purchases", "Achats"],
   ["commercial-margins", "Marges commerciales"],
   ["budget", "Budget et écarts"],
+  ["analytical", "Comptabilité analytique"],
   ["tax", "Fiscalité"],
   ["tools", "Outils"],
   ["calculator", "Calculatrice"],
@@ -63,7 +65,7 @@ const NAV = [
 const VIEWS = {
   dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
-  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), "commercial-margins": viewCommercialMargins, "customer-followups": viewCustomerFollowups, budget: viewBudget, tax: viewTax, calculator: viewCalculator,
+  tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), "commercial-margins": viewCommercialMargins, "customer-followups": viewCustomerFollowups, budget: viewBudget, analytical: viewAnalytical, tax: viewTax, calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,
   history: viewActivityHistory, "my-work": viewMyWork, notifications: viewNotifications,
 };

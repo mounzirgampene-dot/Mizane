@@ -1,5 +1,5 @@
 // MIZANE — Contrôles comptables transversaux, en lecture seule.
-import { accountType, entryTotals, round2, validDate, JOURNALS, trialBalance } from "./accounting.js";
+import { accountType, entryTotals, round2, validDate, JOURNALS } from "./accounting.js";
 
 const JOURNAL_IDS = new Set(JOURNALS.map((journal) => journal.id));
 const severityRank = { critical: 0, warning: 1, info: 2 };
@@ -95,9 +95,8 @@ export function buildAccountingControlReport(store, options = {}) {
   warnings.push(...abnormalBalances);
   warnings.sort((a, b) => severityRank[a.severity] - severityRank[b.severity] || String(a.date || "").localeCompare(String(b.date || "")));
 
-  const tb = trialBalance(store, start, end);
   const debit = round2(totalDebit), credit = round2(totalCredit);
-  const globalBalanced = Math.abs(debit - credit) <= 0.01 && Math.abs(tb.totals.debit - tb.totals.credit) <= 0.01;
+  const globalBalanced = Math.abs(debit - credit) <= 0.01;
   const bySeverity = { critical: 0, warning: 0, info: 0 };
   for (const warning of warnings) bySeverity[warning.severity] = (bySeverity[warning.severity] || 0) + 1;
   const byType = {};

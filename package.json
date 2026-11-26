@@ -4,7 +4,7 @@
   "description": "MIZANE — Application de comptabilité générale multi-pays (SYSCOHADA, PCG, NCT, CGNC) avec assistant IA Mistral. PWA installable sur Android et Windows.",
   "type": "module",
   "scripts": {
-    "test": "node tests/run.mjs && node tests/african-tax-calculators.test.js && node tests/plan-library.test.js && node tests/custom-plans.test.js && node tests/plan-mapping.test.js && node tests/conversion-assistant.test.js && node tests/migration.test.js && node tests/migration-audit.test.js && node tests/accounting-controls.test.js && node tests/third-party-reconciliation.test.js",
+    "test": "node tests/run.mjs && node tests/african-tax-calculators.test.js && node tests/plan-library.test.js && node tests/custom-plans.test.js && node tests/plan-mapping.test.js && node tests/conversion-assistant.test.js && node tests/migration.test.js && node tests/migration-audit.test.js && node tests/accounting-controls.test.js && node tests/third-party-reconciliation.test.js && node tests/bank-statement-import.test.js",
     "lint": "eslint js tests sw.js",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

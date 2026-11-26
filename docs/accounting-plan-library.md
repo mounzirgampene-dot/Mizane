@@ -93,3 +93,14 @@ Les entreprises peuvent désormais créer un plan personnalisé en copiant un r�
 Les plans personnalisés sont stockés dans les paramètres de l'entreprise, dans la sauvegarde locale MIZANE et dans le snapshot de synchronisation de l'entreprise. Les plans officiels et les modèles sectoriels d'origine restent inchangés. Un compte déjà utilisé dans une écriture ne peut pas être retiré du plan actif afin de préserver l'intégrité des journaux et des états.
 
 Le format d'échange est versionné (`mizane-custom-plan`, version 1). L'import valide les identifiants, les codes de comptes, les libellés, les types et l'absence de doublons. Les plans personnalisés ne sont pas certifiés comme référentiels réglementaires : leur conformité relève de la validation du professionnel comptable compétent.
+
+
+## Lot 6 — versions, correspondances et simulation de migration
+
+Le noyau de gestion permet d'enregistrer plusieurs éditions d'un même plan avec leur libellé, dates d'effet, autorité, référence documentaire, URL HTTPS et statut. Les dates ne sont jamais déduites automatiquement : elles doivent être justifiées par une source compétente.
+
+Les correspondances prennent en charge les relations exactes, un-vers-plusieurs, plusieurs-vers-un et les comptes explicitement non rapprochés. Chaque règle porte un statut, une note et une référence justificative. Les comptes sources ne peuvent pas être affectés à plusieurs règles dans une même table ; les types incompatibles sont refusés. Les répartitions un-vers-plusieurs exigent des pourcentages explicites totalisant 100 %.
+
+La simulation n'utilise que les règles approuvées, contrôle l'équilibre débit/crédit, signale les comptes non rapprochés et bloque les écritures incomplètes. Elle ne modifie jamais les écritures d'origine et n'applique aucune migration automatiquement. Aucune correspondance universelle n'est préremplie : chaque rapprochement doit être établi et justifié par un professionnel à partir des nomenclatures réellement utilisées.
+
+Les collections planVersions et planMappings sont conservées dans les paramètres, les sauvegardes locales et les snapshots synchronisés. Elles sont validées à l'import et avant synchronisation. Les référentiels intégrés restent inchangés.

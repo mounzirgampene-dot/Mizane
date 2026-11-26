@@ -2,6 +2,8 @@
 import { buildAccountCache, validateEntry } from "./accounting.js";
 import { allAccounts } from "./plans.js";
 import { validateCustomPlans } from "./plans/custom.js";
+import { PLANS } from "./plans.js";
+import { validatePlanVersions, validatePlanMappings } from "./plans/mapping.js";
 const LOCAL_KEY = "mizane_v1";
 const SHADOW_PREFIX = "mizane_sync_shadow_v1:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -61,6 +63,9 @@ function validateSyncStore(store) {
   }
   let customPlans = [];
   try { customPlans = validateCustomPlans(store.settings.customPlans); }
+  catch (error) { errors.push(error.message); }
+  const catalog = { ...PLANS, ...Object.fromEntries(customPlans.map((p) => [p.id, p])) };
+  try { const versions = validatePlanVersions(store.settings.planVersions, catalog); validatePlanMappings(store.settings.planMappings, catalog, versions); }
   catch (error) { errors.push(error.message); }
   const activeCustomPlan = customPlans.find((plan) => plan.id === store.settings.plan);
   const planAccounts = activeCustomPlan

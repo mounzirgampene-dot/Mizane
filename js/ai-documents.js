@@ -114,7 +114,7 @@ export function documentFactsFromProposal(proposal) {
   return {
     date: /^\d{4}-\d{2}-\d{2}$/.test(String(raw.date || proposal?.date || "")) ? String(raw.date || proposal.date) : "",
     total,
-    currency: String(raw.currency || defaultCurrency || "").trim().toUpperCase(),
+    currency: String(raw.currency || "").trim().toUpperCase(),
     reference: String(raw.reference || proposal?.reference || "").trim(),
     counterparty: String(raw.counterparty || raw.supplier || raw.customer || "").trim(),
   };

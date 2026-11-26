@@ -60,7 +60,7 @@ export const ACCOUNTING_FRAMEWORKS = {
     effectiveFrom: "2026-01-01",
     sourceUrl: "https://standards.aasb.gov.au/accounting-standards",
     sourceLabel: "AASB — Accounting Standards portal",
-    note: "Le portail officiel présente les versions applicables par période. AASB définit les règles de reporting et ne constitue pas une nomenclature de comptes universelle."
+    note: "Le portail officiel présente les versions applicables par période. AASB définit les règles de reporting et ne constitue pas un plan de comptes universel."
   }
 };
 

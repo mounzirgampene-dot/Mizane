@@ -30,11 +30,26 @@ export function suggestAccountMatches(sourcePlan, targetPlan) {
   });
 }
 export function buildConversionRules(suggestions, selections) {
-  return suggestions.flatMap((item, index) => {
+  const grouped = new Map();
+  suggestions.forEach((item, index) => {
     const targetCode = String(selections?.[item.source.code] || "").trim();
-    if (!targetCode) return [];
+    if (!targetCode) return;
     const candidate = item.candidates.find((entry) => entry.code === targetCode);
     if (!candidate) throw new Error("Compte cible non proposé ou incompatible : " + targetCode);
-    return [{ id: "map-" + (index + 1), relation: "exact", sourceCodes: [item.source.code], targetCodes: [targetCode], status: "draft", note: item.ambiguous ? "Rapprochement ambigu : vérification humaine requise." : "", sourceRef: "Proposition assistée à vérifier par un comptable." }];
+    if (!grouped.has(targetCode)) grouped.set(targetCode, []);
+    grouped.get(targetCode).push({ item, index });
+  });
+  return [...grouped.entries()].map(([targetCode, matches], index) => {
+    const sourceCodes = matches.map(({ item }) => item.source.code);
+    const relation = sourceCodes.length > 1 ? "many-to-one" : "exact";
+    return {
+      id: "map-" + (index + 1),
+      relation,
+      sourceCodes,
+      targetCodes: [targetCode],
+      status: "draft",
+      note: relation === "many-to-one" ? "Regroupement de plusieurs comptes sources vers une cible : validation comptable requise." : (matches[0].item.ambiguous ? "Rapprochement ambigu : vérification humaine requise." : ""),
+      sourceRef: "Proposition assistée à vérifier par un comptable.",
+    };
   });
 }

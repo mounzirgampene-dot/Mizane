@@ -2,7 +2,7 @@
 // Budgets et réalisations séparés par devise et axe. Aucun montant n'est converti.
 const round2 = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 const validDate = value => {
-  const m=String(value||"").match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);
+  const m=String(value||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if(!m)return false;
   const d=new Date(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3])));
   return d.toISOString().slice(0,10)===value;
@@ -17,7 +17,7 @@ export function validateAnalyticalBudgets(lines=[],{centers=[],projects=[],accou
   const account=String(line?.account||"").trim(),type=String(line?.type||""),monthlyAmount=Number(line?.monthlyAmount);
   const dimensionType=String(line?.dimensionType||""),dimensionId=String(line?.dimensionId||"");
   const currency=currencyOf(line?.currency,baseCurrency);
-  if(!/^\\d{1,12}$/.test(account))errors.push("Ligne "+(i+1)+" : compte invalide.");
+  if(!/^\d{1,12}$/.test(account))errors.push("Ligne "+(i+1)+" : compte invalide.");
   if(!["expense","income"].includes(type))errors.push("Ligne "+(i+1)+" : nature comptable invalide.");
   const known=accountMap.get(account);
   if(known&&known.type!==type)errors.push("Ligne "+(i+1)+" : la nature ne correspond pas au compte.");
@@ -98,7 +98,6 @@ export function buildAnalyticalBudgetReport({lines=[],entries=[],allocations=[],
  const dimensions=[...grouped.values()].map(g=>({...g,resultBudget:round2(g.incomeBudget-g.expensesBudget),resultActual:round2(g.incomeActual-g.expensesActual),resultVariance:round2((g.incomeActual-g.expensesActual)-(g.incomeBudget-g.expensesBudget)),marginRate:g.incomeActual?round2((g.incomeActual-g.expensesActual)/g.incomeActual*100):null})).sort((a,b)=>a.name.localeCompare(b.name,"fr")||a.currency.localeCompare(b.currency));
  const currencies=[...new Set(rows.map(x=>x.currency))].map(currency=>{
   const subset=rows.filter(x=>x.currency===currency),sum=k=>round2(subset.reduce((s,x)=>s+x[k],0));
-  const incomeBudget=sum("budgetTotal")-sum("budgetTotal"); // replaced below with typed sums
   const expenses=subset.filter(x=>x.type==="expense"),income=subset.filter(x=>x.type==="income");
   const eb=round2(expenses.reduce((s,x)=>s+x.budgetTotal,0)),ea=round2(expenses.reduce((s,x)=>s+x.actualTotal,0)),ib=round2(income.reduce((s,x)=>s+x.budgetTotal,0)),ia=round2(income.reduce((s,x)=>s+x.actualTotal,0));
   const ep=round2(expenses.reduce((s,x)=>s+x.projected,0)),ip=round2(income.reduce((s,x)=>s+x.projected,0));

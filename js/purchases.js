@@ -13,6 +13,7 @@ import { suggestSupplierInvoiceAccounts } from "./purchase-account-mapping.js";
 import { allAccounts } from "./plans.js";
 import { addSupplierPaymentTerms, buildSupplierPayablesSchedule, supplierCashOutflowForecast } from "./supplier-payables.js";
 import { prepareStockReplenishmentDraftLines } from "./stock-replenishment.js";
+import { addDeliveryDays, buildPurchaseDeliveryDashboard, summarizePurchaseOrder } from "./purchase-delivery-tracking.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const num = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -286,6 +287,9 @@ function totals(lines) {
 function statusLabel(status) {
   return ({ draft:"Brouillon", ordered:"Commandée", partially_received:"Partiellement reçue", received:"Reçue", validated:"Validée", cancelled:"Annulée" })[status] || status;
 }
+function deliveryStateLabel(state) {
+  return ({late:"En retard",due_today:"À livrer aujourd’hui",due_soon:"À livrer sous 7 jours",missing_date:"Date à renseigner",on_track:"Dans les délais",received:"Réceptionnée",draft:"Brouillon",cancelled:"Annulée"})[state] || "—";
+}
 function newNumber(type) {
   const p = data();
   const year = new Date().getFullYear();
@@ -297,6 +301,12 @@ function renderList() {
   const docs = [...p.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || Number(b.id)-Number(a.id));
   const orders = docs.filter(doc => doc.type === "order");
   const invoices = docs.filter(doc => doc.type === "invoice");
+  const deliveryDashboard = buildPurchaseDeliveryDashboard(orders, today());
+  const deliverySummaryById = new Map(deliveryDashboard.summaries.map(item => [String(item.orderId), item]));
+  const deliveryAlertRows = deliveryDashboard.alerts.map(item => {
+    const order = orders.find(doc => String(doc.id) === String(item.orderId));
+    return `<tr><td>${esc(item.number)}</td><td>${esc(supplierName(order?.supplierId))}</td><td>${esc(item.expectedDeliveryDate || "À planifier")}</td><td>${esc(deliveryStateLabel(item.deliveryState))}</td><td class="num">${item.remainingBase}</td><td><button class="secondary" data-delivery-open="${esc(item.orderId)}">Suivre</button></td></tr>`;
+  }).join("");
   const outstandingByCurrency=new Map(); for(const invoice of invoices.filter(item=>item.status==="validated"&&item.accountingPostedAt)){const balance=supplierInvoiceBalance(invoice);if(balance>0.001){const currency=invoice.currency||store.settings.currency||"MAD";outstandingByCurrency.set(currency,round((outstandingByCurrency.get(currency)||0)+balance));}}
   const outstandingSummary=[...outstandingByCurrency].map(([currency,amount])=>money(amount)+" "+currency).join(" · ")||"Aucune dette fournisseur non réglée.";
   const payablesSchedule=buildSupplierPayablesSchedule(invoices.map(invoice=>({...invoice,balance:supplierInvoiceBalance(invoice),supplierName:supplierName(invoice.supplierId)})));
@@ -305,12 +315,17 @@ function renderList() {
   const bucketLabels={upcoming:"À venir",due_today:"À payer aujourd’hui",overdue_1_30:"Retard 1–30 jours",overdue_31_60:"Retard 31–60 jours",overdue_61_90:"Retard 61–90 jours",overdue_90_plus:"Retard supérieur à 90 jours",undated:"Sans échéance"};
   const payablesRows=payablesSchedule.items.map(item=>`<tr><td>${esc(item.number)}</td><td>${esc(item.supplierName||supplierName(item.supplierId))}</td><td>${esc(item.dueDate||"Non définie")}</td><td>${esc(bucketLabels[item.bucket]||item.bucket)}</td><td class="num">${money(item.balance)} ${esc(item.currency)}</td><td><button class="secondary" data-payable-open="${esc(item.invoiceId)}">Ouvrir</button></td></tr>`).join("");
   const reconciliationRows=(p.reconciliations||[]).slice().reverse().map(item=>`<tr><td>${esc(item.date)}</td><td>${esc(item.reference)}</td><td>${esc(item.currency||"")}</td><td class="num">${money(item.amount)}</td><td>${item.status==="matched_with_tolerance"?"Rapproché avec tolérance":"Rapproché"}</td><td>${(item.allocations||[]).map(allocation=>esc(allocation.invoiceNumber)).join(", ")}</td></tr>`).join("");
-  const rows = docs.map(doc => `<tr>
-    <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
-    <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
-    <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):"—")}</td><td>${esc(statusLabel(doc.status))}</td><td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
-    <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
-  </tr>`).join("");
+  const rows = docs.map(doc => {
+    const delivery = doc.type === "order" ? deliverySummaryById.get(String(doc.id)) : null;
+    return `<tr>
+      <td>${esc(doc.number)}</td><td>${doc.type === "order" ? "Commande" : "Facture fournisseur"}</td>
+      <td>${esc(supplierName(doc.supplierId))}</td><td>${esc(doc.date)}</td>
+      <td>${esc(doc.type==="invoice"?(doc.dueDate||"—"):(delivery?.expectedDeliveryDate||"—"))}</td>
+      <td>${esc(statusLabel(doc.status))}${delivery?.isOpen ? '<br><small class="muted">'+esc(deliveryStateLabel(delivery.deliveryState))+'</small>' : ""}</td>
+      <td class="num">${money(doc.total)} ${esc(doc.currency || store.settings.currency || "MAD")}</td>
+      <td><button class="secondary" data-purchase-open="${doc.id}">Ouvrir</button></td>
+    </tr>`;
+  }).join("");
   $app.innerHTML = `
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap">
@@ -324,6 +339,15 @@ function renderList() {
       </div>
       <p><strong>Dettes fournisseurs comptabilisées :</strong> ${esc(outstandingSummary)}</p>
     </section>
+    <section class="card"><h2>Suivi des livraisons fournisseurs</h2>
+      <div class="grid cols-3">
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.late}</strong><br><span class="muted">Commandes en retard</span></div>
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.dueSoon + deliveryDashboard.totals.dueToday}</strong><br><span class="muted">Livraisons à échéance sous 7 jours</span></div>
+        <div class="calculator-result"><strong>${deliveryDashboard.totals.partial}</strong><br><span class="muted">Commandes partiellement reçues</span></div>
+      </div>
+      <p>${deliveryDashboard.totals.missingDate} commande(s) en cours sans date prévisionnelle. Les alertes sont recalculées à chaque ouverture du module et ne déclenchent aucun envoi externe.</p>
+      <div class="table-wrap"><table><thead><tr><th>Commande</th><th>Fournisseur</th><th>Livraison prévue</th><th>Alerte</th><th>Reliquat (base)</th><th>Action</th></tr></thead><tbody>${deliveryAlertRows||'<tr><td colspan="6">Aucune alerte de livraison.</td></tr>'}</tbody></table></div>
+    </section>
     <section class="card"><h2>Échéancier des dettes fournisseurs</h2><div class="grid cols-3"><div class="calculator-result"><strong>${payablesSchedule.totals.overdue}</strong><br><span class="muted">Factures en retard</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.dueToday}</strong><br><span class="muted">À payer aujourd’hui</span></div><div class="calculator-result"><strong>${payablesSchedule.totals.upcoming}</strong><br><span class="muted">Échéances à venir</span></div></div><p><strong>Décaissements prévus sur 30 jours :</strong> ${esc(currencySummary(forecast.amountByCurrency))}</p><div class="table-wrap"><table><thead><tr><th>Facture</th><th>Fournisseur</th><th>Échéance</th><th>Situation</th><th>Solde dû</th><th>Action</th></tr></thead><tbody>${payablesRows||'<tr><td colspan=6>Aucune dette fournisseur échue ou à venir.</td></tr>'}</tbody></table></div></section><section class="card"><h2>Documents d'achat</h2>
       <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Type</th><th>Fournisseur</th><th>Date</th><th>Échéance</th><th>État</th><th class="num">Total</th><th>Action</th></tr></thead><tbody>${rows || '<tr><td colspan="8">Aucun document d’achat enregistré.</td></tr>'}</tbody></table></div>
     </section>
@@ -335,6 +359,7 @@ function renderList() {
   document.getElementById("pa-reconcile").addEventListener("click", openSupplierMultiInvoiceReconciliation);
   $app.querySelectorAll("[data-purchase-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.purchaseOpen))));
   $app.querySelectorAll("[data-payable-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.payableOpen))));
+  $app.querySelectorAll("[data-delivery-open]").forEach(button => button.addEventListener("click", () => openDetail(Number(button.dataset.deliveryOpen))));
 }
 function openSupplier() {
   const p = data();
@@ -342,7 +367,7 @@ function openSupplier() {
     <label>Nom / raison sociale</label><input id="ps-name" maxlength="180" required>
     <div class="grid cols-2"><div><label>Code fournisseur</label><input id="ps-code" maxlength="40"></div><div><label>Identifiant fiscal</label><input id="ps-tax" maxlength="80"></div></div>
     <div class="grid cols-2"><div><label>Téléphone</label><input id="ps-phone" maxlength="60"></div><div><label>E-mail</label><input id="ps-email" type="email" maxlength="180"></div></div>
-    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
+    <div class="grid cols-2"><div><label>Délai de paiement par défaut (jours)</label><input id="ps-terms" type="number" min="0" max="3650" step="1" value="30"></div><div><label>Délai de livraison habituel (jours, facultatif)</label><input id="ps-lead-time" type="number" min="0" max="3650" step="1" placeholder="Non renseigné"></div><div><label>Adresse</label><textarea id="ps-address" maxlength="500"></textarea></div></div><div id="ps-error" class="errors"></div>
     <div class="actions"><button id="ps-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`);
   box.querySelector("#ps-save").addEventListener("click", () => {
     const name = box.querySelector("#ps-name").value.trim();
@@ -351,7 +376,10 @@ function openSupplier() {
     if (code && p.suppliers.some(item => item.code.toLowerCase() === code.toLowerCase())) { box.querySelector("#ps-error").textContent = "Ce code fournisseur existe déjà."; return; }
     const paymentTermsDays=Number(box.querySelector("#ps-terms").value);
     if(!Number.isInteger(paymentTermsDays)||paymentTermsDays<0||paymentTermsDays>3650){box.querySelector("#ps-error").textContent="Le délai de paiement doit être compris entre 0 et 3 650 jours.";return;}
-    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, active:true, createdAt:new Date().toISOString() });
+    const leadInput=box.querySelector("#ps-lead-time").value.trim();
+    const leadTimeDays=leadInput===""?null:Number(leadInput);
+    if(leadTimeDays!==null&&(!Number.isInteger(leadTimeDays)||leadTimeDays<0||leadTimeDays>3650)){box.querySelector("#ps-error").textContent="Le délai de livraison doit être compris entre 0 et 3 650 jours.";return;}
+    p.suppliers.push({ id:p.nextSupplierId++, name, code, taxNumber:box.querySelector("#ps-tax").value.trim(), phone:box.querySelector("#ps-phone").value.trim(), email:box.querySelector("#ps-email").value.trim(), address:box.querySelector("#ps-address").value.trim(), paymentTermsDays, leadTimeDays, active:true, createdAt:new Date().toISOString() });
     box.closest("dialog").close(); persist("Fournisseur enregistré."); renderList();
   });
 }

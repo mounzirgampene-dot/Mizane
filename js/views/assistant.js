@@ -17,6 +17,49 @@ import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
+function draftLineMarkup(line, index) {
+  return '<tr class="draft-line" data-line-index="' + index + '">' +
+    '<td><input aria-label="Compte" data-line-field="account" maxlength="20" value="' + esc(line.account || '') + '" placeholder="Compte"></td>' +
+    '<td><input aria-label="Libellé" data-line-field="label" maxlength="180" value="' + esc(line.label || '') + '" placeholder="Libellé"></td>' +
+    '<td><input aria-label="Débit" data-line-field="debit" type="number" min="0" step="0.01" value="' + (line.debit ? esc(line.debit) : '') + '"></td>' +
+    '<td><input aria-label="Crédit" data-line-field="credit" type="number" min="0" step="0.01" value="' + (line.credit ? esc(line.credit) : '') + '"></td>' +
+    '<td><button type="button" class="danger small" data-draft-action="remove-line" aria-label="Supprimer la ligne">×</button></td></tr>';
+}
+function draftCardMarkup(entry, index, title) {
+  const lines = Array.isArray(entry.lines) ? entry.lines : [];
+  const facts = entry.aiReview && Array.isArray(entry.aiReview.sourceFacts) ? entry.aiReview.sourceFacts : [];
+  const uncertainties = entry.aiReview && Array.isArray(entry.aiReview.uncertainties) ? entry.aiReview.uncertainties : [];
+  return '<section class="card ai-draft-card" data-draft-card="' + index + '" style="margin:12px 0">' +
+    '<h3>' + esc(title || ('Écriture proposée ' + (index + 1))) + '</h3>' +
+    (facts.length ? '<p class="muted"><strong>Éléments relevés :</strong> ' + esc(facts.join(' · ')) + '</p>' : '') +
+    (uncertainties.length ? '<p class="warn"><strong>À vérifier :</strong> ' + esc(uncertainties.join(' · ')) + '</p>' : '') +
+    '<div class="row"><div><label>Date</label><input type="date" data-header="date" value="' + esc(entry.date || '') + '"></div>' +
+    '<div><label>Journal</label><select data-header="journal">' + ['ACH','VTE','BAN','CAI','OD'].map(j => '<option value="' + j + '"' + (entry.journal === j ? ' selected' : '') + '>' + j + '</option>').join('') + '</select></div>' +
+    '<div><label>Référence</label><input data-header="reference" maxlength="120" value="' + esc(entry.reference || '') + '"></div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th></th></tr></thead><tbody data-draft-lines>' + lines.map((line,i) => draftLineMarkup(line,i)).join('') + '</tbody></table></div>' +
+    '<div class="actions"><button type="button" class="secondary small" data-draft-action="add-line">+ Ajouter une ligne</button></div>' +
+    '<div class="draft-validation muted" aria-live="polite"></div></section>';
+}
+function readDraftCard(card) {
+  return { date: card.querySelector('[data-header="date"]').value, journal: card.querySelector('[data-header="journal"]').value, reference: card.querySelector('[data-header="reference"]').value.trim(),
+    lines: Array.from(card.querySelectorAll('.draft-line')).map(row => ({ account: row.querySelector('[data-line-field="account"]').value.trim(), label: row.querySelector('[data-line-field="label"]').value.trim(), debit: row.querySelector('[data-line-field="debit"]').value, credit: row.querySelector('[data-line-field="credit"]').value })) };
+}
+function bindDraftEditors(root, onSave) {
+  const refresh = card => { const result = validateEntry(store, readDraftCard(card)); const target = card.querySelector('.draft-validation'); target.innerHTML = result.ok ? '<span class="ok-msg">Contrôle technique réussi : écriture équilibrée et comptes reconnus.</span>' : '<span class="errors">' + esc(result.errors.join(' · ')) + '</span>'; return result; };
+  root.addEventListener('input', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('change', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('click', event => {
+    const action = event.target.closest('[data-draft-action]');
+    if (action) { const card = action.closest('[data-draft-card]'); if (!card) return; if (action.dataset.draftAction === 'add-line') { const body = card.querySelector('[data-draft-lines]'); body.insertAdjacentHTML('beforeend', draftLineMarkup({}, body.querySelectorAll('.draft-line').length)); refresh(card); } else if (action.dataset.draftAction === 'remove-line') { action.closest('.draft-line').remove(); refresh(card); } return; }
+    if (!event.target.closest('[data-draft-save]')) return;
+    const cards = Array.from(root.querySelectorAll('[data-draft-card]')); const drafts = cards.map(readDraftCard); const checks = cards.map(refresh);
+    if (!cards.length || checks.some(check => !check.ok)) { toast('Corrigez toutes les écritures avant l’enregistrement. Aucune n’a été enregistrée.'); return; }
+    const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => period && period.status !== "open" && draft.date >= period.startDate && draft.date <= period.endDate));
+    if (closed) { toast('Au moins une écriture concerne une période clôturée. Aucun enregistrement effectué.'); return; }
+    onSave(drafts);
+  });
+}
+
 let assistantHistoryCompanyId = "";
 
 export function viewAssistant() {
@@ -46,11 +89,11 @@ export function viewAssistant() {
       <div id="import-result" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <h2>🧾 Lire une facture et préparer son écriture</h2>
-      <p class="muted">Joignez une facture ou un reçu. L'IA extrait les informations visibles et propose une écriture. Vérifiez les comptes, les montants et la date avant toute inscription : aucune écriture n'est enregistrée automatiquement.</p>
+      <h2>🧠 Copilote comptable — analyser un justificatif</h2>
+      <p class="muted">Joignez une facture, un reçu ou un document de transaction. Le copilote extrait les faits, signale les incertitudes et prépare une écriture détaillée et modifiable. Aucune écriture n'est enregistrée automatiquement.</p>
       <div class="row">
         <div><label>Photo du justificatif</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp"></div>
-        <div><label>Précisions facultatives</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
+        <div><label>Contexte de l’opération (facultatif)</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
       </div>
       <div class="actions"><button id="invoice-analyze" ${configured ? "" : "disabled"}>${configured ? "Analyser le justificatif" : "Configurez une clé IA pour activer la lecture"}</button></div>
       <div id="invoice-result" style="margin-top:10px"></div>
@@ -92,32 +135,17 @@ export function viewAssistant() {
       const imageData = await imageFileToDataUrl(file);
       const note = document.getElementById("invoice-note").value.trim();
       const proposal = await suggestEntry(store, note, imageData);
-      const lines = Array.isArray(proposal.lines) ? proposal.lines : [];
-      const lineRows = lines.map((line) => '<tr><td>' + esc(line.account) + '</td><td>' + esc(line.label || '') + '</td><td>' + esc(line.debit || 0) + '</td><td>' + esc(line.credit || 0) + '</td></tr>').join("");
-      const checked = validateEntry(store, proposal);
-      out.innerHTML = '<p><strong>Proposition extraite — vérification obligatoire</strong></p>' +
-        '<p class="muted">Contrôlez chaque compte, chaque montant, la date et le traitement de la TVA sur le justificatif original.</p>' +
-        '<div class="row"><div><label>Date de l’écriture</label><input type="date" id="invoice-entry-date" value="' + esc(proposal.date || '') + '"></div>' +
-        '<div><label>Journal</label><select id="invoice-entry-journal">' + ['ACH','VTE','BAN','CAI','OD'].map((j) => '<option value="' + j + '"' + (proposal.journal === j ? ' selected' : '') + '>' + j + '</option>').join("") + '</select></div></div>' +
-        '<div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead><tbody>' + lineRows + '</tbody></table></div>' +
-        (checked.ok ? '<p class="ok-msg">Contrôle technique initial : écriture équilibrée et comptes reconnus.</p>' : '<p class="errors">Points à corriger : ' + esc(checked.errors.join(' · ')) + '</p>') +
-        '<p class="muted">Le contrôle technique ne certifie pas l’exactitude de l’interprétation fiscale ni la conformité juridique de l’écriture.</p>' +
-        '<div class="actions"><button id="invoice-entry-save">Vérifier et enregistrer cette écriture</button></div>';
-      document.getElementById("invoice-entry-save").addEventListener("click", () => {
-        const entry = { ...proposal, date: document.getElementById("invoice-entry-date").value, journal: document.getElementById("invoice-entry-journal").value };
-        const validation = validateEntry(store, entry);
-        if (!validation.ok) {
-          out.insertAdjacentHTML("afterbegin", '<p class="errors">Enregistrement refusé : ' + esc(validation.errors.join(' · ')) + '</p>');
-          return;
-        }
-        const posted = postEntry(store, entry);
-        if (!posted.ok) {
-          out.insertAdjacentHTML("afterbegin", '<p class="errors">' + esc(posted.errors.join(' · ')) + '</p>');
-          return;
-        }
+      out.innerHTML = '<p><strong>Proposition IA — chaque champ est modifiable</strong></p>' +
+        '<p class="muted">L’IA sépare les faits visibles des incertitudes. Corrigez les comptes, libellés, montants, date et journal. Vous pouvez ajouter ou supprimer des lignes. Rien ne sera enregistré avant votre validation explicite.</p>' +
+        draftCardMarkup(proposal, 0, 'Écriture issue du justificatif') +
+        '<p class="muted">Le contrôle technique vérifie la structure et l’équilibre ; il ne certifie ni l’authenticité du document ni sa conformité fiscale ou juridique.</p>' +
+        '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer l’écriture</button></div>';
+      bindDraftEditors(out, drafts => {
+        const posted = postEntry(store, drafts[0]);
+        if (!posted.ok) { toast(posted.errors.join(' · ')); return; }
         saveStore(store);
-        toast("Écriture enregistrée après validation. Vérifiez le grand livre et la pièce originale.");
-        router.go("entries");
+        toast('Écriture enregistrée après validation.');
+        router.go('entries');
       });
     } catch (err) {
       out.innerHTML = '<p class="errors">' + esc(err.message || "Lecture du justificatif impossible.") + '</p>';
@@ -138,24 +166,23 @@ export function viewAssistant() {
       return;
     }
     if (!proposals.length) { out.innerHTML = `<p class="errors">Aucune opération reconnue dans ce texte.</p>`; return; }
-    const checked = proposals.map((p) => ({ p, v: validateEntry(store, p) }));
-    const valid = checked.filter((c) => c.v.ok);
-    out.innerHTML = `
-      <p>${checked.length} écriture(s) proposée(s) — ${valid.length} valide(s), ${checked.length - valid.length} à corriger.</p>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Journal</th><th>Détail</th><th>Contrôle</th></tr></thead>
-      <tbody>${checked.map((c) => `<tr><td>${esc(c.p.date || "À préciser")}</td><td>${esc(c.p.journal)}</td>
-        <td class="muted">${esc(c.p.lines.map((l) => `${l.account} ${l.debit ? "D" + l.debit : "C" + l.credit}`).join(" · "))}</td>
-        <td>${c.v.ok ? `<span class="ok-msg">✓ équilibrée</span>` : `<span class="errors">✗ ${esc(c.v.errors[0] || "invalide")}</span>`}</td></tr>`).join("")}</tbody></table></div>
-      ${valid.length ? `<div class="actions"><button id="import-save">Enregistrer les ${valid.length} écriture(s) valide(s)</button></div>` : ""}`;
-    if (valid.length) {
-      document.getElementById("import-save").addEventListener("click", () => {
-        let n = 0;
-        for (const c of valid) { const r = postEntry(store, c.p); if (r.ok) n++; }
-        saveStore(store);
-        toast(`✓ ${n} écriture(s) enregistrée(s) : grand livre, balance, bilan et résultat mis à jour.`);
-        router.go("entries");
-      });
-    }
+    out.innerHTML = '<p><strong>' + proposals.length + ' écriture(s) extraites.</strong> Modifiez les dates, journaux, comptes, libellés et montants ; ajoutez ou retirez des lignes. L’enregistrement est global : si une seule écriture est invalide, aucune ne sera enregistrée.</p>' +
+      proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Opération ' + (index + 1))).join('') +
+      '<p class="muted">Les dates absentes restent vides. Les informations incertaines doivent être vérifiées sur les pièces originales.</p>' +
+      '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écritures</button></div>';
+    bindDraftEditors(out, drafts => {
+      const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => draft.date >= period.start && draft.date <= period.end));
+      if (closed) { toast('Période clôturée : aucune écriture enregistrée.'); return; }
+      const posted = [];
+      for (const draft of drafts) {
+        const result = postEntry(store, draft);
+        if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+        posted.push(result.entry);
+      }
+      saveStore(store);
+      toast(posted.length + ' écriture(s) enregistrée(s) après validation.');
+      router.go('entries');
+    });
   });
 
   // ---- Conversation avec photo ----

@@ -162,18 +162,24 @@ export function imageFileToDataUrl(file, maxDim = 1280) {
 export async function suggestEntry(store, text, imageDataUrl = null) {
   const userContent = imageDataUrl
     ? [
-        { type: "text", text: "Voici un justificatif photographié (facture, reçu, ticket). Lis-le" + (text ? " en tenant compte de ces précisions" : "") + " et propose l'écriture comptable, uniquement le JSON :\n" + text },
+        { type: "text", text: "Lis ce justificatif (facture, reçu, ticket ou document de transaction), relève uniquement les faits visibles et prépare une écriture détaillée. Renvoie un JSON avec date, journal, reference, lines, sourceFacts (faits visibles) et uncertainties (données absentes, ambiguës ou illisibles). N’invente aucun montant, compte, date, devise ou taux fiscal." + (text ? "\nPrécisions fournies par l’utilisateur : " + text : "") },
         { type: "image_url", image_url: imageDataUrl },
       ]
-    : "Propose l'écriture comptable pour cette opération, uniquement le JSON :\n" + text;
+    : "Analyse cette opération et prépare une écriture comptable détaillée. N'invente aucune donnée. Renvoie uniquement un JSON contenant date, journal, reference, lines, sourceFacts et uncertainties :\n" + text;
   const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content: userContent },
   ], { json: true, model: imageDataUrl ? visionModel(store) : undefined });
   try {
     const parsed = JSON.parse(content);
-    if (parsed.lines) return parsed;
-    if (parsed.ecriture?.lines) return parsed.ecriture;
+    const proposal = parsed.lines ? parsed : parsed.ecriture?.lines ? parsed.ecriture : parsed.entry?.lines ? parsed.entry : null;
+    if (proposal) return {
+      ...proposal,
+      aiReview: {
+        sourceFacts: Array.isArray(parsed.sourceFacts) ? parsed.sourceFacts.slice(0, 20) : [],
+        uncertainties: Array.isArray(parsed.uncertainties) ? parsed.uncertainties.slice(0, 20) : [],
+      },
+    };
   } catch (_e) { /* fallthrough */ }
   throw new Error("Réponse IA inexploitable : " + content.slice(0, 300));
 }
@@ -202,14 +208,14 @@ export async function importEntriesFromText(store, text) {
     { role: "system", content: systemPrompt(store) },
     { role: "user", content:
       "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
-      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}]}. " +
-      "Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
+      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}],\"sourceFacts\":[],\"uncertainties\":[]} ]}. " +
+      "Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Renseigne sourceFacts avec les éléments réellement présents dans le texte et uncertainties avec les champs absents, ambigus ou illisibles. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
   ], { json: true });
   let parsed;
   try { parsed = JSON.parse(content); } catch (_e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
   const arr = parsed.entries || parsed.ecritures || [];
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("Aucune écriture trouvée dans la réponse IA.");
-  return arr.map((entry) => ({ ...entry, date: validDate(entry?.date) ? entry.date : "" }));
+  return arr.map((entry) => ({ ...entry, date: validDate(entry?.date) ? entry.date : "", aiReview: { sourceFacts: Array.isArray(entry?.sourceFacts) ? entry.sourceFacts.slice(0, 20) : [], uncertainties: Array.isArray(entry?.uncertainties) ? entry.uncertainties.slice(0, 20) : [] } }));
 }
 
 export function buildAiAuditSnapshot(store) {

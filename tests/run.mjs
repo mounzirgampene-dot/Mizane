@@ -2664,10 +2664,10 @@ const assistantViewSource = readFileSync(new URL("../js/views/assistant.js", imp
 const assistantAiSource = readFileSync(new URL("../js/ai.js", import.meta.url), "utf8");
 test("assistant IA : lecture de justificatif avec validation humaine obligatoire", () => {
   assert.match(assistantViewSource, /suggestEntry\(store, note, imageData\)/);
-  assert.match(assistantViewSource, /validateEntry\(store, entry\)/);
-  assert.match(assistantViewSource, /postEntry\(store, entry\)/);
-  assert.ok(assistantViewSource.indexOf("validateEntry(store, entry)") < assistantViewSource.indexOf("postEntry(store, entry)"));
-  assert.match(assistantViewSource, /invoice-entry-save/);
+  assert.match(assistantViewSource, /validateEntry\(store, readDraftCard\(card\)\)/);
+  assert.match(assistantViewSource, /postEntry\(store, drafts\[0\]\)/);
+  assert.ok(assistantViewSource.indexOf("validateEntry(store, readDraftCard(card))") < assistantViewSource.indexOf("postEntry(store, drafts[0])"));
+  assert.match(assistantViewSource, /data-draft-save/);
   assert.match(assistantAiSource, /Ne devine jamais une date, un montant, un compte, une devise ou une TVA/);
   assert.match(assistantAiSource, /Ne déduis jamais un taux de TVA sans preuve explicite/);
   assert.match(assistantAiSource, /Si la date est absente ou illisible, laisse date vide/);
@@ -2682,6 +2682,15 @@ test("assistant IA : lecture de justificatif avec validation humaine obligatoire
   assert.match(assistantViewSource, /assistantHistoryCompanyId/);
   assert.match(assistantViewSource, /réinitialisée lors d’un changement d’entreprise/);
   assert.match(assistantViewSource, /buildAiAuditSnapshot\(store\)/);
+  assert.match(assistantViewSource, /function draftCardMarkup/);
+  assert.match(assistantViewSource, /function readDraftCard/);
+  assert.match(assistantViewSource, /data-line-field="account"/);
+  assert.match(assistantViewSource, /data-line-field="debit"/);
+  assert.match(assistantViewSource, /data-line-field="credit"/);
+  assert.match(assistantViewSource, /bindDraftEditors\(out/);
+  assert.match(assistantViewSource, /Valider et enregistrer les/);
+  assert.match(assistantAiSource, /sourceFacts/);
+  assert.match(assistantAiSource, /uncertainties/);
 
 });
 

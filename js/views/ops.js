@@ -11,6 +11,7 @@ import { getStock } from "../stock-core.js";
 import { suggestStockAccounts } from "../billing-accounting.js";
 import { calculateLocalStockPeriodValuation, postPeriodicStockClosingJournalEntry } from "../stock-accounting.js";
 import { buildThirdPartyReconciliation, applyThirdPartyLettrage, reverseThirdPartyLettrage } from "../third-party-reconciliation.js";
+import { parseBankStatement } from "../bank-statement-import.js";
 
 
 async function retryStockPeriodRequest(operation,attempts=3) {
@@ -137,6 +138,8 @@ export function viewTools() {
     <div class="card">
       <h2>🏦 Rapprochement bancaire</h2>
       <p class="muted">Collez votre relevé bancaire (une ligne par opération : <code>date;libellé;montant</code>). Dates acceptées : JJ/MM/AAAA ou AAAA-MM-JJ. Utilisez un montant positif pour un crédit bancaire et négatif pour un débit, selon le sens des écritures de trésorerie de votre comptabilité.</p>
+      <div class="row"><div><label for="bk-file">Importer un relevé CSV ou OFX</label><input id="bk-file" type="file" accept=".csv,.txt,.ofx,application/vnd.ms-excel,application/x-ofx,text/csv"></div><div class="nogrow"><button type="button" class="secondary" id="bk-import-file">Importer le fichier</button></div></div>
+      <p class="muted">Les CSV acceptent les colonnes Date, Libellé, Montant ou Débit/Crédit, Référence et Devise. Les fichiers OFX conservent l'identifiant bancaire FITID lorsqu'il existe.</p>
       <textarea id="bk-text" rows="6" placeholder="10/01/2025;Virement client;1000000&#10;12/01/2025;Fournisseur Diallo;-500000"></textarea>
       <div class="row">
         <div><label for="bk-days">Tolérance de date</label><select id="bk-days"><option value="0">Même jour</option><option value="2">± 2 jours</option><option value="4" selected>± 4 jours</option><option value="7">± 7 jours</option><option value="10">± 10 jours</option></select></div>
@@ -475,6 +478,44 @@ export function viewTools() {
     });
   };
 
+  document.getElementById("bk-import-file")?.addEventListener("click", async () => {
+    const file = document.getElementById("bk-file")?.files?.[0];
+    if (!file) return toast("Sélectionnez un fichier CSV ou OFX.");
+    if (file.size > 10 * 1024 * 1024) return toast("Le fichier dépasse la limite de 10 Mo.");
+    try {
+      const parsed = parseBankStatement(await file.text(), "auto");
+      const out = document.getElementById("bk-result");
+      if (!parsed.lines.length) {
+        out.innerHTML = '<p class="errors">' + esc(parsed.errors.join(" ")) + '</p>';
+        return;
+      }
+      const priorKeys = new Set((store.settings.bankReconciliations || []).flatMap(session => (session.lines || []).map(line => line.importKey || bankLineKey(line))));
+      const inFileKeys = new Set();
+      const unique = [];
+      let duplicates = parsed.duplicates.length;
+      for (const line of parsed.lines) {
+        const key = line.fitId ? "FITID:" + line.fitId : bankLineKey(line);
+        if (priorKeys.has(key) || inFileKeys.has(key)) { duplicates++; continue; }
+        inFileKeys.add(key);
+        unique.push({ ...line, importKey: key });
+      }
+      if (!unique.length) {
+        out.innerHTML = '<p class="warn">Toutes les opérations du fichier sont déjà présentes dans l’historique ou répétées dans le relevé. Aucun doublon importé.</p>';
+        return;
+      }
+      const days = Number(document.getElementById("bk-days").value) || 0;
+      const matched = matchBankLines(store, unique, days);
+      const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, sourceFile:file.name, sourceFormat:parsed.format, importedRows:unique.length, duplicateRows:duplicates, parseWarnings:parsed.errors, lines:matched };
+      store.settings.bankReconciliations ||= [];
+      store.settings.bankReconciliations.unshift(session);
+      store.settings.bankReconciliations = store.settings.bankReconciliations.slice(0,50);
+      saveStore(store);
+      document.getElementById("bk-text").value = "";
+      renderBankResult(session);
+      toast(unique.length + " opération(s) importée(s), " + duplicates + " doublon(s) ignoré(s)." + (parsed.errors.length ? " " + parsed.errors.length + " ligne(s) à vérifier." : ""));
+    } catch (error) { toast("Import impossible : " + (error.message || "fichier illisible")); }
+  });
+
   document.getElementById("bk-run").addEventListener("click", () => {
     const lines = parseBankCSV(document.getElementById("bk-text").value);
     const out = document.getElementById("bk-result");
@@ -484,7 +525,7 @@ export function viewTools() {
     if (!unique.length) { out.innerHTML = '<p class="warn">Toutes les opérations de ce relevé ont déjà été importées. Aucun doublon créé.</p>'; return; }
     const days = Number(document.getElementById("bk-days").value) || 0;
     const matched = matchBankLines(store, unique, days);
-    const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, lines:matched };
+    const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, sourceFormat:"collage", importedRows:unique.length, duplicateRows:lines.length-unique.length, lines:matched };
     if (!Array.isArray(store.settings.bankReconciliations)) store.settings.bankReconciliations = [];
     store.settings.bankReconciliations.unshift(session);
     store.settings.bankReconciliations = store.settings.bankReconciliations.slice(0,50);

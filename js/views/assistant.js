@@ -78,7 +78,8 @@ export function viewAssistant() {
     const out = document.getElementById("invoice-result");
     if (!configured || !aiConfigured(store)) { toast("Configurez d'abord une clé IA dans Paramètres."); return; }
     if (!file) { toast("Sélectionnez une photo de facture ou de reçu."); return; }
-    if (!/^image\\/(jpeg|png|webp)$/i.test(file.type)) { toast("Formats acceptés : JPEG, PNG ou WebP."); return; }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { toast("Formats acceptés : JPEG, PNG ou WebP."); return; }
+    if (file.size > 15 * 1024 * 1024) { toast("La photo dépasse la limite de 15 Mo."); return; }
     out.innerHTML = '<p class="muted">Analyse du justificatif en cours…</p>';
     try {
       const imageData = await imageFileToDataUrl(file);

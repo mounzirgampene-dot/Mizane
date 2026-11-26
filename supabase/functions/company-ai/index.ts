@@ -8,6 +8,34 @@ const providers = {
   gemini: { endpoint:"https://generativelanguage.googleapis.com/v1beta", models:["gemini-3.8-flash","gemini-3.7-flash","gemini-3.5-flash"] },
 };
 const AI_ALLOWED_ROLES = new Set(["admin","accountant"]);
+const validateMessages = (messages: unknown) => {
+ if(!Array.isArray(messages)||messages.length<2||messages.length>30)return "Historique de conversation invalide.";
+ let totalText=0, imageCount=0;
+ for(let i=0;i<messages.length;i++){
+   const message=messages[i];
+   if(!message||typeof message!=="object"||!["system","user","assistant"].includes(message.role))return "Format de conversation invalide.";
+   if(message.role==="system"&&i!==0)return "Le message système doit être placé en première position.";
+   const parts=typeof message.content==="string"?[{type:"text",text:message.content}]:message.content;
+   if(!Array.isArray(parts)||parts.length<1||parts.length>12)return "Contenu de message invalide.";
+   for(const part of parts){
+     if(!part||typeof part!=="object")return "Élément de message invalide.";
+     if(part.type==="text"){
+       if(typeof part.text!=="string"||part.text.length>60000)return "Un message dépasse la taille textuelle autorisée.";
+       totalText+=part.text.length;
+     }else if(part.type==="image_url"){
+       const src=typeof part.image_url==="string"?part.image_url:part.image_url?.url;
+       if(typeof src!=="string"||!/^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(src))return "Image invalide : seuls les formats JPEG, PNG et WebP intégrés sont acceptés.";
+       if(src.length>8_500_000)return "Une image dépasse la taille autorisée.";
+       imageCount++;
+       if(imageCount>4)return "Quatre images au maximum peuvent être envoyées par conversation.";
+     }else return "Type de contenu non pris en charge.";
+   }
+ }
+ if(totalText>120000)return "La conversation dépasse la taille textuelle autorisée.";
+ if(!messages.some(m=>m.role==="user"))return "La conversation doit contenir un message utilisateur.";
+ return null;
+};
+
 const validUuid=(v)=>typeof v==="string"&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 Deno.serve(async (req)=>{
  const origin=req.headers.get("Origin");
@@ -54,14 +82,14 @@ Deno.serve(async (req)=>{
    return json(200,{providers:configured,role:member.role});
  }
  if(action!=="chat")return json(400,{error:"Action inconnue."});
- if(!Array.isArray(body.messages)||body.messages.length<1||body.messages.length>30)return json(400,{error:"Historique de conversation invalide."});
+ const messageError=validateMessages(body.messages);\n if(messageError)return json(400,{error:messageError});\n if(body.temperature!==undefined&&(!Number.isFinite(Number(body.temperature))||Number(body.temperature)<0||Number(body.temperature)>1))return json(400,{error:"Température IA invalide (valeur attendue entre 0 et 1)."});\n if(body.json!==undefined&&typeof body.json!=="boolean")return json(400,{error:"Format de réponse invalide."});
  const model=String(body.model||providers[provider].models[0]);
  if(!providers[provider].models.includes(model))return json(400,{error:"Modèle non autorisé."});
  const {data:key,error:keyError}=await admin.rpc("mizane_get_company_ai_secret",{p_company_id:companyId,p_provider:provider});
  if(keyError){console.error("AI credential read:",keyError.message);return json(500,{error:"Clé IA indisponible."});}
  if(!key)return json(409,{error:"Aucune clé IA n'est configurée pour cette entreprise."});
  const messages=body.messages;
- if(messages.some(m=>!m||!["system","user","assistant"].includes(m.role)))return json(400,{error:"Format de conversation invalide."});
+
  try{
    let response, text="";
    if(provider==="gemini"){

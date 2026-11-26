@@ -49,7 +49,7 @@ export function viewBudget() {
     return "<tr><td>" + esc(item.month) + "</td><td>" + label + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>";
   }).join("") : "";
 
-  const outlookRows = outlook.ok ? outlook.lines.map(item => "<tr><td>" + esc(item.account) + "</td><td>" + esc(item.label) + "</td><td>" + (item.type === "expense" ? "Charge" : "Produit") + "</td><td class=\\"num\\">" + money(item.projectedYearEnd) + "</td><td class=\\"num\\">" + money(item.budgetTotal) + "</td><td class=\\"num\\">" + money(item.projectedVariance) + "</td><td>" + (item.severity === "critical" ? "Critique" : item.severity === "warning" ? "Vigilance" : "Dans la cible") + "</td></tr>").join("") : "";
+  const outlookRows = outlook.ok ? outlook.lines.map(item => "<tr><td>" + esc(item.account) + "</td><td>" + esc(item.label) + "</td><td>" + (item.type === "expense" ? "Charge" : "Produit") + "</td><td >" + money(item.projectedYearEnd) + "</td><td >" + money(item.budgetTotal) + "</td><td >" + money(item.projectedVariance) + "</td><td>" + (item.severity === "critical" ? "Critique" : item.severity === "warning" ? "Vigilance" : "Dans la cible") + "</td></tr>").join("") : "";
   const options = accounts.map(item => "<option value=\"" + esc(item.code) + "\">" + esc(item.code + " — " + item.label) + " (" + (item.type === "expense" ? "Charge" : "Produit") + ")</option>").join("");
   $app.innerHTML = `
     <h1>Gestion budgétaire</h1>

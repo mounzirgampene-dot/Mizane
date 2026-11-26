@@ -2670,6 +2670,19 @@ test("assistant IA : lecture de justificatif avec validation humaine obligatoire
   assert.match(assistantViewSource, /invoice-entry-save/);
   assert.match(assistantAiSource, /Ne devine jamais une date, un montant, un compte, une devise ou une TVA/);
   assert.match(assistantAiSource, /Ne déduis jamais un taux de TVA sans preuve explicite/);
+  assert.match(assistantAiSource, /Si la date est absente ou illisible, laisse date vide/);
+  assert.match(assistantAiSource, /validDate\(entry\?\.date\) \? entry\.date : ""/);
+  assert.match(assistantAiSource, /buildAccountingControlReport/);
+  assert.match(assistantAiSource, /getActiveTaxRules/);
+  assert.match(assistantAiSource, /tax_code_rate_mismatch/);
+  assert.match(assistantAiSource, /const effectiveRate = Number\.isFinite\(rate\) \? rate : codeRule\?\.rate/);
+  assert.match(assistantAiSource, /tax_reference_missing/);
+  assert.match(assistantAiSource, /Aucune donnée fiscale explicite détectée/);
+  assert.doesNotMatch(assistantAiSource.slice(assistantAiSource.indexOf("export async function importEntriesFromText"), assistantAiSource.indexOf("export function buildAiAuditSnapshot")), /Utilise .*today|const today/);
+  assert.match(assistantViewSource, /assistantHistoryCompanyId/);
+  assert.match(assistantViewSource, /réinitialisée lors d’un changement d’entreprise/);
+  assert.match(assistantViewSource, /buildAiAuditSnapshot\(store\)/);
+
 });
 
 const companyAiFunctionSource = readFileSync(new URL("../supabase/functions/company-ai/index.ts", import.meta.url), "utf8");

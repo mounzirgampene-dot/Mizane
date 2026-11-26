@@ -4,7 +4,7 @@ import { PLANS, getPlan, allAccounts, ACCOUNT_TYPES } from "../plans.js";
 import { getCountryAccountingFramework } from "../plans/frameworks.js";
 import { COUNTRIES, getCountry } from "../countries.js";
 import {
-  aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
+  aiConfigured, chat, chatWithImage, aiAudit, buildAiAuditSnapshot, localAssist, localAuditSummary,
   imageFileToDataUrl, suggestEntry, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
   configureCompanyAI, deleteCompanyAI, refreshCompanyAIStatus,
 } from "../ai.js";
@@ -17,7 +17,14 @@ import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
+let assistantHistoryCompanyId = "";
+
 export function viewAssistant() {
+  const currentCompanyId = localStorage.getItem("mizane_active_company_v1") || "";
+  if (currentCompanyId !== assistantHistoryCompanyId) {
+    aiHistory.splice(0, aiHistory.length);
+    assistantHistoryCompanyId = currentCompanyId;
+  }
   const audit = localAuditSummary(store);
   const configured = aiConfigured(store);
   refreshCompanyAIStatus(providerOf(store)).then(() => { if (aiConfigured(store) !== configured) router.render(); }).catch(() => {});
@@ -49,7 +56,7 @@ export function viewAssistant() {
       <div id="invoice-result" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <h2>💬 Conversation</h2>
+      <h2>💬 Conversation</h2>\n      <p class="muted">Mémoire de conversation temporaire, limitée à cette session et réinitialisée lors d’un changement d’entreprise. Aucun historique de conversation n’est partagé entre entreprises.</p>
       <div class="chat-box" id="chat-box">
         <div class="chat-msg ai">Bonjour ! Je suis l'assistant comptable MIZANE${configured ? " (IA connectée)" : " (mode local)"}. Posez vos questions, ou joignez la photo d'une facture ou d'un reçu pour que je la lise.</div>
         ${aiHistory.map((m) => `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}</div>`).join("")}
@@ -64,7 +71,7 @@ export function viewAssistant() {
     </div>
     <div class="card">
       <h2>🔎 Audit intelligent</h2>
-      <p class="muted">Analyse complète des écritures : erreurs, TVA oubliée, comptes suspects, recommandations.</p>
+      <p class="muted">Audit des anomalies comptables, soldes inhabituels et cohérence des données fiscales explicitement saisies. Le contrôle fiscal compare uniquement les informations présentes à un référentiel officiel actif ; il ne déduit aucun taux et ne certifie pas la conformité.</p>
       <button id="audit-run">${configured ? "Lancer l'audit IA" : "Lancer le contrôle local"}</button>
       <div id="audit-result" style="margin-top:10px"></div>
     </div>
@@ -136,7 +143,7 @@ export function viewAssistant() {
     out.innerHTML = `
       <p>${checked.length} écriture(s) proposée(s) — ${valid.length} valide(s), ${checked.length - valid.length} à corriger.</p>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Journal</th><th>Détail</th><th>Contrôle</th></tr></thead>
-      <tbody>${checked.map((c) => `<tr><td>${esc(c.p.date)}</td><td>${esc(c.p.journal)}</td>
+      <tbody>${checked.map((c) => `<tr><td>${esc(c.p.date || "À préciser")}</td><td>${esc(c.p.journal)}</td>
         <td class="muted">${esc(c.p.lines.map((l) => `${l.account} ${l.debit ? "D" + l.debit : "C" + l.credit}`).join(" · "))}</td>
         <td>${c.v.ok ? `<span class="ok-msg">✓ équilibrée</span>` : `<span class="errors">✗ ${esc(c.v.errors[0] || "invalide")}</span>`}</td></tr>`).join("")}</tbody></table></div>
       ${valid.length ? `<div class="actions"><button id="import-save">Enregistrer les ${valid.length} écriture(s) valide(s)</button></div>` : ""}`;
@@ -199,10 +206,13 @@ export function viewAssistant() {
   document.getElementById("audit-run").addEventListener("click", async () => {
     const out = document.getElementById("audit-result");
     out.innerHTML = `<p class="muted">⏳ Analyse en cours…</p>`;
+    const snapshot = buildAiAuditSnapshot(store);
     const anomalies = checkAnomalies(store);
+    const taxFindings = snapshot.tax.findings;
     let html = anomalies.length
       ? `<ul class="errors">${anomalies.slice(0, 15).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul>`
       : `<p class="ok-msg">✓ Aucune anomalie détectée par le moteur local.</p>`;
+    html += `<h3>Vigilance fiscale</h3>` + (taxFindings.length ? `<ul class="errors">${taxFindings.map(item => `<li>${esc(item.message)} (écriture ${esc(item.entryId ?? "—")}, ligne ${esc(item.line)})</li>`).join("")}</ul>` : `<p class="muted">${esc(snapshot.tax.note || "Aucune incohérence fiscale explicite détectée par les contrôles déterministes.")}</p>`) + (snapshot.tax.referenceStatus === "active" ? `<p class="muted">Référentiel actif : ${esc(snapshot.tax.countryName)} (${esc(snapshot.tax.rulesVersion || "version non précisée")}).</p>` : `<p class="warn">Référentiel fiscal non actif pour ce pays : aucune validation des taux n’est effectuée.</p>`);
     if (aiConfigured(store)) {
       try { html += `<div class="chat-msg ai" style="max-width:100%">${esc(await aiAudit(store))}</div>`; }
       catch (err) { html += `<p class="errors">${esc(err.message)}</p>`; }

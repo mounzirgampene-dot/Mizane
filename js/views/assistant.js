@@ -13,6 +13,7 @@ import { validateCustomPlan, createCustomPlan } from "../plans/custom.js";
 import { validatePlanMapping, dryRunPlanMigration } from "../plans/mapping.js";
 import { suggestAccountMatches, buildConversionRules } from "../plans/conversion-assistant.js";
 import { applyPlanMigration, undoPlanMigration } from "../plans/migration.js";
+import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -168,8 +169,31 @@ export function viewSettings() {
   const defaultConversionTarget = conversionPlans.find((p) => p.id !== defaultConversionSource)?.id || "";
   const conversionOptions = conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionSource ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("");
   const conversionMappings = (s.planMappings || []).map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + ' — ' + esc(m.sourcePlanId) + ' → ' + esc(m.targetPlanId) + ' (' + esc(m.status) + ')</option>').join("");
-  const activePlanMigration = [...(s.planMigrationHistory || [])].reverse().find((item) => item.status === "applied");
-  const migrationHistoryHtml = activePlanMigration ? '<div class="card" style="margin-top:12px"><strong>Migration récente : </strong>' + esc(activePlanMigration.mappingLabel) + '<p class="muted">' + esc(activePlanMigration.sourcePlanId) + ' → ' + esc(activePlanMigration.targetPlanId) + ' · ' + activePlanMigration.entryCount + ' écriture(s) · ' + esc(activePlanMigration.appliedAt) + '</p><button class="secondary" id="conversion-undo">Annuler la dernière migration et restaurer les écritures</button></div>' : '<p class="muted" style="margin-top:12px">Aucune migration appliquée récemment.</p>';
+  const migrationRecords = [...(s.planMigrationHistory || [])].reverse();
+  const activePlanMigration = migrationRecords.find((item) => item.status === "applied");
+  const migrationHistoryHtml = migrationRecords.length
+    ? '<section class="card" style="margin-top:12px"><h3>Historique et audit des migrations</h3><p class="muted">Comparaison des soldes attendus selon le rapprochement et des soldes réellement enregistrés dans le plan cible. Cette comparaison technique ne certifie pas l'équivalence juridique ou comptable des référentiels.</p>' +
+      migrationRecords.map((record) => {
+        const report = record.auditReport;
+        const rows = report ? migrationAuditRows(report) : [];
+        const events = (record.events || []).map((event) => esc(event.type) + ' · ' + esc(event.at) + ' · acteur : ' + esc(event.actor || 'non renseigné')).join('<br>');
+        const reportRows = rows.map((row) => '<tr>' + Object.values(row).map((value) => '<td>' + esc(value) + '</td>').join('') + '</tr>').join('');
+        const reportTable = report
+          ? '<p><strong>Contrôle :</strong> ' + esc(report.status) + ' · ' + report.differenceCount + ' écart(s) · ' + report.unmapped.length + ' compte(s) non rapproché(s) · ' + report.entryIssues.length + ' écriture(s) déséquilibrée(s)</p>' +
+            '<p class="muted">Avant : débit ' + report.beforeTotals.debit + ' / crédit ' + report.beforeTotals.credit + ' — Après : débit ' + report.afterTotals.debit + ' / crédit ' + report.afterTotals.credit + ' — Écart global débit ' + report.totalsDifference.debit + ', crédit ' + report.totalsDifference.credit + '.</p>' +
+            '<details><summary>Détail des soldes par compte (' + rows.length + ')</summary><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit attendu</th><th>Débit après</th><th>Écart débit</th><th>Crédit attendu</th><th>Crédit après</th><th>Écart crédit</th><th>Solde attendu</th><th>Solde après</th><th>Écart solde</th><th>Cible absente</th></tr></thead><tbody>' + reportRows + '</tbody></table></div></details>' +
+            (report.unmapped.length ? '<p class="errors">Comptes non rapprochés : ' + esc(report.unmapped.map((item) => item.account).join(', ')) + '</p>' : '') +
+            (report.entryIssues.length ? '<p class="errors">Écritures déséquilibrées : ' + report.entryIssues.length + '</p>' : '')
+          : '<p class="muted">Rapport détaillé indisponible pour cette ancienne migration.</p>';
+        return '<article class="card" style="margin-top:10px"><strong>' + esc(record.mappingLabel || 'Migration') + '</strong> — <span>' + esc(record.status) + '</span>' +
+          '<p class="muted">' + esc(record.sourcePlanId) + ' → ' + esc(record.targetPlanId) + ' · ' + Number(record.entryCount || 0) + ' écriture(s) · appliquée le ' + esc(record.appliedAt || '') +
+          (record.undoneAt ? ' · annulée le ' + esc(record.undoneAt) : '') + '</p>' +
+          '<p class="muted">Approbateur : ' + esc(record.approvedBy || 'non renseigné') + ' · ' + (record.approvedAt ? 'approbation : ' + esc(record.approvedAt) : 'date d’approbation non renseignée') + '</p>' +
+          '<p class="muted">' + events + '</p>' + reportTable +
+          '<div class="actions"><button class="small secondary" data-migration-excel="' + esc(record.id) + '">Exporter Excel</button><button class="small secondary" data-migration-pdf="' + esc(record.id) + '">Imprimer / PDF</button>' +
+          (record.status === "applied" ? '<button class="small danger" data-migration-undo="' + esc(record.id) + '">Restaurer cette migration</button>' : '') + '</div></article>';
+      }).join('') + '</section>'
+    : '<p class="muted" style="margin-top:12px">Aucune migration enregistrée.</p>';
   const conversionCard = '<div class="card" id="accounting-conversion-card"><h2>Assistant de conversion entre référentiels</h2><p class="muted">Préparez un rapprochement entre deux plans. Les suggestions reposent sur le code, le libellé et le type comptable ; elles ne constituent pas une équivalence juridique ou comptable certifiée. Toute règle doit être vérifiée et approuvée explicitement.</p><div class="row"><div><label>Plan source</label><select id="conversion-source">' + conversionOptions + '</select></div><div><label>Plan cible</label><select id="conversion-target">' + conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionTarget ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("") + '</select></div><div class="nogrow"><button id="conversion-prepare">Analyser les comptes</button></div></div><div id="conversion-suggestions" style="margin-top:12px"></div><div class="row" style="margin-top:14px"><div><label>Nom du rapprochement</label><input id="conversion-label" maxlength="120" placeholder="Ex. SYSCOHADA vers PCG"></div><div class="nogrow"><button id="conversion-save" disabled>Enregistrer en brouillon</button></div></div><hr><h3>Rapprochements enregistrés</h3><div class="row"><div><label>Rapprochement</label><select id="conversion-mapping">' + conversionMappings + '</select></div><div class="nogrow"><button class="secondary" id="conversion-approve">Approuver les règles</button></div><div class="nogrow"><button id="conversion-preview">Simuler la conversion</button></div></div><div id="conversion-result" style="margin-top:12px"></div>' + migrationHistoryHtml + '</div>';
 
   $app.innerHTML = `
@@ -344,6 +368,37 @@ export function viewSettings() {
       toast(error.message);
     }
   });
+  document.querySelectorAll("[data-migration-excel]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationExcel);
+    if (!record?.auditReport) return toast("Rapport détaillé indisponible.");
+    const rows = migrationAuditRows(record.auditReport);
+    const headers = Object.keys(rows[0] || {});
+    const html = '<html><head><meta charset="utf-8"><style>body{font-family:Arial}table{border-collapse:collapse}th,td{border:1px solid #999;padding:5px}th{background:#eee}</style></head><body><h1>Audit de migration MIZANE</h1><p>' + esc(record.mappingLabel) + ' — ' + esc(record.sourcePlanId) + ' vers ' + esc(record.targetPlanId) + '</p><p>Comparaison technique selon le rapprochement approuvé ; ne vaut pas certification d’équivalence.</p><table><thead><tr>' + headers.map((key) => '<th>' + esc(key) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr>' + headers.map((key) => '<td>' + esc(row[key]) + '</td>').join('') + '</tr>').join('') + '</tbody></table></body></html>';
+    downloadBlob(new Blob(["\\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8" }), "mizane-audit-migration-" + record.id + ".xls");
+  }));
+  document.querySelectorAll("[data-migration-pdf]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationPdf);
+    if (!record?.auditReport) return toast("Rapport détaillé indisponible.");
+    const report = record.auditReport;
+    const rows = migrationAuditRows(report);
+    const headers = Object.keys(rows[0] || {});
+    const w = window.open("", "_blank");
+    if (!w) return toast("Autorisez les fenêtres contextuelles pour imprimer le rapport.");
+    const html = '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Audit MIZANE</title><style>body{font:11px Arial;padding:20px}h1{font-size:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #888;padding:4px;text-align:left}th{background:#eee}.note{margin:12px 0;color:#444}@media print{button{display:none}}</style></head><body><h1>Audit de migration MIZANE</h1><p>' + esc(record.mappingLabel) + ' — ' + esc(record.sourcePlanId) + ' vers ' + esc(record.targetPlanId) + '</p><p>Statut : ' + esc(report.status) + ' · Écritures : ' + report.entryCountBefore + ' · Écarts : ' + report.differenceCount + '</p><p>Avant : débit ' + report.beforeTotals.debit + ' / crédit ' + report.beforeTotals.credit + ' — Après : débit ' + report.afterTotals.debit + ' / crédit ' + report.afterTotals.credit + '</p><p class="note">Comparaison technique des soldes selon les règles du rapprochement ; elle ne certifie pas l’équivalence juridique ou comptable des plans.</p><table><thead><tr>' + headers.map((key) => '<th>' + esc(key) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr>' + headers.map((key) => '<td>' + esc(row[key]) + '</td>').join('') + '</tr>').join('') + '</tbody></table><p>Généré le ' + esc(report.generatedAt) + '</p></body></html>';
+    w.document.open(); w.document.write(html); w.document.close(); w.focus(); w.print();
+  }));
+  document.querySelectorAll("[data-migration-undo]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationUndo);
+    if (!record || !confirm("Restaurer les écritures antérieures à la migration « " + record.mappingLabel + " » ? Le retour arrière est refusé si les écritures ont changé depuis cette migration.")) return;
+    const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+    try {
+      const undone = undoPlanMigration(store, record.id);
+      if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : le retour arrière a été annulé.");
+      refreshPlan(); toast("Retour arrière effectué : " + undone.restoredEntryCount + " écriture(s) restaurée(s)."); router.render();
+    } catch (error) {
+      store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan(); toast(error.message);
+    }
+  }));
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);
     document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;

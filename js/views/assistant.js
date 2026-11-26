@@ -166,24 +166,23 @@ export function viewAssistant() {
       return;
     }
     if (!proposals.length) { out.innerHTML = `<p class="errors">Aucune opération reconnue dans ce texte.</p>`; return; }
-    const checked = proposals.map((p) => ({ p, v: validateEntry(store, p) }));
-    const valid = checked.filter((c) => c.v.ok);
-    out.innerHTML = `
-      <p>${checked.length} écriture(s) proposée(s) — ${valid.length} valide(s), ${checked.length - valid.length} à corriger.</p>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Journal</th><th>Détail</th><th>Contrôle</th></tr></thead>
-      <tbody>${checked.map((c) => `<tr><td>${esc(c.p.date || "À préciser")}</td><td>${esc(c.p.journal)}</td>
-        <td class="muted">${esc(c.p.lines.map((l) => `${l.account} ${l.debit ? "D" + l.debit : "C" + l.credit}`).join(" · "))}</td>
-        <td>${c.v.ok ? `<span class="ok-msg">✓ équilibrée</span>` : `<span class="errors">✗ ${esc(c.v.errors[0] || "invalide")}</span>`}</td></tr>`).join("")}</tbody></table></div>
-      ${valid.length ? `<div class="actions"><button id="import-save">Enregistrer les ${valid.length} écriture(s) valide(s)</button></div>` : ""}`;
-    if (valid.length) {
-      document.getElementById("import-save").addEventListener("click", () => {
-        let n = 0;
-        for (const c of valid) { const r = postEntry(store, c.p); if (r.ok) n++; }
-        saveStore(store);
-        toast(`✓ ${n} écriture(s) enregistrée(s) : grand livre, balance, bilan et résultat mis à jour.`);
-        router.go("entries");
-      });
-    }
+    out.innerHTML = '<p><strong>' + proposals.length + ' écriture(s) extraites.</strong> Modifiez les dates, journaux, comptes, libellés et montants ; ajoutez ou retirez des lignes. L’enregistrement est global : si une seule écriture est invalide, aucune ne sera enregistrée.</p>' +
+      proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Opération ' + (index + 1))).join('') +
+      '<p class="muted">Les dates absentes restent vides. Les informations incertaines doivent être vérifiées sur les pièces originales.</p>' +
+      '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écritures</button></div>';
+    bindDraftEditors(out, drafts => {
+      const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => draft.date >= period.start && draft.date <= period.end));
+      if (closed) { toast('Période clôturée : aucune écriture enregistrée.'); return; }
+      const posted = [];
+      for (const draft of drafts) {
+        const result = postEntry(store, draft);
+        if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+        posted.push(result.entry);
+      }
+      saveStore(store);
+      toast(posted.length + ' écriture(s) enregistrée(s) après validation.');
+      router.go('entries');
+    });
   });
 
   // ---- Conversation avec photo ----

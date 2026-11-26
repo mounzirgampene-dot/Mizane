@@ -1,7 +1,8 @@
 // MIZANE — Écran de comptabilité analytique.
 import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
-import { buildAnalyticalReport, validateAnalyticalCenter, validateAnalyticalAllocation } from "./analytical-core.js";\nimport { validateAllocationKey, applyAllocationKey, calculateBreakEven } from "./analytical-advanced-core.js";
+import { buildAnalyticalReport, validateAnalyticalCenter, validateAnalyticalAllocation } from "./analytical-core.js";
+import { validateAllocationKey, applyAllocationKey, calculateBreakEven } from "./analytical-advanced-core.js";
 
 const accountTypes = () => Object.fromEntries([...planAccounts, ...(store.settings.customAccounts || [])].map(item => [String(item.code), item.type]));
 const ensureData = () => {
@@ -82,7 +83,8 @@ ${(store.settings.analyticalAllocationKeys||[]).map(k=>'<div class="row"><strong
   $app.querySelector("#aa-key-apply")?.addEventListener("click",()=>{const [entryId,lineIndex]=($app.querySelector("#aa-key-source").value||"").split(":"),key=(store.settings.analyticalAllocationKeys||[]).find(x=>x.id===$app.querySelector("#aa-key-target").value);if(!key||!entryId)return toast("Choisissez une ligne et une clé.");const result=applyAllocationKey({key,entryId,lineIndex:Number(lineIndex),centers,allocations,entries:store.entries||[],accountTypes:types});if(!result.ok)return toast(result.errors.join(" "));allocations.push(...result.allocations);saveStore(store);toast("Clé appliquée : "+result.allocations.length+" affectation(s).");viewAnalytical();});
   $app.querySelectorAll("[data-aa-key-delete]").forEach(b=>b.addEventListener("click",()=>{const id=b.dataset.aaKeyDelete;if(allocations.some(x=>x.allocationKeyId===id))return toast("Clé utilisée : suppression interdite pour préserver la traçabilité.");store.settings.analyticalAllocationKeys=(store.settings.analyticalAllocationKeys||[]).filter(x=>x.id!==id);saveStore(store);viewAnalytical();}));
   $app.querySelector("#aa-be-calculate")?.addEventListener("click",()=>{const q=calculateBreakEven({sellingPrice:$app.querySelector("#aa-be-price").value,variableCost:$app.querySelector("#aa-be-variable").value,fixedCosts:$app.querySelector("#aa-be-fixed").value,actualUnits:$app.querySelector("#aa-be-units").value}),out=$app.querySelector("#aa-be-result");if(!q.ok){out.textContent=q.errors.join(" ");return;}out.innerHTML='<div class="grid cols-3"><div><strong>Seuil</strong><div>'+q.breakEvenUnits+' unités</div></div><div><strong>CA au seuil</strong><div>'+money(q.breakEvenRevenue)+'</div></div><div><strong>Marge de sécurité</strong><div>'+q.marginOfSafetyUnits+' unités ('+(q.marginOfSafetyRate??"—")+' %)</div></div><div><strong>Taux de contribution</strong><div>'+q.contributionRate+' %</div></div><div><strong>Résultat estimé</strong><div>'+money(q.estimatedResult)+'</div></div><div><strong>Situation</strong><div>'+(q.status==="above"?"Au-dessus du seuil":"En dessous du seuil")+'</div></div></div>';});
-\n  $app.querySelectorAll("[data-aa-delete]").forEach(button => button.addEventListener("click", () => {
+
+  $app.querySelectorAll("[data-aa-delete]").forEach(button => button.addEventListener("click", () => {
     store.settings.analyticalAllocations = allocations.filter(item => item.id !== button.dataset.aaDelete);
     saveStore(store); toast("Affectation retirée."); viewAnalytical();
   }));

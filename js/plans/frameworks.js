@@ -182,7 +182,7 @@ export const ACCOUNTING_FRAMEWORKS = {
     effectiveFrom: null,
     sourceUrl: "https://www.hkicpa.org.hk/en/Standards-setting/Standards/Members-Handbook-and-Due-Process/Due-Process/Financial-reporting",
     sourceLabel: "HKICPA — Financial Reporting Standards",
-    note: "Le choix dépend de l'éligibilité et de la catégorie de l'entité. Les HKFRS sont alignées sur les IFRS, mais ne constituent pas une nomenclature de comptes universelle."
+    note: "Le choix dépend de l'éligibilité et de la catégorie de l'entité. Les HKFRS sont alignées sur les IFRS, mais ne constituent pas un plan de comptes universel."
   }
 };
 

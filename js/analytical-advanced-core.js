@@ -51,7 +51,7 @@ export function buildProjectComparison({projects=[],allocations=[],entries=[],ac
 export function buildAnalyticalDecisionReport({centers=[],projects=[],allocations=[],entries=[],accountTypes={},startDate="",endDate=""}={}){
  const byDepartment=new Map(),byCenter=new Map(),byCurrency=new Map(),issues=[];
  const ensure=(map,key,defaults)=>{if(!map.has(key))map.set(key,{...defaults});return map.get(key);};
- const eligibleLines=new Map(),allocatedLines=new Map();
+ const eligibleLines=new Map();
  for(const entry of entries){
   if(!entry||entry.reversed||(startDate&&entry.date<startDate)||(endDate&&entry.date>endDate))continue;
   const currency=String(entry.currency||"MAD").toUpperCase();
@@ -77,16 +77,13 @@ export function buildAnalyticalDecisionReport({centers=[],projects=[],allocation
   const amount=r2(Math.abs(signed)*pct/100),currency=String(entry.currency||"MAD").toUpperCase();
   const nature=type==="income"?"revenue":(["direct","indirect"].includes(allocation.costNature)?allocation.costNature:"unclassified");
   const department=String(project?.department||"Non affecté");
-  const projectName=String(project?.name||"Sans projet");
-  const dep=ensure(byDepartment,department,{name:department,currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,result:0,allocations:0});
-  if(dep.currency!==currency){const key=department+"::"+currency;const row=ensure(byDepartment,key,{name:department,currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,result:0,allocations:0});if(type==="income")row.income=r2(row.income+amount);else if(nature==="direct")row.directCosts=r2(row.directCosts+amount);else if(nature==="indirect")row.indirectCosts=r2(row.indirectCosts+amount);else row.unclassifiedCosts=r2(row.unclassifiedCosts+amount);row.allocations++;}else{if(type==="income")dep.income=r2(dep.income+amount);else if(nature==="direct")dep.directCosts=r2(dep.directCosts+amount);else if(nature==="indirect")dep.indirectCosts=r2(dep.indirectCosts+amount);else dep.unclassifiedCosts=r2(dep.unclassifiedCosts+amount);dep.allocations++;}
+  const dep=ensure(byDepartment,department+"::"+currency,{name:department,currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,result:0,allocations:0});
+  if(type==="income")dep.income=r2(dep.income+amount);else if(nature==="direct")dep.directCosts=r2(dep.directCosts+amount);else if(nature==="indirect")dep.indirectCosts=r2(dep.indirectCosts+amount);else dep.unclassifiedCosts=r2(dep.unclassifiedCosts+amount);dep.allocations++;
   const centerKey=center.id+"::"+currency,cr=ensure(byCenter,centerKey,{name:center.name,currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,result:0,allocations:0});
   if(type==="income")cr.income=r2(cr.income+amount);else if(nature==="direct")cr.directCosts=r2(cr.directCosts+amount);else if(nature==="indirect")cr.indirectCosts=r2(cr.indirectCosts+amount);else cr.unclassifiedCosts=r2(cr.unclassifiedCosts+amount);cr.allocations++;
   const cur=ensure(byCurrency,currency,{currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,allocatedAmount:0,eligibleAmount:0,allocations:0});
   if(type==="income")cur.income=r2(cur.income+amount);else if(nature==="direct")cur.directCosts=r2(cur.directCosts+amount);else if(nature==="indirect")cur.indirectCosts=r2(cur.indirectCosts+amount);else cur.unclassifiedCosts=r2(cur.unclassifiedCosts+amount);
   cur.allocatedAmount=r2(cur.allocatedAmount+amount);cur.allocations++;
-  const lineKey=String(entry.id)+":"+allocation.lineIndex;
-  allocatedLines.set(lineKey,Math.min(100,r2((allocatedLines.get(lineKey)||0)+pct)));
  }
  for(const item of eligibleLines.values()){const cur=ensure(byCurrency,item.currency,{currency:item.currency,income:0,directCosts:0,indirectCosts:0,unclassifiedCosts:0,allocatedAmount:0,eligibleAmount:0,allocations:0});cur.eligibleAmount=r2(cur.eligibleAmount+item.amount);}
  const finish=row=>({...row,knownCosts:r2(row.directCosts+row.indirectCosts),totalCosts:r2(row.directCosts+row.indirectCosts+row.unclassifiedCosts),contribution:r2(row.income-row.directCosts),result:r2(row.income-row.directCosts-row.indirectCosts-row.unclassifiedCosts),marginRate:row.income?r2((row.income-row.directCosts-row.indirectCosts-row.unclassifiedCosts)/row.income*100):null});

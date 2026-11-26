@@ -123,6 +123,67 @@ export const ACCOUNTING_FRAMEWORKS = {
     sourceLabel: "XRB — Recently issued accounting standards",
     note: "Le XRB publie les normes et leurs dates obligatoires d'application, y compris des normes nouvelles applicables à partir de 2027 et 2029. Le cadre NZ IFRS/PBE ne constitue pas un plan de comptes national universel."
   }
+  ,
+  "singapore-sfrs": {
+    id: "singapore-sfrs",
+    name: "Singapore Financial Reporting Standards — SFRS(I) / FRS",
+    jurisdictions: ["SG"],
+    authority: "Accounting Standards Committee (ASC), sous l'Accounting and Corporate Regulatory Authority (ACRA)",
+    status: "framework-verified",
+    standard: "SFRS(I)s, FRS, SFRS for Small Entities et Charities Accounting Standard ; l'applicabilité dépend de la catégorie d'entité et de son statut.",
+    effectiveFrom: "2026-01-01",
+    sourceUrl: "https://www.acra.gov.sg/regulations/accounting-standards-financial-reporting-surveillance/accounting-standards/",
+    sourceLabel: "ACRA — Guide to accounting standards",
+    note: "ACRA publie les cadres et leurs périodes d'application. Les normes de reporting ne constituent pas un plan de comptes universel."
+  },
+  "philippines-pfrs": {
+    id: "philippines-pfrs",
+    name: "Philippine Financial Reporting Standards — PFRS",
+    jurisdictions: ["PH"],
+    authority: "Financial and Sustainability Reporting Standards Council (FSRSC)",
+    status: "framework-verified",
+    standard: "PFRS, Philippine Accounting Standards (PAS) et cadres PFRS pour PME ; les dates d'effet et options varient selon la catégorie d'entité.",
+    effectiveFrom: null,
+    sourceUrl: "https://www.pfsrsc.org/government-organization-our-standards",
+    sourceLabel: "FSRSC — Our Standards",
+    note: "Les prononcements et dates d'application sont publiés par le FSRSC. Ces normes de reporting ne constituent pas un plan de comptes universel."
+  },
+  "indonesia-sak": {
+    id: "indonesia-sak",
+    name: "Standar Akuntansi Keuangan Indonesia — SAK",
+    jurisdictions: ["ID"],
+    authority: "Dewan Standar Akuntansi Keuangan (DSAK-IAI), Ikatan Akuntan Indonesia (IAI)",
+    status: "framework-verified",
+    standard: "SAK Indonesia comprend les PSAK et ISAK ; plusieurs piliers coexistent, notamment SAK Indonesia, SAK Internasional, SAK EP et SAK EMKM selon le statut de l'entité.",
+    effectiveFrom: "2025-01-01",
+    sourceUrl: "https://web.iaiglobal.or.id/Berita-IAI/detail/standar_akuntansi_keuangan_indonesia",
+    sourceLabel: "IAI — Standar Akuntansi Keuangan Indonesia",
+    note: "Le cadre est différencié selon l'obligation de reddition publique et la taille de l'entité. SAK décrit les normes de reporting et non un plan de comptes unique."
+  },
+  "thailand-tfrs": {
+    id: "thailand-tfrs",
+    name: "Thai Financial Reporting Standards — TFRS",
+    jurisdictions: ["TH"],
+    authority: "Federation of Accounting Professions (TFAC), sous approbation réglementaire",
+    status: "framework-verified",
+    standard: "TFRS pour les entités ayant une responsabilité publique ; TFRS for Non-Publicly Accountable Entities pour les autres entités éligibles.",
+    effectiveFrom: null,
+    sourceUrl: "https://acpro-std.tfac.or.th/standard/1/Thai-Financial-Reporting-Standards",
+    sourceLabel: "TFAC — Thai Financial Reporting Standards",
+    note: "Les TFRS traduisent et adoptent les normes IFRS avec un décalage national d'application généralement d'un an. Il ne s'agit pas d'un plan de comptes universel."
+  },
+  "hong-kong-hkfrs": {
+    id: "hong-kong-hkfrs",
+    name: "Hong Kong Financial Reporting Standards — HKFRS",
+    jurisdictions: ["HK"],
+    authority: "Hong Kong Institute of Certified Public Accountants (HKICPA), sous la supervision de l'AFRC",
+    status: "framework-verified",
+    standard: "HKFRS Accounting Standards, HKFRS for Private Entities et SME-FRF/SME-FRS pour les entités éligibles.",
+    effectiveFrom: null,
+    sourceUrl: "https://www.hkicpa.org.hk/en/Standards-setting/Standards/Members-Handbook-and-Due-Process/Due-Process/Financial-reporting",
+    sourceLabel: "HKICPA — Financial Reporting Standards",
+    note: "Le choix dépend de l'éligibilité et de la catégorie de l'entité. Les HKFRS sont alignées sur les IFRS, mais ne constituent pas un plan de comptes universel."
+  }
 };
 
 export function getAccountingFramework(id) {

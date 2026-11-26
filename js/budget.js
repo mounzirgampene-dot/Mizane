@@ -2,6 +2,7 @@
 import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildBudgetReport, validateBudgetLines } from "./budget-core.js";
+import { buildBudgetOutlook } from "./budget-outlook-core.js";
 
 const fiscalStart = () => store.settings.exerciceStart || new Date().getFullYear() + "-01-01";
 const fiscalEnd = () => store.settings.exerciceEnd || new Date().getFullYear() + "-12-31";
@@ -32,6 +33,7 @@ export function viewBudget() {
   const start = fiscalStart(), end = fiscalEnd();
   const accounts = accountOptions();
   const report = buildBudgetReport({ lines: plan.lines, entries: store.entries || [], startDate: start, endDate: end, currency: store.settings.currency });
+  const outlook = buildBudgetOutlook({ report, entries: store.entries || [], startDate: start, asOf: new Date().toISOString().slice(0, 10) });
   const accountMap = new Map(accounts.map(item => [String(item.code), item]));
   const total = report.ok ? report.totals : { budgetExpenses: 0, actualExpenses: 0, budgetIncome: 0, actualIncome: 0, netBudget: 0, netActual: 0, netVariance: 0 };
   const monthRows = report.ok ? report.months.map(month => {
@@ -46,6 +48,8 @@ export function viewBudget() {
     const label = item.type === "expense_overrun" ? "Dépassement des charges" : "Produits inférieurs au budget";
     return "<tr><td>" + esc(item.month) + "</td><td>" + label + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>";
   }).join("") : "";
+
+  const outlookRows = outlook.ok ? outlook.lines.map(item => "<tr><td>" + esc(item.account) + "</td><td>" + esc(item.label) + "</td><td>" + (item.type === "expense" ? "Charge" : "Produit") + "</td><td >" + money(item.projectedYearEnd) + "</td><td >" + money(item.budgetTotal) + "</td><td >" + money(item.projectedVariance) + "</td><td>" + (item.severity === "critical" ? "Critique" : item.severity === "warning" ? "Vigilance" : "Dans la cible") + "</td></tr>").join("") : "";
   const options = accounts.map(item => "<option value=\"" + esc(item.code) + "\">" + esc(item.code + " — " + item.label) + " (" + (item.type === "expense" ? "Charge" : "Produit") + ")</option>").join("");
   $app.innerHTML = `
     <h1>Gestion budgétaire</h1>
@@ -55,6 +59,13 @@ export function viewBudget() {
       <section class="card kpi"><div class="label">Produits — budget / réel</div><div class="value">${money(total.budgetIncome)}</div><div class="muted">Réel : ${money(total.actualIncome)}</div></section>
       <section class="card kpi"><div class="label">Résultat budgété / réalisé</div><div class="value">${money(total.netActual)}</div><div class="muted">Budget : ${money(total.netBudget)} · Écart : ${money(total.netVariance)}</div></section>
     </div>
+    <section class="card">
+      <h2>Projection de fin d’exercice</h2>
+      <p class="muted">${outlook.ok ? esc(outlook.method) : "Projection indisponible : " + esc(outlook.errors[0] || "données insuffisantes.")}</p>
+      ${outlook.ok ? '<div class="grid cols-3"><div class="kpi"><div class="label">Charges projetées</div><div class="value">' + money(outlook.totals.expenses.projectedYearEnd) + '</div><div class="muted">Budget : ' + money(outlook.totals.expenses.fullYearBudget) + '</div></div><div class="kpi"><div class="label">Produits projetés</div><div class="value">' + money(outlook.totals.income.projectedYearEnd) + '</div><div class="muted">Budget : ' + money(outlook.totals.income.fullYearBudget) + '</div></div><div class="kpi"><div class="label">Résultat projeté</div><div class="value">' + money(outlook.totals.net.projectedYearEnd) + '</div><div class="muted">Écart au budget : ' + money(outlook.totals.net.projectedVariance) + '</div></div></div>' : ""}
+      <p class="muted">Mois écoulés : ${outlook.elapsedMonths} · Mois restants : ${outlook.remainingMonths}. Projection fondée sur le rythme moyen constaté.</p>
+      <div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Nature</th><th class="num">Projection</th><th class="num">Budget</th><th class="num">Écart favorable</th><th>État</th></tr></thead><tbody>${outlookRows || '<tr><td colspan="7" class="muted">Aucune projection disponible.</td></tr>'}</tbody></table></div>
+    </section>
     <section class="card">
       <h2>Ajouter une ligne budgétaire</h2>
       <p class="muted">Saisissez un montant mensuel pour un compte de charges ou de produits. Le budget est réparti sur les mois de l’exercice ; les montants réels sont calculés à partir des écritures dont le compte commence par le code choisi.</p>

@@ -96,19 +96,21 @@ export function buildAnalyticalBudgetReport({lines=[],entries=[],allocations=[],
   if(row.type==="expense"){g.expensesBudget=round2(g.expensesBudget+row.budgetTotal);g.expensesActual=round2(g.expensesActual+row.actualTotal);}else{g.incomeBudget=round2(g.incomeBudget+row.budgetTotal);g.incomeActual=round2(g.incomeActual+row.actualTotal);}
  }
  const dimensions=[...grouped.values()].map(g=>({...g,resultBudget:round2(g.incomeBudget-g.expensesBudget),resultActual:round2(g.incomeActual-g.expensesActual),resultVariance:round2((g.incomeActual-g.expensesActual)-(g.incomeBudget-g.expensesBudget)),marginRate:g.incomeActual?round2((g.incomeActual-g.expensesActual)/g.incomeActual*100):null})).sort((a,b)=>a.name.localeCompare(b.name,"fr")||a.currency.localeCompare(b.currency));
- const currencies=[...new Set(rows.map(x=>x.currency))].map(currency=>{
-  const subset=rows.filter(x=>x.currency===currency),sum=k=>round2(subset.reduce((s,x)=>s+x[k],0));
+ const currencyKeys=[...new Set(rows.map(x=>x.dimensionType+"::"+x.currency))];
+ const currencies=currencyKeys.map(key=>{
+  const [dimensionType,currency]=key.split("::");
+  const subset=rows.filter(x=>x.currency===currency&&x.dimensionType===dimensionType);
   const expenses=subset.filter(x=>x.type==="expense"),income=subset.filter(x=>x.type==="income");
   const eb=round2(expenses.reduce((s,x)=>s+x.budgetTotal,0)),ea=round2(expenses.reduce((s,x)=>s+x.actualTotal,0)),ib=round2(income.reduce((s,x)=>s+x.budgetTotal,0)),ia=round2(income.reduce((s,x)=>s+x.actualTotal,0));
   const ep=round2(expenses.reduce((s,x)=>s+x.projected,0)),ip=round2(income.reduce((s,x)=>s+x.projected,0));
-  return{currency,budgetExpenses:eb,actualExpenses:ea,budgetIncome:ib,actualIncome:ia,expenseVariance:round2(eb-ea),incomeVariance:round2(ia-ib),budgetResult:round2(ib-eb),actualResult:round2(ia-ea),projectedExpenses:ep,projectedIncome:ip,projectedResult:round2(ip-ep),projectedExpenseVariance:round2(eb-ep),projectedIncomeVariance:round2(ip-ib)};
+  return{currency,dimensionType,budgetExpenses:eb,actualExpenses:ea,budgetIncome:ib,actualIncome:ia,expenseVariance:round2(eb-ea),incomeVariance:round2(ia-ib),budgetResult:round2(ib-eb),actualResult:round2(ia-ea),projectedExpenses:ep,projectedIncome:ip,projectedResult:round2(ip-ep),projectedExpenseVariance:round2(eb-ep),projectedIncomeVariance:round2(ip-ib)};
  });
  const alerts=rows.filter(x=>["warning","critical"].includes(x.severity)).map(x=>({key:x.key,dimensionName:x.dimensionName,dimensionType:x.dimensionType,currency:x.currency,account:x.account,type:x.type,severity:x.severity,projectedVariance:x.projectedVariance,forecastExecutionRate:x.forecastExecutionRate}));
  const monthly=months.map(month=>{
   const subset=rows.flatMap(r=>r.monthly.filter(x=>x.month===month).map(x=>({...x,type:r.type,currency:r.currency})));
-  const byCurrency={};
-  for(const x of subset){if(!byCurrency[x.currency])byCurrency[x.currency]={budgetExpenses:0,actualExpenses:0,budgetIncome:0,actualIncome:0};const k=x.type==="expense"?"Expenses":"Income";byCurrency[x.currency]["budget"+k]=round2(byCurrency[x.currency]["budget"+k]+x.budget);byCurrency[x.currency]["actual"+k]=round2(byCurrency[x.currency]["actual"+k]+x.actual);}
-  return{month,byCurrency};
+  const byAxisCurrency={};
+  for(const x of subset){const key=x.type+"::"+x.currency;if(!byAxisCurrency[key])byAxisCurrency[key]={type:x.type,currency:x.currency,budget:0,actual:0};byAxisCurrency[key].budget=round2(byAxisCurrency[key].budget+x.budget);byAxisCurrency[key].actual=round2(byAxisCurrency[key].actual+x.actual);}
+  return{month,byAxisCurrency};
  });
  return{ok:true,errors:[],period:{startDate,endDate,asOf},months:monthly,dimensions,currencies,lines:rows,alerts,elapsedMonths:months.filter(m=>m<=asOf.slice(0,7)).length,remainingMonths:months.filter(m=>m>asOf.slice(0,7)).length};
 }

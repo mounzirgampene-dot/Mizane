@@ -132,7 +132,7 @@ export function systemPrompt(store) {
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
     "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}",
     "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
-    "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
+    "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits). Ne devine jamais une date, un montant, un compte, une devise ou une TVA absents ou illisibles : signale l’incertitude et laisse la valeur vide ou demande une précision. Ne déduis jamais un taux de TVA sans preuve explicite sur le justificatif et le contexte fiscal applicable. Une écriture proposée reste une hypothèse à vérifier par l’utilisateur, jamais une validation fiscale ou juridique.",
     "Comptes disponibles (extrait) :\n" + planDigest(store),
   ].join("\n");
 }

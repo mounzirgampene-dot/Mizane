@@ -556,9 +556,9 @@ function openDetail(id) {
   if (doc.type === "invoice" && doc.status === "validating" && doc.pendingInvoiceReceipt) addAction("Réessayer la validation et l’entrée en stock", () => postReceipt(doc, doc.pendingInvoiceReceipt.lines, box, "supplier_invoice").then(async () => { if (!doc.pendingInvoiceReceipt && doc.status === "validating") { doc.status="validated"; doc.validatedAt=new Date().toISOString(); persist("Facture fournisseur validée."); await postSupplierAccounting(doc, box); } }));
   if (["draft","ordered"].includes(doc.status)) addAction("Annuler le document", () => { if (doc.type === "order" && doc.lines.some(line=>num(line.receivedBase)>0)) { box.querySelector("#pd-detail-error").textContent = "Une commande déjà reçue ne peut pas être annulée depuis cette action."; return; } doc.status="cancelled"; persist("Document annulé."); box.closest("dialog").close(); renderList(); });
 }
-async function postReceipt(doc, requestedLines, box, sourceType) {
+async function postReceipt(doc, requestedLines, box, sourceType, receiptDate = null) {
   const pendingKey = sourceType === "supplier_invoice" ? "pendingInvoiceReceipt" : "pendingReceipt";
-  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id), attempted:false }; persist(); }
+  if (!doc[pendingKey]) { doc[pendingKey] = { operationUid:uuid(), lines:requestedLines, sourceType, sourceId:String(doc.id), documentDate:receiptDate || doc.date || today(), attempted:false }; persist(); }
   const pending = doc[pendingKey];
   const requestKey = String(doc.id) + ":" + pendingKey;
   if (activeReceiptOperations.has(requestKey)) return;
@@ -585,7 +585,7 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
     pending.attempted = true;
     persist();
     const result = await postCloudStockDocument({
-      operationUid:pending.operationUid, documentType:"receipt", documentDate:doc.date,
+      operationUid:pending.operationUid, documentType:"receipt", documentDate:pending.documentDate || doc.date,
       reference:doc.reference || doc.number, note:"Réception fournisseur — " + supplierName(doc.supplierId),
       sourceType:pending.sourceType, sourceId:pending.sourceId,
       lines:pending.lines,
@@ -606,8 +606,16 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
       }
     }
     if (linkedOrder) linkedOrder.status = linkedOrder.lines.every(item => num(item.receivedBase) >= item.baseQuantity) ? "received" : "partially_received";
+    if (doc.type === "order") {
+      doc.receiptHistory ||= [];
+      doc.receiptHistory.push({date:pending.documentDate||today(),recordedAt:new Date().toISOString(),operationUid:pending.operationUid,lines:pending.lines.map(line=>({productId:line.product_id,warehouseId:line.warehouse_id,quantity:num(line.quantity)}))});
+    }
     delete doc[pendingKey];
-    if (doc.type === "order") doc.status = doc.lines.every(line => num(line.receivedBase) >= line.baseQuantity) ? "received" : "partially_received";
+    if (doc.type === "order") {
+      const fullyReceived=doc.lines.every(line => line.lineType==="service"||line.lineType==="fixed_asset"||num(line.receivedBase)>=num(line.baseQuantity));
+      doc.status=fullyReceived?"received":"partially_received";
+      if(fullyReceived) doc.receivedAt=new Date().toISOString();
+    }
     persist("Entrée de stock fournisseur confirmée.");
     box?.closest("dialog")?.close(); renderList();
   } catch (error) {
@@ -621,7 +629,8 @@ async function postReceipt(doc, requestedLines, box, sourceType) {
   }
 }
 function openReceipt(doc) {
-  const { box } = modal(`<h2>Réception fournisseur — ${esc(doc.number)}</h2><p>Renseignez uniquement les quantités reçues aujourd'hui. Le reliquat restera à recevoir.</p>
+  const { box } = modal(`<h2>Réception fournisseur — ${esc(doc.number)}</h2><p>Renseignez uniquement les quantités reçues à cette date. Le reliquat restera à recevoir.</p>
+    <div><label>Date de réception physique</label><input id="pr-date" type="date" value="${today()}"></div>
     <div class="table-wrap"><table><thead><tr><th>Article</th><th>Restant (base)</th><th>Reçu (base)</th><th>Lot / série</th></tr></thead><tbody>${doc.lines.map((line,index) => ({line,index})).filter(({line}) => line.lineType !== "service" && line.lineType !== "fixed_asset").map(({line,index}) => {
       const item=product(line.productId), left=Math.max(0,line.baseQuantity-num(line.receivedBase));
       return `<tr data-receive-line="${index}"><td>${esc(item?.name||"Article")}</td><td>${round(left)}</td><td><input class="pr-qty" type="number" min="0" max="${left}" step="0.0001" value="${left}"></td><td><input class="pr-trace" placeholder="${item?.tracking === "serial" ? "Séries séparées par virgule" : item?.tracking === "lot" ? "Code lot" : "Facultatif"}"></td></tr>`;
@@ -640,7 +649,7 @@ function openReceipt(doc) {
       lines.push({ line_index:index, product_id:source.productId, warehouse_id:source.warehouseId, quantity:qty, unit_cost:source.baseUnitCost, lot_code:item?.tracking === "lot" ? trace : null, serial_numbers:serials });
     }
     if (!lines.length) { box.querySelector("#pd-detail-error").textContent="Saisissez au moins une quantité reçue."; return; }
-    postReceipt(doc, lines, box, "supplier_receipt");
+    postReceipt(doc, lines, box, "supplier_receipt", box.querySelector("#pr-date").value || today());
   });
 }
 async function postSupplierAccounting(doc, box) {

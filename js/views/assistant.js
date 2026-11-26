@@ -171,6 +171,7 @@ export function viewAssistant() {
         (warnings.length ? '<p class="warn">' + warnings.map(esc).join('<br>') + '</p>' : '') +
         proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Écriture issue du justificatif ' + (index + 1))).join('') +
         documentMatchesMarkup(facts, store) +
+        '<section class="card" id="document-classification"><h4>Classement de la pièce justificative</h4><div class="row"><div><label>Type de document</label><select id="document-type"><option value="other" selected>Autre document</option><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option></select></div><div><label>Date du document</label><input id="document-date" type="date" value="' + esc(facts.date) + '"></div><div><label>Journal associé</label><input id="document-journal" maxlength="12" value="' + esc(proposals[0].journal || "ACH") + '"></div></div><div class="row"><div><label>Fournisseur / client / tiers</label><input id="document-counterparty" maxlength="160" value="' + esc(facts.counterparty) + '" placeholder="Nom du tiers"></div><div><label>Référence du document</label><input id="document-reference" maxlength="120" value="' + esc(facts.reference) + '" placeholder="Numéro de facture ou référence"></div></div><label>Note de classement</label><input id="document-notes" maxlength="500" placeholder="Information complémentaire facultative"><p class="muted">Les informations extraites par l’IA sont proposées comme aide au classement. Vérifiez-les avant validation.</p></section>' +
         '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écriture(s)</button></div>';
       bindDraftEditors(out, async drafts => {
         const posted = [];
@@ -188,13 +189,14 @@ export function viewAssistant() {
         saveStore(store);
         const documentId = globalThis.crypto?.randomUUID?.() || ("doc-" + Date.now() + "-" + Math.random().toString(16).slice(2));
         const entryLocalIds = posted.map(entry => Number(entry.id));
+        const documentMetadata = { type:document.getElementById("document-type")?.value || "other", documentDate:document.getElementById("document-date")?.value || "", counterparty:document.getElementById("document-counterparty")?.value || "", reference:document.getElementById("document-reference")?.value || "", journal:document.getElementById("document-journal")?.value || "", notes:document.getElementById("document-notes")?.value || "" };
         let localArchived = false, cloudArchived = false, archiveWarning = "";
-        try { await putLocalAccountingDocument({ id:documentId, file, entryIds:entryLocalIds }); localArchived = true; }
+        try { await putLocalAccountingDocument({ id:documentId, file, entryIds:entryLocalIds, metadata:documentMetadata }); localArchived = true; }
         catch (error) { archiveWarning = "Archive locale indisponible : " + (error?.message || "stockage non disponible") + ". "; }
         try {
           const syncResult = await syncCloudIfReady();
           if (syncResult?.skipped && syncResult.reason !== "no-company") throw new Error("Effectuez la synchronisation initiale de l’entreprise avant d’archiver ses pièces dans le coffre partagé.");
-          const cloudDocument = await uploadCloudAccountingDocument({ file, entryLocalIds });
+          const cloudDocument = await uploadCloudAccountingDocument({ file, entryLocalIds, metadata:documentMetadata });
           if (cloudDocument) { cloudArchived = true; if (localArchived) await deleteLocalAccountingDocument(documentId); }
         } catch (error) { archiveWarning += "Coffre partagé non mis à jour : " + (error?.message || "connexion indisponible") + ". Le fichier reste sur cet appareil si l’archive locale a réussi."; }
         const archiveMessage = cloudArchived ? "Justificatif archivé dans le coffre privé de l’entreprise." : localArchived ? "Justificatif conservé sur cet appareil uniquement." : "Attention : le justificatif n’a pas pu être archivé. Conservez le fichier original.";

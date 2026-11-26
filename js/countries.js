@@ -79,6 +79,11 @@ const existingProfiles = [
   { code: "FR", name: "France", zone: "UE", currency: "EUR", plan: "pcg", vatRates: [20, 10, 5.5, 0], locale: "fr-FR" },
   { code: "TN", name: "Tunisie", zone: "AFN", currency: "TND", plan: "nct", vatRates: [], locale: "fr-TN" },
   { code: "MA", name: "Maroc", zone: "AFN", currency: "MAD", plan: "cgnc", vatRates: [20, 10, 0], locale: "fr-MA" },
+  { code: "GB", name: "Royaume-Uni", zone: "International", currency: "GBP", accountingFrameworkId: "uk-gaap", vatRates: [], locale: "en-GB" },
+  { code: "IN", name: "Inde", zone: "International", currency: "INR", accountingFrameworkId: "ind-as", vatRates: [], locale: "en-IN" },
+  { code: "BR", name: "Brésil", zone: "International", currency: "BRL", accountingFrameworkId: "brazil-nbc", vatRates: [], locale: "pt-BR" },
+  { code: "CA", name: "Canada", zone: "International", currency: "CAD", accountingFrameworkId: "canada-as", vatRates: [], locale: "en-CA" },
+  { code: "AU", name: "Australie", zone: "International", currency: "AUD", accountingFrameworkId: "aasb", vatRates: [], locale: "en-AU" },
 ];
 const profiles = new Map(existingProfiles.map((country) => [country.code, country]));
 let regionNames;

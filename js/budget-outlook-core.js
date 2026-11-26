@@ -7,7 +7,7 @@ const validDate = value => {
   return date.toISOString().slice(0, 10) === value;
 };
 
-export function buildBudgetOutlook({ report, asOf } = {}) {
+export function buildBudgetOutlook({ report, entries = [], asOf } = {}) {
   if (!report?.ok || !Array.isArray(report.months) || !validDate(asOf)) {
     return { ok: false, errors: ["Rapport budgétaire ou date de référence invalide."], elapsedMonths: 0, remainingMonths: 0, totals: {}, lines: [], alerts: [] };
   }
@@ -24,7 +24,7 @@ export function buildBudgetOutlook({ report, asOf } = {}) {
     ["income", "budgetIncome", "actualIncome"],
   ]) {
     const budgetToDate = sum(budgetKey);
-    const actualToDate = sum(actualKey);
+    const actualToDate = round2(lines.reduce((total, line) => total + (line.type === type ? line.actualToDate : 0), 0));
     const monthlyRunRate = round2(actualToDate / elapsedCount);
     const projectedYearEnd = round2(actualToDate + monthlyRunRate * remainingCount);
     const fullYearBudget = round2(months.reduce((total, month) => total + Number(month[budgetKey] || 0), 0));
@@ -33,7 +33,7 @@ export function buildBudgetOutlook({ report, asOf } = {}) {
   totals.net = { projectedYearEnd: round2(totals.income.projectedYearEnd - totals.expenses.projectedYearEnd), fullYearBudget: round2(totals.income.fullYearBudget - totals.expenses.fullYearBudget) };
   totals.net.projectedVariance = round2(totals.net.projectedYearEnd - totals.net.fullYearBudget);
   const lines = report.lines.map(line => {
-    const actualToDate = round2((line.monthly || []).filter(slot => slot.month <= asOf.slice(0, 7)).reduce((total, slot) => total + Number(slot.actual || 0), 0));
+    const actualToDate = round2((Array.isArray(entries) ? entries : []).filter(entry => validDate(entry?.date) && entry.date >= report.startDate && entry.date <= asOf).reduce((total, entry) => total + (entry.lines || []).filter(item => String(item.account || "").startsWith(String(line.account))).reduce((subtotal, item) => subtotal + (line.type === "expense" ? Number(item.debit || 0) - Number(item.credit || 0) : Number(item.credit || 0) - Number(item.debit || 0)), 0), 0));
     const runRate = round2(actualToDate / elapsedCount);
     const projectedYearEnd = round2(actualToDate + runRate * remainingCount);
     const projectedVariance = round2(line.type === "expense" ? line.budgetTotal - projectedYearEnd : projectedYearEnd - line.budgetTotal);

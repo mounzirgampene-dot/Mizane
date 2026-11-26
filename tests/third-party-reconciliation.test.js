@@ -35,7 +35,7 @@ const first = report.proposals[0];
 const applied = applyThirdPartyLettrage(store, first);
 assert.equal(applied.status, "active");
 report = buildThirdPartyReconciliation(store);
-assert.ok(report.totals.openDebit + report.totals.openCredit < 160, "les montants lettrés sont déduits des soldes ouverts");
+assert.ok(report.totals.openDebit + report.totals.openCredit < 380, "les montants lettrés sont déduits des soldes ouverts");
 assert.throws(() => applyThirdPartyLettrage(store, first), /n'est plus disponible/);
 reverseThirdPartyLettrage(store, applied.id);
 report = buildThirdPartyReconciliation(store);

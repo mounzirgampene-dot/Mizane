@@ -14,14 +14,6 @@ function activeAllocations(store) {
 }
 
 function collectOpenLines(store) {
-  const allocated = new Map();
-  for (const item of activeAllocations(store)) {
-    for (const allocation of item.allocations || []) {
-      const amount = round(allocation.amount);
-      allocated.set(allocation.debitKey, round((allocated.get(allocation.debitKey) || 0) + amount));
-      allocated.set(allocation.creditKey, round((allocated.get(allocation.creditKey) || 0) + amount));
-    }
-  }
   const rows = [];
   for (const entry of Array.isArray(store?.entries) ? store.entries : []) {
     if (entry.reversed || entry.reverseOf) continue;
@@ -30,24 +22,58 @@ function collectOpenLines(store) {
       if (!third) continue;
       const debit = round(line.debit), credit = round(line.credit);
       if ((debit > 0) === (credit > 0) || debit <= 0 && credit <= 0) continue;
-      const key = lineKey(entry.id, lineIndex);
       const original = debit > 0 ? debit : credit;
-      const remaining = round(Math.max(0, original - (allocated.get(key) || 0)));
-      if (remaining <= 0.001) continue;
       rows.push({
-        key, entryId: entry.id, lineIndex, date: String(entry.date || ""),
-        journal: String(entry.journal || ""), reference: String(entry.reference || ""),
-        account: String(line.account || ""), label: String(line.label || ""),
-        third, thirdKey: normalize(third), currency: String(line.currency || store?.settings?.currency || "MAD").toUpperCase(),
-        side: debit > 0 ? "debit" : "credit", amount: original, remaining,
+        key: lineKey(entry.id, lineIndex), entryId: entry.id, lineIndex,
+        date: String(entry.date || ""), journal: String(entry.journal || ""),
+        reference: String(entry.reference || ""), account: String(line.account || ""),
+        label: String(line.label || ""), third, thirdKey: normalize(third),
+        currency: String(line.currency || store?.settings?.currency || "MAD").toUpperCase(),
+        side: debit > 0 ? "debit" : "credit", amount: original,
       });
     }
   }
-  return rows;
+
+  // Une ancienne affectation n'est déduite que si les deux lignes existent
+  // encore et correspondent toujours au même compte, tiers et devise.
+  const byKey = new Map(rows.map(row => [row.key, row]));
+  const allocated = new Map();
+  const staleLinks = [];
+  for (const item of activeAllocations(store)) {
+    let valid = true;
+    for (const allocation of item.allocations || []) {
+      const debit = byKey.get(allocation.debitKey);
+      const credit = byKey.get(allocation.creditKey);
+      const amount = round(allocation.amount);
+      const alreadyDebit = allocated.get(allocation.debitKey) || 0;
+      const alreadyCredit = allocated.get(allocation.creditKey) || 0;
+      if (!debit || !credit || debit.side !== "debit" || credit.side !== "credit" ||
+          debit.account !== credit.account || debit.account !== item.account ||
+          debit.thirdKey !== credit.thirdKey || debit.thirdKey !== normalize(item.third) ||
+          debit.currency !== credit.currency || debit.currency !== item.currency ||
+          !(amount > 0) || alreadyDebit + amount - debit.amount > 0.001 ||
+          alreadyCredit + amount - credit.amount > 0.001) {
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) { staleLinks.push(item.id); continue; }
+    for (const allocation of item.allocations || []) {
+      const amount = round(allocation.amount);
+      allocated.set(allocation.debitKey, round((allocated.get(allocation.debitKey) || 0) + amount));
+      allocated.set(allocation.creditKey, round((allocated.get(allocation.creditKey) || 0) + amount));
+    }
+  }
+  return {
+    rows: rows.map(row => ({ ...row, remaining: round(Math.max(0, row.amount - (allocated.get(row.key) || 0))) }))
+      .filter(row => row.remaining > 0.001),
+    staleLinks,
+  };
 }
 
 export function buildThirdPartyReconciliation(store) {
-  const openLines = collectOpenLines(store);
+  const collected = collectOpenLines(store);
+  const openLines = collected.rows;
   const groups = new Map();
   for (const line of openLines) {
     const groupKey = [line.account, line.thirdKey, line.currency].join("|");
@@ -89,11 +115,19 @@ export function buildThirdPartyReconciliation(store) {
     proposals,
     openLines,
     totals: {
-      openDebit: round(openLines.filter(line => line.side === "debit").reduce((sum,line) => sum + line.remaining,0)),
-      openCredit: round(openLines.filter(line => line.side === "credit").reduce((sum,line) => sum + line.remaining,0)),
+      openDebitByCurrency: openLines.filter(line => line.side === "debit").reduce((totals,line) => {
+        totals[line.currency] = round((totals[line.currency] || 0) + line.remaining);
+        return totals;
+      }, {}),
+      openCreditByCurrency: openLines.filter(line => line.side === "credit").reduce((totals,line) => {
+        totals[line.currency] = round((totals[line.currency] || 0) + line.remaining);
+        return totals;
+      }, {}),
       openItems: openLines.length,
       proposals: proposals.length,
+      staleLinkCount: collected.staleLinks.length,
     },
+    staleLinks: collected.staleLinks,
     history: activeAllocations(store),
   };
 }

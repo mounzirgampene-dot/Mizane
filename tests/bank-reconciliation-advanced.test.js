@@ -30,4 +30,8 @@ const staleStore={settings:{currency:"MAD"},entries:[{id:8,date:"2026-11-25",lin
 const staleLine={date:"2026-11-25",label:"test",amount:100,currency:"MAD",status:"unmatched"};
 const staleSuggestion=analyzeBankLine(staleLine,staleStore,1).suggestions[0];staleStore.entries[0].lines[0].debit=80;
 assert.throws(()=>confirmBankMatchSuggestion(staleLine,staleSuggestion,{lines:[staleLine]},staleStore),/total|disponible|correspond/i);
+const allocatedStore={settings:{currency:"MAD"},entries:[{id:20,date:"2026-11-25",lines:[{account:"512",debit:500,credit:0,currency:"MAD"}]}]};
+const alreadyAllocated={date:"2026-11-25",label:"Règlement antérieur",amount:300,currency:"MAD",status:"matched",match:20,matches:[{entryId:20,account:"512",amount:300}]};
+const secondBankLine={date:"2026-11-25",label:"Nouveau règlement",amount:250,currency:"MAD",status:"unmatched"};
+assert.equal(analyzeBankLine(secondBankLine,allocatedStore,1,{days:1,lines:[alreadyAllocated,secondBankLine]}).suggestions.length,0,"ne propose pas de dépasser le solde restant");
 console.log("✓ Rapprochement avancé : regroupements, paiements partiels, devises, dates, frais, écarts, rapport et validation traçable.");

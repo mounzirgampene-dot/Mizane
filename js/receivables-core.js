@@ -33,7 +33,7 @@ export function buildReceivablesReport({ documents = [], startDate = "", endDate
     if (![gross, payments, credited].every(Number.isFinite) || gross < 0 || payments < 0 || credited < 0) continue;
     const outstanding = round2(Math.max(0, gross - Math.min(gross, credited) - Math.min(gross, payments)));
     if (outstanding <= 0.001) continue;
-    const dueDate = validDate(invoice.dueDate) ? invoice.dueDate : invoiceDate;
+    const forecastDueDate = validDate(invoice.dueDate) ? invoice.dueDate : "";\n    const dueDateMissing = !forecastDueDate;\n    const dueDate = forecastDueDate || invoiceDate;
     const currency = String(invoice.currency || baseCurrency).toUpperCase();
     const rate = currency === String(baseCurrency).toUpperCase() ? 1 : Number(invoice.exchangeRate);
     const baseAmount = Number.isFinite(rate) && rate > 0 ? round2(outstanding * rate) : null;
@@ -41,7 +41,7 @@ export function buildReceivablesReport({ documents = [], startDate = "", endDate
     rows.push({
       invoiceId: invoice.id, number: String(invoice.number || invoice.id || "Facture"),
       customer: String(invoice.customerName || "Client non renseigné"),
-      invoiceDate, dueDate, currency, grossAmount: round2(gross),
+      invoiceDate, dueDate, forecastDueDate, dueDateMissing, currency, grossAmount: round2(gross),
       paidAmount: round2(Math.min(gross, payments)), creditedAmount: round2(Math.min(gross, credited)),
       outstandingAmount: outstanding, exchangeRate: Number.isFinite(rate) && rate > 0 ? rate : null,
       baseAmount, overdueDays, overdue: dueDate < asOf, bucket: bucketFor(overdueDays),

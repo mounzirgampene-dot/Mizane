@@ -6,11 +6,12 @@ import {
   hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, saveCloudStockProduct, saveCloudStockWarehouse,
   saveCloudStockFamily, saveCloudStockType,
   updateCloudStockSettings, postCloudStockDocument,
-  reserveCloudStock, releaseCloudStockReservation,
+  reserveCloudStock, releaseCloudStockReservation, updateCloudStockReorderThresholds,
   readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
   submitCloudStockCount, finalizeCloudStockCount, cancelCloudStockCount, reverseCloudStockDocument,
 } from "./cloud-sync.js";
 import { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
+import { buildStockReplenishmentReport, stockReplenishmentCsv } from "./stock-replenishment.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
@@ -36,6 +37,7 @@ function mapCloudStock(data) {
       purchasePriceUnit:p.purchase_price_unit || p.base_unit || "unité", salePriceUnit:p.sale_price_unit || p.base_unit || "unité",
       unit:p.base_unit || "unité", tracking:p.tracking || "none",
       unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
+      minimumStock:Number(p.minimum_stock || 0), targetStock:Number(p.target_stock || 0),
     };
   });
   const documents = new Map((data?.documents || []).map(d => [d.id,d]));
@@ -209,6 +211,18 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
   const totalProducts = stock.products.length;
   const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
   const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
+  const replenishmentBalances = cloudMode ? (stock.balances || []) : physical.flatMap(product => stock.warehouses.map(warehouse => ({
+    product_id:product.id, warehouse_id:warehouse.id, quantity:stockBalance(stock,product.id,warehouse.id),
+  })));
+  const replenishmentReport = buildStockReplenishmentReport({
+    products:stock.products, warehouses:stock.warehouses, balances:replenishmentBalances,
+    reservations:stock.reservations || [],
+  });
+  const canEditThresholds = !readOnly && (!cloudMode || ["admin","accountant"].includes(companyRole));
+  const replenishmentRows = replenishmentReport.alerts.map(item => {
+    const statusLabel = item.status === "reservation_conflict" ? "Disponibilité incohérente" : item.status === "out_of_stock" ? "Rupture de stock" : "Sous le seuil minimum";
+    return `<tr><td>${esc(item.sku)} — ${esc(item.name)}</td><td class="num">${fmtQty(item.onHand)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.reserved)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.available)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.minimumStock)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.targetStock)} ${esc(item.unit)}</td><td class="num"><strong>${fmtQty(item.reorderQuantity)} ${esc(item.unit)}</strong></td><td>${statusLabel}</td></tr>`;
+  }).join("");
   const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt||"").localeCompare(String(b.createdAt||""))).reverse().slice(0,12);
   const legacyStock=cloudMode ? store.stock : null;
   const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
@@ -227,11 +241,26 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
       <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
     </div>
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><h2>Réapprovisionnement et alertes</h2><p class="muted">Les seuils sont globaux par article et les quantités réservées sont déduites du disponible, sans mélanger les unités des articles.</p></div>
+        <button class="secondary" id="stock-replenishment-export">Exporter le rapport CSV</button>
+      </div>
+      <div class="grid cols-3">
+        <div class="kpi"><div class="label">Articles surveillés</div><div class="value">${replenishmentReport.summary.monitored}</div></div>
+        <div class="kpi"><div class="label">Ruptures</div><div class="value">${replenishmentReport.summary.outOfStock}</div></div>
+        <div class="kpi"><div class="label">Sous le seuil</div><div class="value">${replenishmentReport.summary.belowMinimum + replenishmentReport.summary.reservationConflicts}</div></div>
+      </div>
+      ${replenishmentReport.errors.length ? `<p class="errors">${replenishmentReport.errors.map(esc).join(" ")}</p>` : ""}
+      <div class="table-wrap"><table><thead><tr><th>Article</th><th class="num">Stock physique</th><th class="num">Réservé</th><th class="num">Disponible</th><th class="num">Seuil min.</th><th class="num">Stock cible</th><th class="num">À réapprovisionner</th><th>État</th></tr></thead><tbody>
+        ${replenishmentRows || '<tr><td colspan="8" class="muted">Aucune alerte. Définissez un seuil minimum pour surveiller les articles concernés.</td></tr>'}
+      </tbody></table></div>
+    </section>
     ${showLegacyImport ? '<section class="card"><h2>Reprise de l’ancien stock</h2><p class="muted">Ancien stock local détecté : '+legacyStock.products.length+' article(s) et '+(legacyStock.movements||[]).length+' mouvement(s). Import explicite, chronologique et idempotent.</p><button id="stock-import-legacy">'+(migrationProgress?.started ? 'Reprendre l’import' : 'Importer l’ancien stock local')+'</button><p class="muted">'+(migrationProgress?.started ? 'Progression : '+(migrationProgress.completed||0)+' mouvement(s).' : 'Aucune donnée locale ne sera supprimée.')+'</p></section>' : ""}
     <section class="card">
       <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
-      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Achat HT</th><th class="num">Vente HT</th><th class="num">Stock total</th><th class="num">Valeur</th></tr></thead>
-      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)} / ${esc(p.purchasePriceUnit||p.unit)}</td><td class="num">${money(p.salePriceHT||0)} / ${esc(p.salePriceUnit||p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td></tr>`).join("") || '<tr><td colspan="9" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Achat HT</th><th class="num">Vente HT</th><th class="num">Stock total</th><th class="num">Valeur</th><th>Seuil min. / cible</th>${canEditThresholds ? "<th>Action</th>" : ""}</tr></thead>
+      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)} / ${esc(p.purchasePriceUnit||p.unit)}</td><td class="num">${money(p.salePriceHT||0)} / ${esc(p.salePriceUnit||p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td><td>${p.type === "service" ? "—" : (Number(p.minimumStock||0)>0 || Number(p.targetStock||0)>0 ? fmtQty(p.minimumStock||0)+" / "+fmtQty(p.targetStock||0) : "Non défini")}</td>${canEditThresholds ? `<td>${p.type === "service" ? "—" : `<button class="secondary small" data-stock-threshold="${esc(p.id)}">Définir</button>`}</td>` : ""}</tr>`).join("") || '<tr><td colspan="${canEditThresholds ? "11" : "10"}" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card">
       <h2>Stocks par entrepôt</h2>
@@ -262,6 +291,21 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     </section>`;
   if (readOnly) return;
   document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
+  document.getElementById("stock-replenishment-export")?.addEventListener("click", () => {
+    const blob = new Blob([stockReplenishmentCsv(replenishmentReport)], { type:"text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mizane-reapprovisionnement-" + new Date().toISOString().slice(0,10) + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+  document.querySelectorAll("[data-stock-threshold]").forEach(button => {
+    const product = stock.products.find(item => String(item.id) === String(button.dataset.stockThreshold));
+    if (product) button.addEventListener("click", () => openStockReorderThresholdDialog(product, cloudMode, companyRole));
+  });
   document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
   document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
   document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
@@ -437,6 +481,44 @@ function warehouseCode(name) {
   const base=String(name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,32) || "MAGASIN";
   return base + "-" + (globalThis.crypto?.randomUUID?.().slice(0,6).toUpperCase() || String(Date.now()).slice(-6));
 }
+function openStockReorderThresholdDialog(product, cloudMode, companyRole) {
+  if (cloudMode && !["admin","accountant"].includes(companyRole)) return;
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  box.innerHTML=`<h2>Seuils de réapprovisionnement</h2>
+    <p class="muted">${esc(product.sku)} — ${esc(product.name)} · ${esc(product.unit)}</p>
+    <div class="grid cols-2">
+      <div><label for="srt-minimum">Seuil minimum</label><input id="srt-minimum" type="number" min="0" max="999999999999" step="0.0001" value="${Number(product.minimumStock||0)}"></div>
+      <div><label for="srt-target">Stock cible</label><input id="srt-target" type="number" min="0" max="999999999999" step="0.0001" value="${Number(product.targetStock||0)}"></div>
+    </div>
+    <p class="muted">Le seuil déclenche l’alerte lorsque le disponible, après déduction des réservations, atteint ou passe sous ce niveau. La quantité suggérée ramène le disponible au stock cible. Ces seuils sont globaux à l’article, tous entrepôts confondus.</p>
+    <div id="srt-error" class="errors"></div>
+    <div class="actions"><button id="srt-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  modal.showModal();
+  box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#srt-save").onclick=async()=>{
+    const minimumStock=Number(box.querySelector("#srt-minimum").value);
+    const targetStock=Number(box.querySelector("#srt-target").value);
+    if(!Number.isFinite(minimumStock)||!Number.isFinite(targetStock)||minimumStock<0||targetStock<minimumStock||targetStock>=1000000000000){
+      box.querySelector("#srt-error").textContent="Saisissez des quantités valides : la cible doit être supérieure ou égale au seuil minimum.";
+      return;
+    }
+    try{
+      if(cloudMode){
+        await updateCloudStockReorderThresholds({productId:product.id,minimumStock,targetStock});
+      }else{
+        product.minimumStock=minimumStock;
+        product.targetStock=targetStock;
+        persist();
+      }
+      modal.close();
+      viewStock(false,companyRole);
+      toast("Seuils de réapprovisionnement enregistrés.");
+    }catch(error){
+      box.querySelector("#srt-error").textContent=error?.message||"Enregistrement des seuils impossible.";
+    }
+  };
+}
+
 function warehouseDialog(cloudMode = false, companyRole = null) {
   const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
   box.innerHTML=`<h2>Créer un entrepôt</h2><label>Nom</label><input id="sw-name" maxlength="100"><div id="sw-error" class="errors"></div><div class="actions"><button id="sw-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;

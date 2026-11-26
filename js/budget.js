@@ -48,7 +48,7 @@ export function viewBudget() {
     const label = item.type === "expense_overrun" ? "Dépassement des charges" : "Produits inférieurs au budget";
     return "<tr><td>" + esc(item.month) + "</td><td>" + label + "</td><td class=\"num\">" + money(item.amount) + "</td></tr>";
   }).join("") : "";
-  const outlook = buildBudgetOutlook({ report, asOf: new Date().toISOString().slice(0, 10) });
+
   const outlookRows = outlook.ok ? outlook.lines.map(item => "<tr><td>" + esc(item.account) + "</td><td>" + esc(item.label) + "</td><td>" + (item.type === "expense" ? "Charge" : "Produit") + "</td><td class=\\"num\\">" + money(item.projectedYearEnd) + "</td><td class=\\"num\\">" + money(item.budgetTotal) + "</td><td class=\\"num\\">" + money(item.projectedVariance) + "</td><td>" + (item.severity === "critical" ? "Critique" : item.severity === "warning" ? "Vigilance" : "Dans la cible") + "</td></tr>").join("") : "";
   const options = accounts.map(item => "<option value=\"" + esc(item.code) + "\">" + esc(item.code + " — " + item.label) + " (" + (item.type === "expense" ? "Charge" : "Produit") + ")</option>").join("");
   $app.innerHTML = `

@@ -2,12 +2,13 @@
 import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildAnalyticalReport, validateAnalyticalCenter, validateAnalyticalAllocation } from "./analytical-core.js";
-import { validateAllocationKey, applyAllocationKey, calculateBreakEven } from "./analytical-advanced-core.js";
+import { validateAllocationKey, applyAllocationKey, calculateBreakEven, buildProjectAnalyticalReport, buildProjectComparison } from "./analytical-advanced-core.js";
 
 const accountTypes = () => Object.fromEntries([...planAccounts, ...(store.settings.customAccounts || [])].map(item => [String(item.code), item.type]));
 const ensureData = () => {
   if (!Array.isArray(store.settings.analyticalCenters)) store.settings.analyticalCenters = [];
   if (!Array.isArray(store.settings.analyticalAllocations)) store.settings.analyticalAllocations = [];
+  if (!Array.isArray(store.settings.analyticalProjects)) store.settings.analyticalProjects = [];
 };
 const typeLabel = type => type === "cost" ? "Centre de coûts" : type === "profit" ? "Centre de profit" : "Centre mixte";
 
@@ -15,10 +16,13 @@ export function viewAnalytical() {
   ensureData();
   const centers = store.settings.analyticalCenters;
   const allocations = store.settings.analyticalAllocations;
+  const projects = store.settings.analyticalProjects;
   const types = accountTypes();
   const start = store.settings.exerciceStart || "";
   const end = store.settings.exerciceEnd || "";
   const report = buildAnalyticalReport({ centers, allocations, entries: store.entries || [], accountTypes: types, startDate: start, endDate: end });
+  const projectReport = buildProjectAnalyticalReport({ projects, allocations, entries: store.entries || [], accountTypes: types, startDate: start, endDate: end });
+  const projectOptions = '<option value="">Aucun projet / activité</option>' + projects.map(project => '<option value="' + esc(project.id) + '">' + esc(project.name) + '</option>').join("");
   const centerOptions = centers.map(center => '<option value="' + esc(center.id) + '">' + esc(center.name) + '</option>').join("");
   const sourceOptions = report.unallocated.map(item => '<option value="' + item.entryId + ':' + item.lineIndex + '">' + esc(item.date + " · " + item.journal + " · " + item.account + " — " + item.label + " · " + money(item.amount) + " · reste " + item.remainingPercentage + " %") + '</option>').join("");
   const rows = report.rows.map(row => '<tr><td><strong>' + esc(row.name) + '</strong><div class="muted">' + typeLabel(row.type) + '</div></td><td class="num">' + money(row.income) + '</td><td class="num">' + money(row.expenses) + '</td><td class="num">' + money(row.result) + '</td><td>' + row.allocations + '</td></tr>').join("");
@@ -28,7 +32,8 @@ export function viewAnalytical() {
     const entry = store.entries.find(row => String(row.id) === String(item.entryId));
     const line = entry?.lines?.[Number(item.lineIndex)];
     const center = centers.find(row => row.id === item.centerId);
-    return '<tr><td>' + esc(entry?.date || "—") + '</td><td>' + esc(line?.account || "—") + '</td><td>' + esc(center?.name || "Centre supprimé") + '</td><td class="num">' + esc(item.percentage) + ' %</td><td><button type="button" class="danger small" data-aa-delete="' + esc(item.id) + '">Retirer</button></td></tr>';
+    const project = projects.find(row => row.id === item.projectId);
+    return '<tr><td>' + esc(entry?.date || "—") + '</td><td>' + esc(line?.account || "—") + '</td><td>' + esc(center?.name || "Centre supprimé") + '</td><td>' + esc(project?.name || "—") + '</td><td class="num">' + esc(item.percentage) + ' %</td><td><button type="button" class="danger small" data-aa-delete="' + esc(item.id) + '">Retirer</button></td></tr>';
   }).join("");
   $app.innerHTML = `
     <h1>Comptabilité analytique</h1>
@@ -39,7 +44,14 @@ export function viewAnalytical() {
       <section class="card kpi"><div class="label">Résultat analytique</div><div class="value">${money(report.totals.result)}</div></section>
     </div>
     <section class="card">
-      <h2>Centres analytiques</h2>
+      <section class="card">
+      <h2>Projets, activités et départements</h2>
+      <p class="muted">Créez des axes analytiques complémentaires aux centres. La quantité de référence est saisie explicitement pour calculer les coûts et produits unitaires.</p>
+      <div class="row"><div><label>Nom du projet / activité</label><input id="aa-project-name" maxlength="120" placeholder="Ex. Projet A"></div><div><label>Activité</label><input id="aa-project-activity" maxlength="100" placeholder="Ex. Fabrication"></div><div><label>Département</label><input id="aa-project-department" maxlength="100" placeholder="Ex. Production"></div></div>
+      <div class="row"><div><label>Quantité de référence</label><input id="aa-project-quantity" type="number" min="0" step="0.001" placeholder="Ex. 500"></div><div><label>Unité</label><input id="aa-project-unit" maxlength="30" placeholder="pièces, heures, tonnes…"></div><div class="nogrow"><button id="aa-project-add">Créer le projet</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Projet / activité</th><th>Département</th><th class="num">Quantité</th><th>Unité</th><th></th></tr></thead><tbody>${projects.map(p=>'<tr><td><strong>'+esc(p.name)+'</strong><div class="muted">'+esc(p.activity||"")+'</div></td><td>'+esc(p.department||"—")+'</td><td class="num">'+esc(p.quantity??"—")+'</td><td>'+esc(p.unitLabel||"—")+'</td><td><button class="danger small" data-aa-project-delete="'+esc(p.id)+'">Supprimer</button></td></tr>').join("")||'<tr><td colspan="5" class="muted">Aucun projet défini.</td></tr>'}</tbody></table></div>
+    </section>
+    <h2>Centres analytiques</h2>
       <p class="muted">Créez des centres de coûts, de profit ou mixtes : services, départements, projets, agences ou activités.</p>
       <div class="row"><div><label>Nom du centre</label><input id="aa-center-name" maxlength="100" placeholder="Ex. Service commercial"></div><div><label>Type</label><select id="aa-center-type"><option value="cost">Centre de coûts</option><option value="profit">Centre de profit</option><option value="mixed">Centre mixte</option></select></div><div class="nogrow"><button id="aa-center-add">Créer le centre</button></div></div>
       ${centers.length ? '<div class="table-wrap"><table><thead><tr><th>Centre</th><th>Type</th><th>Affectations</th></tr></thead><tbody>' + centers.map(center => '<tr><td>' + esc(center.name) + '</td><td>' + typeLabel(center.type) + '</td><td>' + allocations.filter(item => item.centerId === center.id).length + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="muted">Aucun centre créé.</p>'}
@@ -47,11 +59,17 @@ export function viewAnalytical() {
     <section class="card">
       <h2>Affecter des charges et produits</h2>
       <p class="muted">Une ligne peut être répartie entre plusieurs centres. Le cumul des affectations est limité à 100 %. Les montants non affectés restent visibles dans la liste de contrôle.</p>
-      <div class="row"><div><label>Ligne comptable non totalement affectée</label><select id="aa-source"><option value="">Sélectionner une ligne</option>${sourceOptions}</select></div><div><label>Centre analytique</label><select id="aa-target"><option value="">Sélectionner un centre</option>${centerOptions}</select></div><div><label>Pourcentage</label><input id="aa-percentage" type="number" min="0.01" max="100" step="0.01" value="100"></div><div class="nogrow"><button id="aa-allocate" ${!centers.length || !report.unallocated.length ? "disabled" : ""}>Affecter</button></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte</th><th>Centre</th><th class="num">Part</th><th>Action</th></tr></thead><tbody>${allocationRows || '<tr><td colspan="5" class="muted">Aucune affectation enregistrée.</td></tr>'}</tbody></table></div>
+      <div class="row"><div><label>Ligne comptable non totalement affectée</label><select id="aa-source"><option value="">Sélectionner une ligne</option>${sourceOptions}</select></div><div><label>Centre analytique</label><select id="aa-target"><option value="">Sélectionner un centre</option>${centerOptions}</select></div><div><label>Projet / activité</label><select id="aa-project-target">${projectOptions}</select></div><div><label>Pourcentage</label><input id="aa-percentage" type="number" min="0.01" max="100" step="0.01" value="100"></div><div class="nogrow"><button id="aa-allocate" ${!centers.length || !report.unallocated.length ? "disabled" : ""}>Affecter</button></div></div>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte</th><th>Centre</th><th>Projet / activité</th><th class="num">Part</th><th>Action</th></tr></thead><tbody>${allocationRows || '<tr><td colspan="6" class="muted">Aucune affectation enregistrée.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card">
-      <h2>Résultats par centre</h2>
+      <section class="card">
+      <h2>Coûts, marges et résultats par projet / activité</h2>
+      <p class="muted">Les montants proviennent des affectations rattachées aux projets. Le coût unitaire correspond aux charges affectées divisées par la quantité de référence renseignée.</p>
+      <div class="table-wrap"><table><thead><tr><th>Projet</th><th class="num">Produits</th><th class="num">Charges</th><th class="num">Résultat</th><th class="num">Coût / unité</th><th class="num">Produit / unité</th><th class="num">Marge</th></tr></thead><tbody>${projectReport.rows.map(r=>'<tr><td><strong>'+esc(r.name)+'</strong><div class="muted">'+esc(r.activity||"")+' · '+esc(r.department||"")+'</div></td><td class="num">'+money(r.income)+'</td><td class="num">'+money(r.expenses)+'</td><td class="num">'+money(r.result)+'</td><td class="num">'+(r.costPerUnit===null?"—":money(r.costPerUnit))+'</td><td class="num">'+(r.incomePerUnit===null?"—":money(r.incomePerUnit))+'</td><td class="num">'+(r.marginRate===null?"—":r.marginRate+" %")+'</td></tr>').join("")||'<tr><td colspan="7" class="muted">Aucune affectation liée à un projet pour cette période.</td></tr>'}</tbody></table></div>
+      <div class="row"><div><label>Début période comparée</label><input id="aa-compare-start" type="date"></div><div><label>Fin période comparée</label><input id="aa-compare-end" type="date"></div><div class="nogrow"><button id="aa-compare-run">Comparer les périodes</button></div></div><div id="aa-compare-result" class="muted" aria-live="polite">Choisissez une période de comparaison.</div>
+    </section>
+    <h2>Résultats par centre</h2>
       <div class="table-wrap"><table><thead><tr><th>Centre</th><th class="num">Produits</th><th class="num">Charges</th><th class="num">Résultat</th><th>Affectations</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">Aucun résultat analytique pour cette période.</td></tr>'}</tbody></table></div>
     </section>
     <section class="card"><h2>Clés de répartition réutilisables</h2><p class="muted">Une clé définit une ventilation à 100 % entre les centres affichés. Son application crée des affectations traçables sans modifier les écritures générales.</p>
@@ -66,6 +84,9 @@ ${(store.settings.analyticalAllocationKeys||[]).map(k=>'<div class="row"><strong
     </section>
     ${issueRows ? '<section class="card"><h2>Anomalies d’affectation</h2><ul>' + issueRows + '</ul></section>' : ""}
   `;
+  $app.querySelector("#aa-project-add")?.addEventListener("click",()=>{const raw=$app.querySelector("#aa-project-quantity").value;const project={id:"ap-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,7),name:$app.querySelector("#aa-project-name").value.trim(),activity:$app.querySelector("#aa-project-activity").value.trim(),department:$app.querySelector("#aa-project-department").value.trim(),quantity:raw===""?null:Number(raw),unitLabel:$app.querySelector("#aa-project-unit").value.trim(),createdAt:new Date().toISOString()};if(!project.name||project.name.length>120)return toast("Le nom du projet est obligatoire.");if(project.quantity!==null&&(!Number.isFinite(project.quantity)||project.quantity<=0))return toast("La quantité doit être strictement positive.");if(project.quantity!==null&&!project.unitLabel)return toast("Précisez l'unité de la quantité.");if(projects.some(p=>p.name.toLocaleLowerCase()===project.name.toLocaleLowerCase()))return toast("Ce projet existe déjà.");projects.push(project);saveStore(store);toast("Projet analytique créé.");viewAnalytical();});
+  $app.querySelectorAll("[data-aa-project-delete]").forEach(b=>b.addEventListener("click",()=>{const id=b.dataset.aaProjectDelete;if(allocations.some(a=>a.projectId===id))return toast("Projet déjà utilisé : suppression refusée pour préserver l'historique.");store.settings.analyticalProjects=projects.filter(p=>p.id!==id);saveStore(store);viewAnalytical();}));
+  $app.querySelector("#aa-compare-run")?.addEventListener("click",()=>{const a=$app.querySelector("#aa-compare-start").value,b=$app.querySelector("#aa-compare-end").value;if(!a||!b||a>b)return toast("Renseignez une période valide.");const q=buildProjectComparison({projects,allocations,entries:store.entries||[],accountTypes:types,currentStart:start,currentEnd:end,compareStart:a,compareEnd:b});if(!q.ok)return toast(q.errors.join(" "));$app.querySelector("#aa-compare-result").innerHTML='<div class="table-wrap"><table><thead><tr><th>Projet</th><th>Résultat exercice</th><th>Résultat période comparée</th><th>Écart</th></tr></thead><tbody>'+q.rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td class="num">'+money(r.current.result)+'</td><td class="num">'+money(r.comparison.result)+'</td><td class="num">'+money(r.variance)+'</td></tr>').join("")+'</tbody></table></div>';});
   $app.querySelector("#aa-center-add")?.addEventListener("click", () => {
     const center = { id: "ac-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7), name: $app.querySelector("#aa-center-name").value.trim(), type: $app.querySelector("#aa-center-type").value, createdAt: new Date().toISOString() };
     const validation = validateAnalyticalCenter(center, centers);
@@ -74,13 +95,13 @@ ${(store.settings.analyticalAllocationKeys||[]).map(k=>'<div class="row"><strong
   });
   $app.querySelector("#aa-allocate")?.addEventListener("click", () => {
     const [entryId, lineIndex] = ($app.querySelector("#aa-source").value || "").split(":");
-    const allocation = { id: "al-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7), entryId, lineIndex: Number(lineIndex), centerId: $app.querySelector("#aa-target").value, percentage: Number($app.querySelector("#aa-percentage").value), createdAt: new Date().toISOString() };
+    const allocation = { id: "al-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7), entryId, lineIndex: Number(lineIndex), centerId: $app.querySelector("#aa-target").value, projectId: $app.querySelector("#aa-project-target").value || null, percentage: Number($app.querySelector("#aa-percentage").value), createdAt: new Date().toISOString() };
     const validation = validateAnalyticalAllocation(allocation, { centers, allocations, entries: store.entries || [], accountTypes: types });
     if (!validation.ok) return toast(validation.errors.join(" "));
     allocations.push(allocation); saveStore(store); toast("Affectation analytique enregistrée."); viewAnalytical();
   });
   $app.querySelector("#aa-key-create")?.addEventListener("click",()=>{const name=$app.querySelector("#aa-key-name").value.trim(),w=$app.querySelector("#aa-key-shares").value.split(",").map(x=>Number(x.trim()));if(w.length!==centers.length||w.some(x=>!Number.isFinite(x)))return toast("Saisissez une part numérique par centre, dans l'ordre affiché.");const key={id:"ak-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,6),name,shares:centers.map((c,i)=>({centerId:c.id,percentage:w[i]})),createdAt:new Date().toISOString()};const q=validateAllocationKey(key,centers);if(!q.ok)return toast(q.errors.join(" "));if(!Array.isArray(store.settings.analyticalAllocationKeys))store.settings.analyticalAllocationKeys=[];if(store.settings.analyticalAllocationKeys.some(x=>x.name.toLocaleLowerCase()===name.toLocaleLowerCase()))return toast("Nom de clé déjà utilisé.");store.settings.analyticalAllocationKeys.push(key);saveStore(store);toast("Clé enregistrée.");viewAnalytical();});
-  $app.querySelector("#aa-key-apply")?.addEventListener("click",()=>{const [entryId,lineIndex]=($app.querySelector("#aa-key-source").value||"").split(":"),key=(store.settings.analyticalAllocationKeys||[]).find(x=>x.id===$app.querySelector("#aa-key-target").value);if(!key||!entryId)return toast("Choisissez une ligne et une clé.");const result=applyAllocationKey({key,entryId,lineIndex:Number(lineIndex),centers,allocations,entries:store.entries||[],accountTypes:types});if(!result.ok)return toast(result.errors.join(" "));allocations.push(...result.allocations);saveStore(store);toast("Clé appliquée : "+result.allocations.length+" affectation(s).");viewAnalytical();});
+  $app.querySelector("#aa-key-apply")?.addEventListener("click",()=>{const [entryId,lineIndex]=($app.querySelector("#aa-key-source").value||"").split(":"),key=(store.settings.analyticalAllocationKeys||[]).find(x=>x.id===$app.querySelector("#aa-key-target").value);if(!key||!entryId)return toast("Choisissez une ligne et une clé.");const result=applyAllocationKey({key,entryId,lineIndex:Number(lineIndex),centers,allocations,entries:store.entries||[],accountTypes:types,projectId:$app.querySelector("#aa-project-target").value||null});if(!result.ok)return toast(result.errors.join(" "));allocations.push(...result.allocations);saveStore(store);toast("Clé appliquée : "+result.allocations.length+" affectation(s).");viewAnalytical();});
   $app.querySelectorAll("[data-aa-key-delete]").forEach(b=>b.addEventListener("click",()=>{const id=b.dataset.aaKeyDelete;if(allocations.some(x=>x.allocationKeyId===id))return toast("Clé utilisée : suppression interdite pour préserver la traçabilité.");store.settings.analyticalAllocationKeys=(store.settings.analyticalAllocationKeys||[]).filter(x=>x.id!==id);saveStore(store);viewAnalytical();}));
   $app.querySelector("#aa-be-calculate")?.addEventListener("click",()=>{const q=calculateBreakEven({sellingPrice:$app.querySelector("#aa-be-price").value,variableCost:$app.querySelector("#aa-be-variable").value,fixedCosts:$app.querySelector("#aa-be-fixed").value,actualUnits:$app.querySelector("#aa-be-units").value}),out=$app.querySelector("#aa-be-result");if(!q.ok){out.textContent=q.errors.join(" ");return;}out.innerHTML='<div class="grid cols-3"><div><strong>Seuil</strong><div>'+q.breakEvenUnits+' unités</div></div><div><strong>CA au seuil</strong><div>'+money(q.breakEvenRevenue)+'</div></div><div><strong>Marge de sécurité</strong><div>'+q.marginOfSafetyUnits+' unités ('+(q.marginOfSafetyRate??"—")+' %)</div></div><div><strong>Taux de contribution</strong><div>'+q.contributionRate+' %</div></div><div><strong>Résultat estimé</strong><div>'+money(q.estimatedResult)+'</div></div><div><strong>Situation</strong><div>'+(q.status==="above"?"Au-dessus du seuil":"En dessous du seuil")+'</div></div></div>';});
 

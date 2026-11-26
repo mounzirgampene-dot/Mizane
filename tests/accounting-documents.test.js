@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import {createAccountingDocumentMetadata,resolveAccountingDocumentMimeType} from "../js/accounting-documents.js";
+const file={name:"facture-novembre.pdf",type:"application/pdf",size:2048};
+const valid=createAccountingDocumentMetadata({id:"doc-1",file,entryIds:[12,13,12]});
+assert.equal(valid.ok,true);assert.deepEqual(valid.document.entryIds,[12,13]);assert.equal(valid.document.mimeType,"application/pdf");
+assert.equal(createAccountingDocumentMetadata({id:"doc-2",file:{name:"x.exe",type:"application/octet-stream",size:10},entryIds:[1]}).ok,false);
+assert.equal(createAccountingDocumentMetadata({id:"doc-3",file:{name:"vide.pdf",type:"application/pdf",size:0},entryIds:[1]}).ok,false);
+assert.equal(createAccountingDocumentMetadata({id:"doc-4",file:{name:"grand.pdf",type:"application/pdf",size:21*1024*1024},entryIds:[1]}).ok,false);
+assert.equal(createAccountingDocumentMetadata({id:"doc-5",file:{name:"image.png",type:"image/png",size:16*1024*1024},entryIds:[1]}).ok,false);
+assert.equal(createAccountingDocumentMetadata({id:"doc-6",file,entryIds:[]}).ok,false);
+assert.equal(createAccountingDocumentMetadata({id:"doc-7",file,entryIds:[0]}).ok,false);
+assert.equal(resolveAccountingDocumentMimeType({name:"scan.PDF",type:""}),"application/pdf");
+assert.equal(resolveAccountingDocumentMimeType({name:"malware.exe",type:"application/octet-stream"}),"");
+console.log("✓ Pièces comptables : formats, limites, identifiants et liens validés.");

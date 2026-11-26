@@ -16,6 +16,9 @@ import { applyPlanMigration, undoPlanMigration } from "../plans/migration.js";
 import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
 import { extractPdfDocument, isSupportedDocumentFile, documentFactsFromProposal, matchDocumentToRecords } from "../ai-documents.js";
+import { putLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
+import { uploadCloudAccountingDocument } from "../accounting-documents-cloud.js";
+import { syncCloudIfReady } from "../cloud-sync.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
 function draftLineMarkup(line, index) {
@@ -102,7 +105,7 @@ export function viewAssistant() {
     </div>
     <div class="card">
       <h2>🧠 Copilote comptable — analyser un justificatif</h2>
-      <p class="muted">Joignez une photo ou un PDF multipage (jusqu’à 20 pages). Le copilote extrait les faits, signale les incertitudes, prépare les écritures et recherche des correspondances possibles dans les écritures et relevés bancaires déjà importés. Rien n’est enregistré ni rapproché automatiquement.</p>
+      <p class="muted">Joignez une photo ou un PDF multipage (jusqu’à 20 pages). Le copilote extrait les faits, signale les incertitudes, prépare les écritures et recherche des correspondances possibles. Après validation, le fichier original est archivé sur cet appareil et, si l’entreprise est synchronisée, dans son coffre documentaire privé.</p>
       <div class="row">
         <div><label>Photo ou document PDF</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf"></div>
         <div><label>Contexte de l’opération (facultatif)</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
@@ -183,7 +186,19 @@ export function viewAssistant() {
           }
         }
         saveStore(store);
-        toast(posted.length + ' écriture(s) enregistrée(s) après validation.');
+        const documentId = globalThis.crypto?.randomUUID?.() || ("doc-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+        const entryLocalIds = posted.map(entry => Number(entry.id));
+        let localArchived = false, cloudArchived = false, archiveWarning = "";
+        try { await putLocalAccountingDocument({ id:documentId, file, entryIds:entryLocalIds }); localArchived = true; }
+        catch (error) { archiveWarning = "Archive locale indisponible : " + (error?.message || "stockage non disponible") + ". "; }
+        try {
+          const syncResult = await syncCloudIfReady();
+          if (syncResult?.skipped && syncResult.reason !== "no-company") throw new Error("Effectuez la synchronisation initiale de l’entreprise avant d’archiver ses pièces dans le coffre partagé.");
+          const cloudDocument = await uploadCloudAccountingDocument({ file, entryLocalIds });
+          if (cloudDocument) { cloudArchived = true; if (localArchived) await deleteLocalAccountingDocument(documentId); }
+        } catch (error) { archiveWarning += "Coffre partagé non mis à jour : " + (error?.message || "connexion indisponible") + ". Le fichier reste sur cet appareil si l’archive locale a réussi."; }
+        const archiveMessage = cloudArchived ? "Justificatif archivé dans le coffre privé de l’entreprise." : localArchived ? "Justificatif conservé sur cet appareil uniquement." : "Attention : le justificatif n’a pas pu être archivé. Conservez le fichier original.";
+        toast(posted.length + ' écriture(s) enregistrée(s). ' + archiveMessage + (archiveWarning ? " " + archiveWarning : ""));
         router.go('entries');
       });
     } catch (err) {

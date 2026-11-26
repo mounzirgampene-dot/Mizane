@@ -10,6 +10,7 @@ import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPer
 import { getStock } from "../stock-core.js";
 import { suggestStockAccounts } from "../billing-accounting.js";
 import { calculateLocalStockPeriodValuation, postPeriodicStockClosingJournalEntry } from "../stock-accounting.js";
+import { buildThirdPartyReconciliation, applyThirdPartyLettrage, reverseThirdPartyLettrage } from "../third-party-reconciliation.js";
 
 
 async function retryStockPeriodRequest(operation,attempts=3) {
@@ -119,6 +120,18 @@ export function viewTools() {
       ${(store.settings.assetDisposals || []).length ? '<div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Immobilisation</th><th>Motif</th><th class="num">VNC</th><th class="num">Produit</th><th class="num">Plus/moins-value</th></tr></thead><tbody>' + store.settings.assetDisposals.map(item => '<tr><td>' + esc(item.date) + '</td><td>' + esc(item.assetName) + '</td><td>' + (item.type === "cession" ? "Cession" : item.type === "mise_rebut" ? "Mise au rebut" : "Destruction") + '</td><td class="num">' + money(item.netBookValue) + '</td><td class="num">' + money(item.proceeds) + '</td><td class="num">' + money(item.gainLoss) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="muted">Aucune sortie d&#39;immobilisation enregistrée.</p>'}
     </div>
 
+    <section class="card" id="third-party-lettrage">
+      <h2>Lettrage assisté des comptes de tiers</h2>
+      <p class="muted">Les propositions rapprochent les mouvements débiteurs et créditeurs du même compte, du même tiers et de la même devise. La validation crée une trace de lettrage dans les paramètres ; les écritures comptables d’origine restent inchangées.</p>
+      ${(() => {
+        const report = buildThirdPartyReconciliation(store);
+        return '<div class="grid cols-3"><div class="card kpi"><div class="value">' + report.totals.openItems + '</div><div class="label">Mouvements ouverts</div></div><div class="card kpi"><div class="value">' + money(report.totals.openDebit) + '</div><div class="label">Débits ouverts (devise de référence)</div></div><div class="card kpi"><div class="value">' + money(report.totals.openCredit) + '</div><div class="label">Crédits ouverts (devise de référence)</div></div></div>' +
+          (report.proposals.length ? '<div class="table-wrap"><table><thead><tr><th>Compte / tiers</th><th>Débit</th><th>Crédit</th><th class="num">Montant proposé</th><th>Type</th><th>Action</th></tr></thead><tbody>' + report.proposals.map((item,index) => '<tr><td>' + esc(item.account) + ' · ' + esc(item.third) + '<br><span class="muted">' + esc(item.currency) + '</span></td><td>#' + esc(item.debit.entryId) + ' · ' + esc(item.debit.date) + '<br>' + esc(item.debit.reference || item.debit.label || '—') + '</td><td>#' + esc(item.credit.entryId) + ' · ' + esc(item.credit.date) + '<br>' + esc(item.credit.reference || item.credit.label || '—') + '</td><td class="num">' + money(item.amount) + ' ' + esc(item.currency) + '</td><td>' + (item.partial ? 'Partiel' : 'Correspondance') + '</td><td><button class="small" data-third-lettrage="' + index + '">Valider le lettrage</button></td></tr>').join('') + '</tbody></table></div>' : '<p class="muted">Aucune correspondance proposée. Vérifiez que les lignes comportent un tiers renseigné et que le compte, le tiers et la devise concordent.</p>') +
+          ((store.settings.thirdPartyLettrage || []).filter(item => item.status === "active").length ? '<h3>Lettrages actifs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte / tiers</th><th>Écritures</th><th class="num">Montant</th><th>Action</th></tr></thead><tbody>' + store.settings.thirdPartyLettrage.filter(item => item.status === "active").map(item => '<tr><td>' + esc((item.createdAt || '').slice(0,10)) + '</td><td>' + esc(item.account) + ' · ' + esc(item.third) + '</td><td>#' + esc(item.debit.entryId) + ' / #' + esc(item.credit.entryId) + '</td><td class="num">' + money(item.amount) + ' ' + esc(item.currency) + '</td><td><button class="secondary small" data-third-unlettrage="' + esc(item.id) + '">Défaire</button></td></tr>').join('') + '</tbody></table></div>' : '') +
+          '<p class="muted">Les lignes sans tiers, les devises différentes et les comptes différents ne sont pas compensés automatiquement. Les écritures contrepassées sont exclues.</p>';
+      })()}
+    </section>
+
     <div class="card">
       <h2>🏦 Rapprochement bancaire</h2>
       <p class="muted">Collez votre relevé bancaire (une ligne par opération : <code>date;libellé;montant</code>). Dates acceptées : JJ/MM/AAAA ou AAAA-MM-JJ. Utilisez un montant positif pour un crédit bancaire et négatif pour un débit, selon le sens des écritures de trésorerie de votre comptabilité.</p>
@@ -130,6 +143,27 @@ export function viewTools() {
       <div id="bk-result" style="margin-top:10px"></div>
     </div>
   `;
+
+  // ---- Lettrage assisté des tiers ----
+  $app.querySelectorAll("[data-third-lettrage]").forEach(button => button.addEventListener("click", () => {
+    const report = buildThirdPartyReconciliation(store);
+    const proposal = report.proposals[Number(button.dataset.thirdLettrage)];
+    if (!proposal) return toast("Cette proposition n'est plus disponible. Actualisez l'écran.");
+    try {
+      applyThirdPartyLettrage(store, proposal);
+      saveStore(store);
+      toast("Lettrage enregistré. Les écritures d'origine n'ont pas été modifiées.");
+      router.render();
+    } catch (error) { toast(error.message || "Lettrage impossible."); }
+  }));
+  $app.querySelectorAll("[data-third-unlettrage]").forEach(button => button.addEventListener("click", () => {
+    try {
+      reverseThirdPartyLettrage(store, button.dataset.thirdUnlettrage);
+      saveStore(store);
+      toast("Lettrage annulé. Les soldes ouverts ont été recalculés.");
+      router.render();
+    } catch (error) { toast(error.message || "Annulation impossible."); }
+  }));
 
   document.getElementById("am-amount-calc")?.addEventListener("click", () => openCalculator(document.getElementById("am-amount")));
 

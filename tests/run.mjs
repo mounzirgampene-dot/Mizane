@@ -2682,6 +2682,15 @@ test("assistant IA : lecture de justificatif avec validation humaine obligatoire
   assert.match(assistantViewSource, /assistantHistoryCompanyId/);
   assert.match(assistantViewSource, /réinitialisée lors d’un changement d’entreprise/);
   assert.match(assistantViewSource, /buildAiAuditSnapshot\(store\)/);
+  assert.match(assistantViewSource, /function draftCardMarkup/);
+  assert.match(assistantViewSource, /function readDraftCard/);
+  assert.match(assistantViewSource, /data-line-field="account"/);
+  assert.match(assistantViewSource, /data-line-field="debit"/);
+  assert.match(assistantViewSource, /data-line-field="credit"/);
+  assert.match(assistantViewSource, /bindDraftEditors\(out/);
+  assert.match(assistantViewSource, /Valider et enregistrer les/);
+  assert.match(assistantAiSource, /sourceFacts/);
+  assert.match(assistantAiSource, /uncertainties/);
 
 });
 

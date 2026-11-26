@@ -15,8 +15,8 @@ postEntry(store, { date: "2026-03-10", journal: "ACH", reference: "F-01", lines:
   { account: "401", debit: 0, credit: 100, label: "Fournisseur" },
 ] });
 postEntry(store, { date: "2026-03-11", journal: "BAN", reference: "R-01", lines: [
-  { account: "401", debit: 100, credit: 0, label: "Règlement" },
-  { account: "512", debit: 0, credit: 100, label: "Banque" },
+  { account: "512", debit: 100, credit: 0, label: "Entrée banque" },
+  { account: "401", debit: 0, credit: 100, label: "Dette fournisseur" },
 ] });
 const report = buildAccountingControlReport(store);
 assert.equal(report.totals.entries, 2);

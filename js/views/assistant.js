@@ -158,7 +158,7 @@ export function viewAssistant() {
         proposals = [await suggestEntry(store, note, imageData)];
       }
       if (!proposals.length) throw new Error("Aucune écriture exploitable n’a été extraite du document.");
-      const facts = documentFactsFromProposal(proposals[0], store.settings.currency);
+      const facts = documentFactsFromProposal(proposals[0]);
       const warnings = [];
       if (pdfInfo?.omittedPages) warnings.push(pdfInfo.omittedPages + " page(s) au-delà de la limite de lecture n’ont pas été analysées.");
       if (pdfInfo?.omittedScannedPages) warnings.push(pdfInfo.omittedScannedPages + " page(s) numérisée(s) supplémentaires n’ont pas pu être transmises au modèle vision (limite de 4 images par document).");

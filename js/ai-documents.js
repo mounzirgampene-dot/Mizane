@@ -107,7 +107,7 @@ function validAmount(value) {
   return Number.isFinite(number) && number > 0 ? roundMoney(number) : null;
 }
 
-export function documentFactsFromProposal(proposal, defaultCurrency = "") {
+export function documentFactsFromProposal(proposal) {
   const raw = proposal?.aiReview?.documentFacts || proposal?.documentFacts || {};
   const lineTotal = (proposal?.lines || []).reduce((sum, line) => sum + (Number(line?.debit) || 0), 0);
   const total = validAmount(raw.total ?? raw.amount) ?? validAmount(lineTotal);

@@ -10,7 +10,7 @@ const facts = documentFactsFromProposal({
   reference: "FAC-2026-18",
   lines: [{ debit: 1180, credit: 0 }, { debit: 0, credit: 1180 }],
   aiReview: { documentFacts: { date: "2026-11-25", total: 1180, currency: "MAD", reference: "FAC-2026-18", counterparty: "Fournisseur Atlas" } },
-}, "MAD");
+});
 assert.deepEqual(facts, {
   date: "2026-11-25", total: 1180, currency: "MAD",
   reference: "FAC-2026-18", counterparty: "Fournisseur Atlas",

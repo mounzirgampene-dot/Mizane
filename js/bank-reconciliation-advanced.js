@@ -11,7 +11,7 @@ function allocationsUsed(session,currentLine,candidate) {
   for(const line of session?.lines||[]) {
     if(line===currentLine)continue;
     const matches=Array.isArray(line.matches)?line.matches:[];
-    if(matches.length) { for(const item of matches) if(Number(item.entryId)===Number(candidate.entryId)&&String(item.account)===candidate.account&&Number(item.lineIndex??-1)===candidate.lineIndex)used+=Math.abs(Number(item.amount)||0); }
+    if(matches.length) { for(const item of matches) if(Number(item.entryId)===Number(candidate.entryId)&&String(item.account)===candidate.account&&(item.lineIndex==null||Number(item.lineIndex)===candidate.lineIndex))used+=Math.abs(Number(item.amount)||0); }
     else if(Number(line.match)===Number(candidate.entryId)) used+=Math.abs(Number(line.matchedAmount)||Math.abs(Number(line.amount)||0));
   }
   return round(used);

@@ -2556,7 +2556,10 @@ test("prévisions financières : projections cumulées et ventilation stricte pa
   assert.deepEqual(report.payablesByCurrency, { EUR: 50 });
   assert.equal(report.events.some(item => item.id === "m2"), false);
   assert.equal(report.monthly[0].outflows, 25);
-  assert.equal(report.monthly[0].inflows, 0);\n  assert.equal(report.overdueReceivables.count, 1);\n  assert.equal(report.overdueReceivables.amountByCurrency.MAD, 50);\n  assert.equal(report.events.some(item => item.id === "f2"), false);
+  assert.equal(report.monthly[0].inflows, 0);
+  assert.equal(report.overdueReceivables.count, 1);
+  assert.equal(report.overdueReceivables.amountByCurrency.MAD, 50);
+  assert.equal(report.events.some(item => item.id === "f2"), false);
   assert.equal(report.monthly[1].inflows, 1100);
   assert.equal(report.monthly[1].outflows, 550);
   assert.deepEqual(groupFinancialAmounts([{currency:"MAD",amount:10},{currency:"EUR",amount:7},{currency:"MAD",amount:2}]), {MAD:12,EUR:7});

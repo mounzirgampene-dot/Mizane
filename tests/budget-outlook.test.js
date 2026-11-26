@@ -18,14 +18,22 @@ const report = {
     ] },
   ],
 };
-const entries = [\n  { date: "2026-01-15", lines: [{ account: "601", debit: 120 }, { account: "701", credit: 180 }] },\n  { date: "2026-02-15", lines: [{ account: "601", debit: 80 }, { account: "701", credit: 220 }] },\n  { date: "2026-03-15", lines: [{ account: "601", debit: 100 }, { account: "701", credit: 200 }] },\n  { date: "2026-04-10", lines: [{ account: "601", debit: 10000 }, { account: "701", credit: 10000 }] },\n];\nconst outlook = buildBudgetOutlook({ report, entries, startDate: "2026-01-01", asOf: "2026-03-15" });
+const entries = [
+  { date: "2026-01-15", lines: [{ account: "601", debit: 120 }, { account: "701", credit: 180 }] },
+  { date: "2026-02-15", lines: [{ account: "601", debit: 80 }, { account: "701", credit: 220 }] },
+  { date: "2026-03-15", lines: [{ account: "601", debit: 100 }, { account: "701", credit: 200 }] },
+  { date: "2026-04-10", lines: [{ account: "601", debit: 10000 }, { account: "701", credit: 10000 }] },
+];
+const outlook = buildBudgetOutlook({ report, entries, startDate: "2026-01-01", asOf: "2026-03-15" });
 assert.equal(outlook.ok, true);
 assert.equal(outlook.elapsedMonths, 3);
 assert.equal(outlook.remainingMonths, 1);
 assert.equal(outlook.totals.expenses.projectedYearEnd, 400);
 assert.equal(outlook.totals.income.projectedYearEnd, 800);
 assert.equal(outlook.totals.net.projectedYearEnd, 400);
-assert.equal(outlook.lines[0].severity, "ok");\nassert.equal(outlook.lines[0].actualToDate, 300);\nassert.equal(outlook.lines[1].actualToDate, 600);
+assert.equal(outlook.lines[0].severity, "ok");
+assert.equal(outlook.lines[0].actualToDate, 300);
+assert.equal(outlook.lines[1].actualToDate, 600);
 assert.equal(outlook.method.includes("linéaire"), true);
 assert.equal(buildBudgetOutlook({ report, entries, startDate: "2026-01-01", asOf: "bad" }).ok, false);
 assert.equal(buildBudgetOutlook({ report: { ok: false }, entries, startDate: "2026-01-01", asOf: "2026-03-15" }).ok, false);

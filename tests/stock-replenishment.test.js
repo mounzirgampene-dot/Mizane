@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildStockReplenishmentReport, stockReplenishmentCsv } from "../js/stock-replenishment.js";
+import { buildStockReplenishmentReport, prepareStockReplenishmentDraftLines, stockReplenishmentCsv } from "../js/stock-replenishment.js";
 
 const products = [
   { id: "p1", sku: "A-01", name: "Article A", type: "goods", unit: "pièce", minimumStock: 5, targetStock: 12 },
@@ -93,4 +93,53 @@ test("réapprovisionnement : exporte un CSV avec séparateurs et guillemets prot
   assert.ok(csv.includes('"A;""1"'));
   assert.ok(csv.includes('"Article ""A"""'));
   assert.ok(csv.includes('"Magasin; central: 1"'));
+});
+
+
+test("brouillon de réapprovisionnement : déduit les quantités encore ouvertes, brouillons compris", () => {
+  const lines = [{
+    productId: "p1", reorderQuantity: 10, unit: "pièce",
+    warehouses: [{ warehouseId: "w1", available: 2 }, { warehouseId: "w2", available: 5 }],
+  }];
+  const documents = [
+    { type: "order", status: "draft", lines: [{ productId: "p1", baseQuantity: 3, receivedBase: 1 }] },
+    { type: "order", status: "partially_received", lines: [{ productId: "p1", baseQuantity: 2, receivedBase: 0 }] },
+    { type: "order", status: "cancelled", lines: [{ productId: "p1", baseQuantity: 8, receivedBase: 0 }] },
+    { type: "invoice", status: "validated", lines: [{ productId: "p1", baseQuantity: 9, receivedBase: 0 }] },
+  ];
+  const prepared = prepareStockReplenishmentDraftLines(
+    lines, documents,
+    [{ id: "p1", base_unit: "pièce", active: true }],
+    [{ id: "w1", active: true }, { id: "w2", active: true }],
+  );
+  assert.equal(prepared.length, 1);
+  assert.equal(prepared[0].quantity, 6);
+  assert.equal(prepared[0].baseQuantity, 6);
+  assert.equal(prepared[0].unit, "pièce");
+  assert.equal(prepared[0].warehouseId, "w1");
+  assert.equal(prepared[0].unitCost, 0);
+  assert.equal(prepared[0].alreadyOnOrder, 4);
+});
+
+test("brouillon de réapprovisionnement : ne duplique pas une commande déjà suffisante", () => {
+  const prepared = prepareStockReplenishmentDraftLines(
+    [{ productId: "p1", reorderQuantity: 5, warehouses: [{ warehouseId: "w1", available: 0 }] }],
+    [{ type: "order", status: "ordered", lines: [{ productId: "p1", quantity: 5, factor: 1, receivedBase: 0 }] }],
+    [{ id: "p1", base_unit: "unité" }],
+    [{ id: "w1", active: true }],
+  );
+  assert.deepEqual(prepared, []);
+});
+
+test("brouillon de réapprovisionnement : ignore les articles non physiques et les entrepôts inactifs", () => {
+  const prepared = prepareStockReplenishmentDraftLines(
+    [
+      { productId: "service", reorderQuantity: 3, warehouses: [{ warehouseId: "w1", available: 0 }] },
+      { productId: "goods", reorderQuantity: 3, warehouses: [{ warehouseId: "w1", available: 0 }] },
+    ],
+    [],
+    [{ id: "service", product_type: "service" }, { id: "goods", base_unit: "kg" }],
+    [{ id: "w1", active: false }],
+  );
+  assert.deepEqual(prepared, []);
 });

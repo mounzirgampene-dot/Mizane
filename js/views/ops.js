@@ -383,19 +383,26 @@ export function viewTools() {
     const lines = session.lines || [];
     const ok = lines.filter(m => m.status === "matched").length;
     const pending = lines.length - ok;
-    const totalBank = lines.reduce((sum,line) => sum + Number(line.amount || 0),0);
-    const totalMatched = lines.filter(line => line.status === "matched").reduce((sum,line) => sum + Number(line.amount || 0),0);
+    const totalsByCurrency = rows => rows.reduce((totals,line) => {
+      const currency = String(line.currency || store.settings.currency || "").toUpperCase() || "—";
+      totals[currency] = Math.round(((totals[currency] || 0) + Number(line.amount || 0) + Number.EPSILON) * 100) / 100;
+      return totals;
+    }, {});
+    const formatBankTotals = totals => Object.entries(totals).sort(([a],[b]) => a.localeCompare(b))
+      .map(([currency,amount]) => money(amount) + (currency === "—" ? "" : " " + esc(currency))).join(" · ") || "—";
+    const totalBank = formatBankTotals(totalsByCurrency(lines));
+    const totalMatched = formatBankTotals(totalsByCurrency(lines.filter(line => line.status === "matched")));
     out.innerHTML = `
       <div class="grid cols-2">
         <div class="card kpi"><div class="value">${ok} / ${lines.length}</div><div class="label">Opérations rapprochées</div></div>
         <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
       </div>
-      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · Tolérance : ±${session.days} jour(s). Total relevé : ${money(totalBank)} ; total rapproché : ${money(totalMatched)}. Les règlements partiels sont cumulés sans dépasser le montant de chaque écriture.</p>
+      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · ${esc(session.sourceFile || "Saisie manuelle")} · ${esc(String(session.sourceFormat || "—").toUpperCase())} · Tolérance : ±${session.days} jour(s). Total relevé : ${totalBank} ; total rapproché : ${totalMatched}. Les règlements partiels sont cumulés sans dépasser le montant de chaque écriture.</p>
       <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th class="num">Montant</th><th>Écriture</th><th>Compte</th><th>Action / état</th></tr></thead>
       <tbody>${lines.map((m,index) => {
         const options = (m.candidates || []).map(id => `<option value="${Number(id)}" ${Number(id)===Number(m.match)?"selected":""}>Écriture #${Number(id)}</option>`).join("");
-        return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
+        return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)} ${esc(m.currency || store.settings.currency || "")}</td>
           <td>${m.matches?.length ? m.matches.map(item => `#${item.entryId} (${money(item.amount)})`).join(", ") : (m.match ? `#${m.match} · ${esc(m.matchDate || "")}` : (m.candidates.length ? `Possibles : #${m.candidates.join(", #")}` : "Aucune correspondance"))}${m.partial ? `<p class="muted">Règlement partiel · reste sur les écritures : ${money(m.partialRemaining)}</p>` : ""}${m.amountCandidates?.length ? `<p class="muted">Écart à examiner : ${m.amountCandidates.map(item => `#${item.entryId} : ${money(item.difference)}`).join(" · ")}</p>` : ""}</td>
           <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
           <td>${m.match ? `<span class="ok-msg">✓ ${m.partial ? "Rapprochée partiellement" : (m.manuallyMatched ? "Validée manuellement" : "Rapprochée")}</span>` : `<span class="warn">À vérifier</span>`}

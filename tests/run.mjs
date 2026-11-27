@@ -45,6 +45,7 @@ const notificationsMigration = readFileSync(new URL("../supabase/migrations/2026
 const accountingAnomalyReportingMigration = readFileSync(new URL("../supabase/migrations/20261123210000_accounting_anomaly_reporting.sql", import.meta.url), "utf8");
 const notificationsSource = readFileSync(new URL("../js/notifications.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+const serviceWorkerSource = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 const coreSource = readFileSync(new URL("../js/views/core.js", import.meta.url), "utf8");
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");
@@ -689,6 +690,13 @@ test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel
     assert.ok(urls[0].includes("gemini-2.0-flash"));
     assert.ok(urls[1].includes("gemini-3.8-flash"));
   } finally { globalThis.fetch = orig; }
+});
+
+test("service worker : les dépendances locales directes de l'application sont précachées", () => {
+  const modules = [...appSource.matchAll(/from\s+["']\.\/([^"']+)["']/g)].map(match => match[1]);
+  const missing = modules.filter(path => !serviceWorkerSource.includes('"js/' + path + '"'));
+  assert.deepEqual(missing, [], "tous les modules importés directement par app.js doivent être précachés");
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v113"/);
 });
 
 console.log("— Internationalisation —");

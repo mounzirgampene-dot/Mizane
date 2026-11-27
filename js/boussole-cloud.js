@@ -38,7 +38,7 @@ export async function searchCloudBoussoleDocuments(query, { locale = "fr", limit
   if (documentError) throw documentError;
   if (!documents?.length) return { available: true, results: [] };
   const documentIds = documents.map(document => document.id);
-  const selectedLocale = locale === "ar" ? "ar" : "fr";
+  const selectedLocale = ["fr", "ar", "en"].includes(locale) ? locale : "fr";
   const [{ data: versions, error: versionsError }, { data: synonyms, error: synonymsError }] = await Promise.all([
     supabase.from("boussole_document_versions")
       .select("document_id,version_number,locale,title,summary,content_markdown,structured_content,source_references,learning_level,estimated_minutes,published_at")

@@ -49,3 +49,18 @@ assert.match(worker,/"js\/boussole-cloud\.js"/);
 assert.match(worker,/mizane-v120/);
 assert.doesNotMatch(guide,/fetch\(|supabase|company-ai|localStorage/);
 console.log("Boussole UI : panneau contextuel, guide FR/AR et disponibilité hors ligne vérifiés.");
+
+
+const academyEnglish = readFileSync(new URL("../js/academy-en.js", import.meta.url), "utf8");
+const editorUi = readFileSync(new URL("../js/boussole-editor.js", import.meta.url), "utf8");
+assert.match(guide,/en:\\["Getting started with MIZANE"/);
+assert.match(guide,/ROUTES_EN/);
+assert.match(cloud,/\\["fr", "ar", "en"\\]\\.includes\\(locale\\)/);
+assert.match(academy,/document\\.documentElement\\.lang === "en"/);
+assert.match(academy,/ACADEMY_EN\\[course\\.id\\]\\.quiz/);
+assert.match(academyEnglish,/English Academy curriculum/);
+assert.match(editorUi,/functions\\.invoke\\("boussole-editor"/);
+assert.match(editorUi,/create_draft/);
+assert.match(html,/id="boussole-editor-dialog"/);
+assert.match(worker,/js\\/boussole-editor\\.js/);
+assert.match(worker,/js\\/academy-en\\.js/);

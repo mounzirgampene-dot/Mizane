@@ -164,6 +164,13 @@ Deno.serve(async (request) => {
       .order("version_number", { ascending: false })
       .order("locale", { ascending: true });
     if (versionsError) return json(500, { error: "Chargement des versions éditoriales impossible." });
+    // Les auteurs ne voient que les versions publiées et leurs propres brouillons.
+    const visibleVersions = canReviewAll
+      ? (versions ?? [])
+      : (versions ?? []).filter((version) =>
+        version.status === "published" || version.created_by === authData.user.id
+      );
+    const visibleVersionIds = new Set(visibleVersions.map((version) => version.id));
     const { data: relations, error: relationsError } = await adminClient
       .from("boussole_document_relations")
       .select("id,source_document_id,target_document_id,relation_type,sort_order")
@@ -176,12 +183,18 @@ Deno.serve(async (request) => {
       .eq("document_id", document.id).eq("is_active", true)
       .order("sort_order", { ascending: true });
     if (mediaError) return json(500, { error: "Chargement des ressources médias impossible." });
-    const media = await Promise.all((mediaRows ?? []).map(async (asset) => {
+    // Ne jamais signer le média d'une version cachée à l'auteur.
+    const visibleMediaRows = canReviewAll
+      ? (mediaRows ?? [])
+      : (mediaRows ?? []).filter((asset) =>
+        asset.version_id !== null && visibleVersionIds.has(asset.version_id)
+      );
+    const media = await Promise.all(visibleMediaRows.map(async (asset) => {
       const { data: signed } = await adminClient.storage.from("boussole-media").createSignedUrl(asset.storage_path, 900);
       return { ...asset, signed_url: signed?.signedUrl ?? null };
     }));
     return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role),
-      document, versions: versions ?? [], relations: relations ?? [], media });
+      document, versions: visibleVersions, relations: relations ?? [], media });
   }
 
   if (action === "list_synonyms") {
@@ -265,6 +278,21 @@ Deno.serve(async (request) => {
       if (typeof body.storage_path !== "string" || !body.document_id ||
           !body.storage_path.startsWith(String(body.document_id) + "/")) {
         return json(400, { error: "Chemin média invalide." });
+      }
+      // Autoriser l'opération côté base avant toute lecture privilégiée de l'objet Storage.
+      const { error: mediaAuthorizationError } = await adminClient.rpc("boussole_editor_manage_resource", {
+        p_actor_id: authData.user.id,
+        p_action: "media_upload_authorize",
+        p_document_id: body.document_id,
+        p_version_id: body.version_id ?? null,
+        p_storage_path: body.storage_path,
+        p_content_type: body.content_type ?? null,
+        p_byte_size: body.byte_size ?? null,
+      });
+      if (mediaAuthorizationError) {
+        if (mediaAuthorizationError.code === "42501") return json(403, { error: "Droit éditorial insuffisant." });
+        if (mediaAuthorizationError.code === "22023") return json(400, { error: "Téléversement non autorisé." });
+        return json(500, { error: "Vérification des droits média impossible." });
       }
       const { data: objectInfo, error: objectError } = await adminClient.storage.from("boussole-media").info(body.storage_path);
       if (objectError || !objectInfo) return json(400, { error: "Le fichier téléversé est introuvable." });

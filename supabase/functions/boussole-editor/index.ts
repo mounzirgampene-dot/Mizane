@@ -310,6 +310,10 @@ Deno.serve(async (request) => {
     };
     const { data, error } = await adminClient.rpc("boussole_editor_manage_resource", resourceArgs);
     if (error) {
+      if (resourceAction === "media_register" && typeof body.storage_path === "string") {
+        const { error: cleanupError } = await adminClient.storage.from("boussole-media").remove([body.storage_path]);
+        if (cleanupError) console.error("Boussole unregistered media cleanup pending:", cleanupError.message);
+      }
       if (error.code === "42501") return json(403, { error: "Droit éditorial insuffisant ou opération refusée." });
       if (error.code === "P0002") return json(404, { error: "Ressource ou document introuvable." });
       if (error.code === "22023") return json(400, { error: "Les paramètres de la ressource sont invalides." });

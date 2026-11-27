@@ -51,3 +51,7 @@ assert.ok(edge.includes('body.locale !== "en"'));
 assert.ok(editorUi.includes('functions.invoke("boussole-editor"'));
 assert.ok(!editorUi.includes('.from("boussole_documents")'));
 console.log("Boussole editorial: tri-language governance and scoped administration checks passed.");
+
+assert.ok(edge.includes("const canReviewAll = scopeRoles.some"));
+assert.ok(edge.includes('query.or("status.eq.published,created_by.eq." + authData.user.id)'));
+assert.ok(edge.includes("document.created_by !== authData.user.id"));

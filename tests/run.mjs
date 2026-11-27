@@ -45,7 +45,6 @@ const notificationsMigration = readFileSync(new URL("../supabase/migrations/2026
 const accountingAnomalyReportingMigration = readFileSync(new URL("../supabase/migrations/20261123210000_accounting_anomaly_reporting.sql", import.meta.url), "utf8");
 const notificationsSource = readFileSync(new URL("../js/notifications.js", import.meta.url), "utf8");
 const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
-const serviceWorkerSource = readFileSync(new URL("../sw.js", import.meta.url), "utf8");
 const coreSource = readFileSync(new URL("../js/views/core.js", import.meta.url), "utf8");
 
 const stockServerMigration = readFileSync(new URL("../supabase/migrations/20261123085959_stock_server_engine.sql", import.meta.url), "utf8");

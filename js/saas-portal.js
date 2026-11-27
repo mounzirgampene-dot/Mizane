@@ -178,11 +178,19 @@ async function refresh(){
  const sessionLock=getCompanySessionLock();
  if(sessionLock){
   const lockedMembership=memberships.find(m=>m.company.id===sessionLock.companyId&&m.status==="active");
-  if(sessionLock.userId!==session.user.id||!lockedMembership||!unlockCompanyStorage(session.user.id,sessionLock.companyId)){
+  const canUnlock=sessionLock.userId===session.user.id&&lockedMembership&&["admin","accountant"].includes(lockedMembership.role);
+  if(!canUnlock||!unlockCompanyStorage(session.user.id,sessionLock.companyId)){
    activeCompanyId="";
    localStorage.removeItem(ACTIVE_COMPANY_KEY);
    localStorage.removeItem(ACTIVE_USER_KEY);
-   throw new Error("Cette comptabilité locale est verrouillée. Reconnectez-vous avec le compte qui l’utilisait avant la déconnexion et qui possède toujours l’accès à cette entreprise.");
+   // Un compte non autorisé ne doit jamais rester connecté sur l'écran verrouillé :
+   // on revient au formulaire de connexion pour permettre l'essai du compte administrateur.
+   await supabase.auth.signOut();
+   session=null;
+   memberships=[];
+   authView("login");
+   toast("Accès comptable verrouillé. Connectez-vous avec le compte administrateur ou comptable autorisé.");
+   return;
   }
   activeCompanyId=sessionLock.companyId;
  }else if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";

@@ -14,6 +14,6 @@ Le contenu est embarqué dans le module JavaScript, ajouté au précache du serv
 - La recherche est locale et porte uniquement sur les articles intégrés.
 - Il s'agit d'une première base d'aide, pas encore du guide exhaustif, des médias, des démonstrations interactives ni de l'Académie prévus.
 
-## Vérifications
+## Couverture initiale\n\nLe guide couvre désormais la prise en main, les paramètres, la saisie, les états, les tiers, la facturation et les achats, les stocks, la fiscalité, les périodes, les outils, les notifications, les travaux, la synchronisation, les exports et la confidentialité. La recherche accepte plusieurs termes et normalise les variantes courantes du français et de l’arabe.\n\n## Vérifications
 
 Le test `tests/boussole-ui.test.js` vérifie l'intégration du panneau, la présence des contenus FR/AR et le précache du module. Les tests complets et le déploiement Cloudflare Preview restent requis.

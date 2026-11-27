@@ -21,6 +21,7 @@ import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
 import { getCompanyStorageStatus } from "./company-storage.js";
 import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
 import { initBoussole, setBoussoleContext } from "./boussole.js";
+import { initAcademy } from "./academy.js";
 
 let currentCompanyRole = null;
 
@@ -190,6 +191,7 @@ async function start() {
   renderNav();
   render();
   initBoussole();
+  initAcademy();
   const historyAccess = await initWorkHistory();
   await initNotifications();
   if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);

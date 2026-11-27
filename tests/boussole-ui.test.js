@@ -30,7 +30,7 @@ assert.equal(matchesBoussoleQuery("Gestion de stock","facture vente"),false);
 assert.equal(matchesBoussoleQuery("إعداد المؤسسة","اعداد المؤسسة"),true);
 assert.match(guide,/Rechercher dans le guide MIZANE/);
 assert.match(guide,/لا تُقرأ البيانات المحاسبية/);
-assert.match(worker,/mizane-v118/);
+assert.match(worker,/mizane-v119/);
 assert.match(worker,/"js\/academy\.js"/);
 assert.match(worker,/"js\/boussole\.js"/);
 assert.doesNotMatch(guide,/fetch\(|supabase|company-ai|localStorage/);

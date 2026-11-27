@@ -1,5 +1,5 @@
 // MIZANE — Service worker : cache hors-ligne.
-const CACHE = "mizane-v122";
+const CACHE = "mizane-v123";
 const ASSETS = [
   "./",
   "index.html",

@@ -4,6 +4,7 @@ import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildBudgetReport, validateBudgetLines } from "./budget-core.js";
 import { buildBudgetOutlook } from "./budget-outlook-core.js";
 import { buildAnalyticalBudgetReport, validateAnalyticalBudgets } from "./analytical-budget-core.js";
+import { renderLineChart, renderBarChart } from "./charts.js";
 
 const fiscalStart = () => store.settings.exerciceStart || new Date().getFullYear() + "-01-01";
 const fiscalEnd = () => store.settings.exerciceEnd || new Date().getFullYear() + "-12-31";
@@ -74,6 +75,11 @@ export function viewBudget() {
   }).join("") : "";
 
   const outlookRows = outlook.ok ? outlook.lines.map(item => "<tr><td>" + esc(item.account) + "</td><td>" + esc(item.label) + "</td><td>" + (item.type === "expense" ? "Charge" : "Produit") + "</td><td >" + money(item.projectedYearEnd) + "</td><td >" + money(item.budgetTotal) + "</td><td >" + money(item.projectedVariance) + "</td><td>" + (item.severity === "critical" ? "Critique" : item.severity === "warning" ? "Vigilance" : "Dans la cible") + "</td></tr>").join("") : "";
+  const monthlyChartRows = report.ok ? report.months.map(month => ({ label: month.key, budget: month.budgetExpenses, actual: month.actualExpenses })) : [];
+  const incomeChartRows = report.ok ? report.months.map(month => ({ label: month.key, budget: month.budgetIncome, actual: month.actualIncome })) : [];
+  const budgetChartsHtml = renderLineChart("Charges — budget et réalisé", monthlyChartRows, [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value)) +
+    renderLineChart("Produits — budget et réalisé", incomeChartRows, [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value)) +
+    renderBarChart("Résultat budgété et réalisé", [{ label: "Exercice", budget: total.netBudget, actual: total.netActual }], [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value));
   const options = accounts.map(item => "<option value=\"" + esc(item.code) + "\">" + esc(item.code + " — " + item.label) + " (" + (item.type === "expense" ? "Charge" : "Produit") + ")</option>").join("");
   $app.innerHTML = `
     <h1>Gestion budgétaire</h1>

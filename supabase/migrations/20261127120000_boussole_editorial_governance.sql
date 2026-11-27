@@ -242,6 +242,7 @@ begin
     if p_action='request_changes' then
       update public.boussole_document_versions set status='draft',reviewed_by=p_actor_id,reviewed_at=now()
         where id=p_version_id and document_id=v_document.id and status='review'
+          and created_by is distinct from p_actor_id
         returning * into v_version;
       if not found then raise exception 'Version non disponible pour relecture.' using errcode='42501'; end if;
       insert into public.boussole_editor_audit(actor_user_id,company_id,document_id,version_id,action,metadata)
@@ -266,7 +267,9 @@ begin
     select count(distinct v.locale) into v_other_locale_count
       from public.boussole_document_versions v
       where v.document_id=v_document.id and v.version_number=v_version.version_number
-        and v.locale in ('fr','ar') and v.status='approved'\n        and v.created_by is distinct from p_actor_id\n        and v.approved_by is distinct from p_actor_id;
+        and v.locale in ('fr','ar') and v.status='approved'
+        and v.created_by is distinct from p_actor_id
+        and v.approved_by is distinct from p_actor_id;
     if v_other_locale_count<>2 then
       raise exception 'Les versions française et arabe doivent être approuvées avant publication.' using errcode='42501';
     end if;

@@ -31,3 +31,13 @@ Un test statique vérifie la présence des tables, RLS/FORCE RLS, restrictions d
 - Pas de modification des tables comptables, fiscales ou de stock.
 - Pas de modification de Production.
 - Pas de modification de `main`.
+
+## Séparation des accès publics et professionnels
+
+Les politiques de lecture sont séparées par périmètre :
+- Le rôle `anon` peut lire uniquement les documents globaux publiés, leurs versions publiées et les relations entre deux documents globaux publiés.
+- Le rôle `authenticated` peut également lire les contenus publiés de son entreprise lorsque l'appartenance active est confirmée par `private.is_active_company_member(uuid)`.
+- Les politiques accessibles à `anon` n'appellent jamais le helper du schéma privé. Celui-ci n'est pas exposé au rôle anonyme sur MIZANE-DEV.
+- Les synonymes actifs sont lisibles publiquement ; les préférences et événements de consentement restent limités à leur propriétaire authentifié.
+
+La migration reste non appliquée. La CI statique ne remplace pas les tests RLS réels sur des comptes de test anon, membre actif, membre révoqué et utilisateur non membre.

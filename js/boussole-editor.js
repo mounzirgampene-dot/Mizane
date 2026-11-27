@@ -176,7 +176,9 @@ function render() {
   const scopeSelect = select(availableScopes.map((scope,index) => [String(index), scope.type === "global" ? c.global : c.company]), String(Math.max(0, availableScopes.indexOf(activeScope))));
   scopeSelect.setAttribute("aria-label", c.scope);
   scopeSelect.addEventListener("change", async () => { activeScope = availableScopes[Number(scopeSelect.value)]; try { await loadDocuments(); } catch (error) { showMessage(error.message || c.error, true); } });
-  header.append(field(c.scope, scopeSelect), buttonNode(c.reload, "reload"), buttonNode(c.create, "new"));
+  const createButton = buttonNode(c.create, "new");
+  createButton.disabled = !(activeScope.roles || []).some(role => role === "author" || role === "admin");
+  header.append(field(c.scope, scopeSelect), buttonNode(c.reload, "reload"), createButton);
   body.append(header);
   body.append(make("p", "boussole-editor-intro", c.intro));
   body.append(make("p", "boussole-editor-message"));
@@ -213,7 +215,9 @@ function renderDocumentEditor(root) {
   root.append(make("h4", "", c.versions), statusGrid);
   if (!activeVersion) {
     root.append(make("p", "muted", c.missing));
-    root.append(buttonNode(c.addLocale, "add-locale"));
+    const addButton = buttonNode(c.addLocale, "add-locale");
+    addButton.disabled = !(activeScope.roles || []).some(role => role === "author" || role === "admin");
+    root.append(addButton);
   } else {
     const title = input(activeVersion.title);
     const summary = textarea(activeVersion.summary || ""); summary.rows = 3;
@@ -323,6 +327,7 @@ export async function initBoussoleEditor() {
   button.hidden = true;
   closeButton.addEventListener("click", () => dialog.close());
   button.addEventListener("click", async () => {
+    button.textContent = copy().button;
     dialog.showModal();
     try { await loadDocuments(); }
     catch (error) { body.replaceChildren(make("p", "boussole-editor-message", error.message || copy().error)); }

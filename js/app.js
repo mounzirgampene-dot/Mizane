@@ -243,7 +243,7 @@ async function syncWhenActive() {
     location.reload();
     return;
   }
-  try { await refreshUnreadCount(); catch (error) { console.warn("Actualisation des notifications impossible :", error?.message || error); }
+  try { await refreshUnreadCount(); } catch (error) { console.warn("Actualisation des notifications impossible :", error?.message || error); }
   if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
   renderNav();
   render();

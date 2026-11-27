@@ -373,7 +373,7 @@ async function start(){
  supabase.auth.onAuthStateChange((event,next)=>{
   session=next;
   if(event==="PASSWORD_RECOVERY" || (recoveryLinkDetected && next)){passwordRecoveryMode=true;recoveryView();return}
-  if(!session){passwordRecoveryMode=false;memberships=[];authView()}
+  if(!session){passwordRecoveryMode=false;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView()}
  });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
  const hashParams=new URLSearchParams(location.hash.slice(1));

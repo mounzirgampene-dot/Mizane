@@ -118,7 +118,7 @@ La branche `feat/boussole-editorial-governance-dev` ajoute une première couche 
 - Une nouvelle relecture ne masque pas la dernière version déjà publiée.
 - L'attribution des rôles reste une opération d'administration privilégiée, hors interface utilisateur de cette tranche.
 
-**État de validation :** CI qualité et workflow de vérification Preview réussis sur le commit `1e39f2a39701a039422419f3fd974aee8cbca85e`. Le scénario transactionnel final a exécuté la migration et les transitions sur MIZANE-DEV avec des identités, une entreprise et des rôles synthétiques, puis `ROLLBACK` ; résultat : PASS. Il couvre aussi les rôles révoqués, les refus d'auto-approbation et d'auto-publication, le refus de modification d'un document archivé et l'absence de privilèges directs côté client. Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000`. La migration n'est donc pas appliquée, la fonction Edge n'est pas déployée, aucun rôle réel n'est attribué et aucun document réel n'est créé. Cette tranche ne modifie pas Production ni `main`.
+**État de validation PR #173 :** CI qualité et workflow de vérification Preview réussis sur le commit `d79603e`. Le scénario transactionnel final a exécuté la migration et les transitions sur MIZANE-DEV avec des identités, une entreprise et des rôles synthétiques, puis `ROLLBACK` ; résultat : PASS. Il couvre aussi les rôles révoqués, les refus d'auto-approbation et d'auto-publication, le refus de modification d'un document archivé et l'absence de privilèges directs côté client. Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000`. La migration n'est donc pas appliquée, la fonction Edge n'est pas déployée, aucun rôle réel n'est attribué et aucun document réel n'est créé. Cette tranche ne modifie pas Production ni `main`.
 
 ### Étapes avant activation
 1. Revue SQL et test transactionnel réel sur DEV avec rôles synthétiques, sans persistance des fixtures — **PASS**.
@@ -128,37 +128,44 @@ La branche `feat/boussole-editorial-governance-dev` ajoute une première couche 
 5. Interface d'administration éditoriale et procédure d'attribution explicite des rôles dans un lot distinct.
 
 
-## 8. Administration éditoriale et troisième langue — PR #174 en préparation
+## 8. Administration éditoriale et troisième langue — PR #174
 
 La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration éditoriale et le support anglais de bout en bout dans les couches livrées par cette tranche.
 
 ### Langues
 - Français (`fr`), arabe (`ar`) et anglais (`en`) sont les trois locales autorisées pour les versions documentaires et les synonymes.
 - Les préférences d'interface et de réponse acceptent également les trois langues.
-- Les 16 articles du guide local disposent maintenant d'un contenu anglais.
-- L'Académie possède une traduction anglaise des 10 parcours, 30 leçons et 20 évaluations ; les corrections et explications sont également traduites.
-- Le lecteur cloud recherche la version publiée dans la langue active.
+- Les 16 articles du guide local disposent d'un contenu anglais.
+- L'Académie possède une traduction anglaise des 10 parcours, 30 leçons et 20 évaluations, avec options et explications.
+- La recherche Académie et le lecteur cloud prennent en charge la langue anglaise.
 - L'arabe conserve RTL ; français et anglais utilisent LTR.
 
 ### Administration
 - Interface dédiée avec liste des documents, sélection des éditions et des langues, création de brouillons, édition Markdown, aperçu texte et suivi des statuts.
+- Les auteurs voient leurs propres brouillons et les documents publiés ; les relecteurs et éditeurs autorisés peuvent consulter les éléments de leur périmètre.
 - Files d'action distinctes selon les rôles author, reviewer et publisher ; l'interface n'accorde aucun droit.
 - Liste et lecture des brouillons via Edge Function après authentification Auth et vérification serveur du rôle et de l'appartenance active à l'entreprise.
 - Aucun accès direct du navigateur aux tables éditoriales et aucune clé service_role côté client.
 - La publication exige trois versions approuvées (FR, AR et EN) partageant le même numéro d'édition.
 - Les traductions d'une édition partagent un numéro ; les versions suivantes utilisent le numéro suivant après la dernière publication.
 
+### Validation PR #174
+- Commit final : `6091edad5825d2d20d5a23fb36f929bc03f4a5a7`.
+- ESLint réussi ; suite principale : 169 tests réussis, 0 échec.
+- Suites Académie et fiscales réussies.
+- Workflow de vérification Preview réussi.
+- Test transactionnel trilingue sur MIZANE-DEV : migration de gouvernance et migration anglaise exécutées avec fixtures synthétiques, création FR/AR/EN au même numéro, approbation par un relecteur distinct, publication des trois langues, création du numéro suivant, puis `ROLLBACK`.
+- Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000` ou `20261127133000`.
+
 ### Activation non effectuée
-- La migration `20261127120000_boussole_editorial_governance.sql` reste non appliquée.
-- La migration additive `20261127133000_boussole_english_locale.sql` élargit les contraintes de langue sans modifier les données existantes ; elle reste non appliquée.
+- Aucune migration appliquée à MIZANE-DEV ; les contraintes existantes restent FR/AR.
 - La fonction Edge `boussole-editor` n'est pas déployée.
 - Aucun rôle éditorial réel n'est attribué ; l'interface reste masquée tant qu'aucun rôle autorisé n'est détecté.
 - Aucun contenu réel n'est créé ou publié par cette PR.
-- Les migrations doivent être testées ensemble dans une transaction sur MIZANE-DEV, avec trois langues et un `ROLLBACK`, puis rapprochées de l'historique avant activation.
+- Les migrations devront être appliquées dans l'ordre après revue et livraison des PR précédentes, puis la fonction Edge déployée sur DEV uniquement.
 
 ### Suite
-1. Vérifier CI, tests et Preview de la PR #174.
-2. Exécuter le test transactionnel trilingue sur MIZANE-DEV sans persistance.
-3. Revoir les droits de lecture de la fonction Edge et les contrôles d'appartenance.
-4. Après livraison ordonnée des PR #170 à #174, appliquer les migrations DEV dans l'ordre, déployer la fonction Edge DEV et effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
-5. Ajouter ensuite la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.
+1. Terminer la revue de la PR #174 ; ne pas fusionner automatiquement les PR en brouillon.
+2. Après livraison ordonnée des PR #170 à #174, appliquer les migrations DEV dans l'ordre et déployer la fonction Edge DEV.
+3. Effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
+4. Ajouter la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.

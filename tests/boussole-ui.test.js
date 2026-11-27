@@ -43,11 +43,11 @@ assert.deepEqual(expandBoussoleCloudSearchVariants("الجرد",[{normalized_ter
 assert.deepEqual(expandBoussoleCloudSearchVariants("   "),[]);
 assert.match(guide,/Rechercher dans le guide MIZANE/);
 assert.match(guide,/لا تُقرأ البيانات المحاسبية/);
-assert.match(worker,/mizane-v122/);
+assert.match(worker,/const CACHE = "mizane-v\\d+"/);
 assert.match(worker,/"js\/academy\.js"/);
 assert.match(worker,/"js\/boussole\.js"/);
 assert.match(worker,/"js\/boussole-cloud\.js"/);
-assert.match(worker,/mizane-v122/);
+
 assert.doesNotMatch(guide,/fetch\(|supabase|company-ai|localStorage/);
 console.log("Boussole UI : panneau contextuel, guide FR/AR et disponibilité hors ligne vérifiés.");
 

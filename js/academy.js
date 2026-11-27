@@ -263,7 +263,7 @@ export function initAcademy() {
     }
     if(view==="quiz"&&activeCourse){
       const course=activeCourse;
-      const corrections=lastResult?'<div class="academy-result" role="status">'+escapeHtml(l.score)+': '+lastResult.score+'/'+course.quiz.length+' — '+escapeHtml(lastResult.passed?l.passed:l.notPassed)+'</div>'+lastResult.answers.map((answer,index)=>'<article class="academy-lesson"><strong>'+escapeHtml(answer.correct?l.right:l.wrong)+'</strong><p>'+escapeHtml(text(answer.explanation))+'</p></article>').join(""):'' ;
+      const corrections=lastResult?'<div class="academy-result" role="status">'+escapeHtml(l.score)+': '+lastResult.score+'/'+course.quiz.length+' — '+escapeHtml(lastResult.passed?l.passed:l.notPassed)+'</div>'+lastResult.answers.map(answer=>'<article class="academy-lesson"><strong>'+escapeHtml(answer.correct?l.right:l.wrong)+'</strong><p>'+escapeHtml(text(answer.explanation))+'</p></article>').join(""):'' ;
       body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="course">'+escapeHtml(l.back)+'</button></div><h2>'+escapeHtml(text(course.title))+' — '+escapeHtml(l.quiz)+'</h2><form id="academy-quiz-form">'+course.quiz.map((q,index)=>'<fieldset class="academy-quiz-question"><legend>'+escapeHtml(l.question)+' '+(index+1)+' — '+escapeHtml(text([q[0],q[1]]))+'</legend>'+q[2].map((option,optionIndex)=>'<label class="academy-quiz-option"><input type="radio" name="q'+index+'" value="'+optionIndex+'" required><span>'+escapeHtml(text(option))+'</span></label>').join("")+'</fieldset>').join("")+'<button type="submit">'+escapeHtml(lastResult?l.retry:l.validate)+'</button></form>'+corrections;
       return;
     }

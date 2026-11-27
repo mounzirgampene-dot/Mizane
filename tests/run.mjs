@@ -2813,6 +2813,10 @@ test("déconnexion SaaS : verrouillage de la comptabilité locale sans suppressi
   assert.match(portalSource, /lockCompanyStorage\(session\?\.user\?\.id\)/);
   assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId\)/);
   assert.match(appSource, /storageStatus\.reason === "session-locked"/);
+  assert.match(storageSource, /const lock = getCompanySessionLock\(\)/);
+  assert.match(portalSource, /\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);
+  assert.match(portalSource, /await supabase\.auth\.signOut\(\)/);
+  assert.match(portalSource, /authView\("login"\)/);
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

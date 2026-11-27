@@ -1,7 +1,7 @@
 // MIZANE — Suivi des relances et engagements clients.
 import { store, $app, router, toast, esc, saveNow } from "./state.js";
 import { formatMoney } from "./countries.js";
-import { renderBarChart } from "./charts.js";
+import { chartModeControls, bindChartMode, renderBarChart } from "./charts.js";
 import { buildCustomerFollowupQueue, appendCustomerFollowup, FOLLOWUP_CHANNELS, FOLLOWUP_STATUSES } from "./customer-followups-core.js";
 const today=()=>new Date().toISOString().slice(0,10);
 const fmt=(amount,currency)=>formatMoney(amount,currency||store.settings.currency,store.settings.locale);
@@ -34,7 +34,10 @@ export function viewCustomerFollowups(){
   html+="<div class='card'><h2>Consigner un contact</h2><p><strong>"+esc(selected.customer)+"</strong> · "+esc(selected.number)+" · Solde : <strong>"+fmt(selected.outstandingAmount,selected.currency)+"</strong></p><form id='customer-followup-form'><label for='followup-invoice'>Facture</label><select id='followup-invoice'>"+optionsHTML+"</select><div class='row'><div><label for='followup-date'>Date du contact</label><input id='followup-date' type='date' value='"+asOf+"' required></div><div><label for='followup-channel'>Canal</label><select id='followup-channel'>"+Object.entries(FOLLOWUP_CHANNELS).map(([key,label])=>"<option value='"+key+"'>"+label+"</option>").join("")+"</select></div></div><label for='followup-status'>Résultat du contact</label><select id='followup-status'>"+Object.entries(FOLLOWUP_STATUSES).map(([key,label])=>"<option value='"+key+"'>"+label+"</option>").join("")+"</select><div id='followup-promise-wrap' class='hidden'><label for='followup-promise-date'>Date promise de paiement</label><input id='followup-promise-date' type='date'></div><label for='followup-next-date'>Prochaine action (facultatif)</label><input id='followup-next-date' type='date'><label for='followup-note'>Compte rendu</label><textarea id='followup-note' rows='3' maxlength='2000' required placeholder='Personne contactée, réponse, engagement, difficulté rencontrée…'></textarea><div class='actions'><button type='submit'>Enregistrer le contact</button></div></form></div>";
   html+="<div class='card'><h2>Historique des contacts — "+esc(selected.number)+"</h2>"+historyHTML+"</div>";
  }else html+="<div class='card'><p>Aucune créance ouverte à suivre à la date du jour.</p><button data-route='billing'>Consulter la facturation</button></div>";
+ html=html.replace("<h1>Relances et suivi clients</h1>","<h1>Relances et suivi clients</h1>"+chartModeControls("followups")+"<div id='followups-table-view'>");
+ html+="</div><div id='followups-chart-view' hidden><div class='grid cols-3'><div class='card kpi'><div class='value'>"+queue.totals.invoices+"</div><div class='label'>Créances ouvertes</div></div><div class='card kpi'><div class='value'>"+queue.totals.overdue+"</div><div class='label'>Factures échues</div></div><div class='card kpi'><div class='value'>"+queue.totals.dueToday+"</div><div class='label'>Actions à effectuer</div></div></div>"+followupCharts+"</div>";
  $app.innerHTML=html;
+ bindChartMode("followups");
  const status=document.getElementById("followup-status"),promiseWrap=document.getElementById("followup-promise-wrap");
  status?.addEventListener("change",()=>{
   promiseWrap.classList.toggle("hidden",status.value!=="promesse");

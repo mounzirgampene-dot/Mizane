@@ -699,7 +699,7 @@ test("service worker : les dépendances locales directes de l'application sont p
   const modules = [...appSource.matchAll(/from\s+["']\.\/([^"']+)["']/g)].map(match => match[1]);
   const missing = modules.filter(path => !serviceWorkerSource.includes('"js/' + path + '"'));
   assert.deepEqual(missing, [], "tous les modules importés directement par app.js doivent être précachés");
-  assert.match(serviceWorkerSource, /const CACHE = "mizane-v122"/);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v\d+"/);
 });
 
 console.log("— Internationalisation —");
@@ -1996,7 +1996,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/Confirmer la commande/);
   assert.match(purchasesUiSource,/origin:"stock_replenishment"/);
   assert.ok(serviceWorkerSource.includes('"js/stock-replenishment.js"'));
-  assert.match(serviceWorkerSource,/mizane-v122/g);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v\d+"/);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
@@ -2206,7 +2206,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v122/);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v\d+"/);
 });
 
 
@@ -2787,7 +2787,7 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v124"'));
+assert.match(readFileSync(new URL("../sw.js", import.meta.url), "utf8"), /const CACHE = "mizane-v\d+"/);
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
 test("restauration cloud : association vérifiée de l'appareil avant retour à la comptabilité", () => {
   const portalSource = readFileSync(new URL("../js/saas-portal.js", import.meta.url), "utf8");
@@ -2811,8 +2811,17 @@ test("déconnexion SaaS : verrouillage de la comptabilité locale sans suppressi
   assert.match(storageSource, /localStorage\.removeItem\(ACTIVE_COMPANY_KEY\)/);
   assert.doesNotMatch(storageSource, /removeItem\(["']mizane_v1["']\)/);
   assert.match(portalSource, /lockCompanyStorage\(session\?\.user\?\.id\)/);
-  assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId\)/);
+  assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId,\{authorizedCompanyMember:true\}\)/);
+  assert.match(storageSource, /lock\.companyId !== targetCompanyId/);
+  assert.match(storageSource, /authorizedCompanyMember = false/);
+  assert.match(storageSource, /reboundAt: new Date\(\)\.toISOString\(\)/);
+  assert.match(portalSource, /const canUnlock=!!lockedMembership&&\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);
+  assert.doesNotMatch(portalSource.slice(portalSource.indexOf("const sessionLock=getCompanySessionLock()"),portalSource.indexOf("localStorage.setItem(ACTIVE_USER_KEY")), /restoreAccountingFromCloud|syncAccounting/);
   assert.match(appSource, /storageStatus\.reason === "session-locked"/);
+  assert.match(storageSource, /const lock = getCompanySessionLock\(\)/);
+  assert.match(portalSource, /\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);
+  assert.match(portalSource, /await supabase\.auth\.signOut\(\)/);
+  assert.match(portalSource, /authView\("login"\)/);
 });
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

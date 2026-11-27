@@ -20,16 +20,32 @@ export function lockCompanyStorage(userId) {
   return true;
 }
 
-export function unlockCompanyStorage(userId, companyId) {
+export function unlockCompanyStorage(userId, companyId, { authorizedCompanyMember = false } = {}) {
+  const targetUserId = String(userId || "").trim();
+  const targetCompanyId = String(companyId || "").trim();
   const lock = getCompanySessionLock();
   if (!lock) return true;
-  const binding = (() => { try { return JSON.parse(localStorage.getItem(BINDING_KEY) || "null"); } catch { return null; } })();
-  if (lock.userId !== String(userId || "") || lock.companyId !== String(companyId || "") || binding?.userId !== lock.userId || binding?.companyId !== lock.companyId) return false;
+  let binding = null;
+  try { binding = JSON.parse(localStorage.getItem(BINDING_KEY) || "null"); } catch { binding = null; }
+  // L'identité du dernier utilisateur peut changer : l'autorisation actuelle
+  // est vérifiée côté portail auprès de Supabase avant cet appel. On conserve
+  // impérativement la même entreprise et une association locale déjà établie.
+  if (!targetUserId || lock.companyId !== targetCompanyId || binding?.companyId !== lock.companyId) return false;
+  if (lock.userId !== targetUserId && !authorizedCompanyMember) return false;
+  if (binding.userId !== targetUserId) {
+    localStorage.setItem(BINDING_KEY, JSON.stringify({
+      ...binding, userId: targetUserId, reboundAt: new Date().toISOString(),
+    }));
+  }
   localStorage.removeItem(SESSION_LOCK_KEY);
   return true;
 }
 
 export function getCompanyStorageStatus() {
+  const lock = getCompanySessionLock();
+  if (lock?.companyId && lock?.userId) {
+    return { ok: false, reason: "session-locked", companyId: lock.companyId, userId: lock.userId, lockedAt: lock.lockedAt || null };
+  }
   const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
   if (!companyId) return { ok: true, mode: "local" };
 

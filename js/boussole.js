@@ -21,6 +21,7 @@ const ARTICLES = [
  {id:"sync",routes:["dashboard","settings"],keys:"synchronisation cloud synchroniser conflit sauvegarde مزامنة سحابة تعارض نسخة احتياطية",fr:["Synchronisation et sauvegardes","Préserver les données lors des échanges entre appareil et cloud.",["Vérifiez la connexion et l’entreprise active avant de lancer une synchronisation.","Ne changez pas d’entreprise et ne fermez pas l’application pendant une opération en cours.","En présence d’un conflit, examinez les versions et les références avant toute résolution.","Une synchronisation réussie ne remplace pas une sauvegarde indépendante et vérifiée."]],en:["Synchronization and backups","Protect data when exchanging information between a device and the cloud.",["Check the connection and active company before starting synchronization.","Do not switch companies or close the application while an operation is running.","If a conflict occurs, review the versions and references before resolving it.","Successful synchronization does not replace an independent, verified backup."]],ar:["المزامنة والنسخ الاحتياطي","حماية البيانات أثناء تبادلها بين الجهاز والسحابة.",["تحقق من الاتصال والمؤسسة النشطة قبل بدء المزامنة.","لا تغير المؤسسة ولا تغلق التطبيق أثناء تنفيذ العملية.","عند وجود تعارض، راجع الإصدارات والمراجع قبل حله.","نجاح المزامنة لا يعوض نسخة احتياطية مستقلة ومختبرة."]]},
  {id:"exports",routes:["tools","settings"],keys:"export pdf excel csv impression téléchargement استخراج تصدير طباعة",fr:["Exports, impressions et documents","Préparer un export fiable et maîtriser sa diffusion.",["Choisissez la période, l’entreprise, la devise et le format avant l’export.","Vérifiez les totaux et le nombre de lignes dans le fichier produit.","Les exports peuvent contenir des données confidentielles : utilisez un emplacement autorisé et limitez les destinataires.","Un export est un instantané ; il peut devenir différent des données après de nouvelles opérations."]],en:["Exports, printing and documents","Prepare reliable exports and control how they are shared.",["Choose the period, company, currency and format before exporting.","Check the totals and number of rows in the generated file.","Exports may contain confidential data: use an authorized location and limit recipients.","An export is a snapshot; it may differ from the data after new operations are recorded."]],ar:["التصدير والطباعة والمستندات","إعداد تصدير موثوق والتحكم في نشره.",["حدد الفترة والمؤسسة والعملة والصيغة قبل التصدير.","تحقق من المجاميع وعدد السطور في الملف الناتج.","قد تحتوي الملفات المصدرة على بيانات سرية؛ استخدم مكاناً مصرحاً وحدد المستلمين.","ملف التصدير يمثل لقطة زمنية وقد يختلف عن البيانات بعد عمليات جديدة."]]}
 ];
+const ROUTES_EN={"dashboard":"Dashboard","entry":"Entry","entries":"Journal entries","ledger":"General ledger","balance":"Trial balance","income":"Income statement","sheet":"Balance sheet","thirds":"Third parties","financial":"Financial management","billing":"Invoicing","purchases":"Purchases","stock":"Inventory","tax":"Tax","settings":"Settings","assistant":"AI assistant","budget":"Budget","analytical":"Analytical accounting","tools":"Tools","calculator":"Calculator","notifications":"Notifications","history":"Activity history","my-work":"My work"};
 const ROUTES={dashboard:["Tableau de bord","لوحة التحكم"],entry:["Saisie","الإدخال"],entries:["Écritures","القيود"],ledger:["Grand livre","دفتر الأستاذ"],balance:["Balance","ميزان المراجعة"],income:["Résultat","النتيجة"],sheet:["Bilan","الميزانية"],thirds:["Tiers","الأطراف"],financial:["Pilotage","القيادة"],billing:["Facturation","الفوترة"],purchases:["Achats","المشتريات"],stock:["Gestion de stock","إدارة المخزون"],tax:["Fiscalité","الضرائب"],settings:["Paramètres","الإعدادات"],assistant:["Assistant IA","المساعد الذكي"],budget:["Budget","الميزانية"],analytical:["Analytique","التحليلية"],tools:["Outils","الأدوات"],calculator:["Calculatrice","الآلة الحاسبة"],notifications:["Notifications","الإشعارات"],history:["Historique","السجل"],"my-work":["Mes travaux","أعمالي"]};
 let initialized=false, route="dashboard", query="", panel, results, cloudResults, detail, context, search, toggle, expandButton, expanded=false, selected=null, selectedCloud=null, cloudRequestId=0, cloudTimer=null;
 const cloudDocuments=new Map();
@@ -29,12 +30,12 @@ const english=()=>lang()==="en";
 const articleContent=a=>a[lang()]||a.fr;
 const norm=normalizeBoussoleQuery;
 const el=(tag,cls,value)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(value!=null)n.textContent=value;return n;};
-function setExpanded(value){expanded=Boolean(value);panel.classList.toggle("is-expanded",expanded);if(expandButton){expandButton.setAttribute("aria-pressed",String(expanded));expandButton.textContent=ar()?(expanded?"تصغير":"ملء الشاشة"):(expanded?"Réduire":"Plein écran");expandButton.setAttribute("aria-label",ar()?(expanded?"تصغير لوحة البوصلة":"توسيع لوحة البوصلة إلى كامل الشاشة"):(expanded?"Réduire la Boussole":"Agrandir la Boussole en plein écran"));}}
+function setExpanded(value){expanded=Boolean(value);panel.classList.toggle("is-expanded",expanded);if(expandButton){expandButton.setAttribute("aria-pressed",String(expanded));expandButton.textContent=ar()?(expanded?"تصغير":"ملء الشاشة"):english()?(expanded?"Minimize":"Full screen"):(expanded?"Réduire":"Plein écran");expandButton.setAttribute("aria-label",ar()?(expanded?"تصغير لوحة البوصلة":"توسيع لوحة البوصلة إلى كامل الشاشة"):english()?(expanded?"Minimize Compass":"Expand Compass to full screen"):(expanded?"Réduire la Boussole":"Agrandir la Boussole en plein écran"));}}
 function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");cloudRequestId++;if(cloudTimer)clearTimeout(cloudTimer);setExpanded(false);toggle.focus();}
 function showArticle(id){
  const a=ARTICLES.find(x=>x.id===id);if(!a)return;selected=id;selectedCloud=null;cloudRequestId++;const c=articleContent(a);
  results.hidden=true;if(cloudResults)cloudResults.hidden=true;detail.hidden=false;detail.replaceChildren();
- const back=el("button","secondary small",ar()?"العودة إلى النتائج":"Retour aux résultats");back.type="button";
+ const back=el("button","secondary small",ar()?"العودة إلى النتائج":english()?"Back to results":"Retour aux résultats");back.type="button";
  back.addEventListener("click",()=>{selected=null;renderResults();});
  detail.append(back,el("h3","boussole-article-title",c[0]),el("p","muted",c[1]));
  const list=el("ol","boussole-steps");c[2].forEach(line=>list.append(el("li","",line)));detail.append(list);
@@ -64,15 +65,15 @@ function renderCloudResults(q){
  cloudDocuments.clear();cloudResults.replaceChildren();
  if(!q||q.length<2){cloudResults.hidden=true;return;}
  cloudResults.hidden=false;
- cloudResults.append(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"));
- cloudResults.append(el("p","muted",ar()?"جارٍ البحث في الوثائق المنشورة...":"Recherche dans les documents publiés..."));
+ cloudResults.append(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":english()?"Published MIZANE documents":"Documents publiés en ligne"));
+ cloudResults.append(el("p","muted",ar()?"جارٍ البحث في الوثائق المنشورة...":english()?"Searching published documents...":"Recherche dans les documents publiés..."));
  cloudTimer=setTimeout(async()=>{
   try{
    const response=await searchCloudBoussoleDocuments(q,{locale:lang(),limit:8});
    if(request!==cloudRequestId||norm(query)!==q||selected||selectedCloud)return;
    cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"));
-   if(!response.available){cloudResults.append(el("p","muted",ar()?"السحابة غير متاحة؛ تبقى نتائج الدليل المحلي متوفرة.":"Cloud indisponible ; les résultats du guide local restent accessibles."));return;}
-   if(!response.results.length){cloudResults.append(el("p","muted",ar()?"لا توجد وثائق منشورة تطابق البحث.":"Aucun document publié ne correspond à cette recherche."));return;}
+   if(!response.available){cloudResults.append(el("p","muted",ar()?"السحابة غير متاحة؛ تبقى نتائج الدليل المحلي متوفرة.":english()?"Cloud unavailable; local guide results remain available.":"Cloud indisponible ; les résultats du guide local restent accessibles."));return;}
+   if(!response.results.length){cloudResults.append(el("p","muted",ar()?"لا توجد وثائق منشورة تطابق البحث.":english()?"No published documents match this search.":"Aucun document publié ne correspond à cette recherche."));return;}
    response.results.forEach(document=>{
     cloudDocuments.set(document.id,document);
     const button=el("button","boussole-result");button.type="button";button.dataset.cloudDocumentId=document.id;
@@ -81,7 +82,7 @@ function renderCloudResults(q){
   }catch(error){
    if(request!==cloudRequestId||norm(query)!==q)return;
    cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"),
-    el("p","muted",ar()?"تعذر الاتصال بالوثائق المنشورة؛ يمكنك متابعة البحث المحلي.":"Connexion aux documents publiés impossible ; la recherche locale reste disponible."));
+    el("p","muted",ar()?"تعذر الاتصال بالوثائق المنشورة؛ يمكنك متابعة البحث المحلي.":english()?"Could not connect to published documents; local search is still available.":"Connexion aux documents publiés impossible ; la recherche locale reste disponible."));
    console.warn("Recherche documentaire Boussole indisponible :",error?.message||error);
   }
  },320);
@@ -94,22 +95,22 @@ function renderResults(){
   .filter(x=>q?matchesBoussoleQuery([x.c[0],x.c[1],...x.c[2],x.a.keys].join(" "),q):x.context)
   .sort((a,b)=>Number(b.context)-Number(a.context));
  const items=found.length?found:(q?[]:ARTICLES.slice(0,5).map(a=>({a,c:a[ar()?"ar":"fr"],context:false})));
- if(!items.length)results.append(el("p","muted",ar()?"لا توجد نتائج محلية.":"Aucun résultat dans le guide local."));
+ if(!items.length)results.append(el("p","muted",ar()?"لا توجد نتائج محلية.":english()?"No local guide results.":"Aucun résultat dans le guide local."));
  items.slice(0,12).forEach(x=>{const b=el("button","boussole-result");b.type="button";b.dataset.articleId=x.a.id;b.append(el("strong","",x.c[0]),el("span","",x.c[1]));results.append(b);});
  renderCloudResults(q);
 }
 function refresh(){
- const arabic=ar(), routeLabel=ROUTES[route]||["Espace de travail","مساحة العمل"];
- panel.dir=arabic?"rtl":"ltr";panel.lang=arabic?"ar":"fr";
- toggle.textContent=arabic?"البوصلة":"Boussole";
- panel.querySelector(".boussole-title").textContent=arabic?"بوصلة ميزان":"Boussole MIZANE";
- panel.querySelector('label[for="boussole-search"]').textContent=arabic?"البحث":"Recherche";
- panel.querySelector(".boussole-intro").textContent=arabic?"دليل محلي ووثائق منشورة في سحابة ميزان عند توفر الاتصال.":"Guide local et documents publiés dans MIZANE Cloud lorsque la connexion est disponible.";
- search.placeholder=arabic?"ابحث في دليل ميزان...":"Rechercher dans le guide MIZANE...";
+ const arabic=ar(), englishMode=english(), routeLabel=ROUTES[route]||["Espace de travail","مساحة العمل"];
+ panel.dir=arabic?"rtl":"ltr";panel.lang=lang();
+ toggle.textContent=arabic?"البوصلة":englishMode?"Compass":"Boussole";
+ panel.querySelector(".boussole-title").textContent=arabic?"بوصلة ميزان":englishMode?"MIZANE Compass":"Boussole MIZANE";
+ panel.querySelector('label[for="boussole-search"]').textContent=arabic?"البحث":englishMode?"Search":"Recherche";
+ panel.querySelector(".boussole-intro").textContent=arabic?"دليل محلي ووثائق منشورة في سحابة ميزان عند توفر الاتصال.":englishMode?"Local guide and published documents in MIZANE Cloud when connected.":"Guide local et documents publiés dans MIZANE Cloud lorsque la connexion est disponible.";
+ search.placeholder=arabic?"ابحث في دليل ميزان...":englishMode?"Search the MIZANE guide...":"Rechercher dans le guide MIZANE...";
  search.setAttribute("aria-label",search.placeholder);
- context.textContent=arabic?"مساعدة مرتبطة بـ: "+routeLabel[1]:"Aide liée à : "+routeLabel[0];
- panel.querySelector(".boussole-local-note").textContent=arabic?"يبقى الدليل المحلي متاحاً دون اتصال. عند توفر الإنترنت يُرسل نص البحث إلى سحابة ميزان للعثور على الوثائق المنشورة فقط؛ لا تُقرأ البيانات المحاسبية ولا يُستعمل الذكاء الاصطناعي.":"Le guide local reste disponible hors connexion. En ligne, le texte recherché est envoyé à MIZANE Cloud pour trouver les documents publiés ; aucune donnée comptable n’est lue et aucune IA n’est appelée.";
- panel.querySelector("[data-boussole-close]").textContent=arabic?"إغلاق":"Fermer";
+ context.textContent=arabic?"مساعدة مرتبطة بـ: "+routeLabel[1]:englishMode?"Help for: "+(ROUTES_EN[route]||routeLabel[0]):"Aide liée à : "+routeLabel[0];
+ panel.querySelector(".boussole-local-note").textContent=arabic?"يبقى الدليل المحلي متاحاً دون اتصال. عند توفر الإنترنت يُرسل نص البحث إلى سحابة ميزان للعثور على الوثائق المنشورة فقط؛ لا تُقرأ البيانات المحاسبية ولا يُستعمل الذكاء الاصطناعي.":englishMode?"The local guide remains available offline. When online, the search text is sent to MIZANE Cloud to find published documents only; no accounting data is read and no AI is used.":"Le guide local reste disponible hors connexion. En ligne, le texte recherché est envoyé à MIZANE Cloud pour trouver les documents publiés ; aucune donnée comptable n’est lue et aucune IA n’est appelée.";
+ panel.querySelector("[data-boussole-close]").textContent=arabic?"إغلاق":englishMode?"Close":"Fermer";
  setExpanded(expanded);
  if(selected)showArticle(selected);else if(selectedCloud&&cloudDocuments.has(selectedCloud))showCloudArticle(cloudDocuments.get(selectedCloud));else renderResults();
 }

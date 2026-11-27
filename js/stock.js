@@ -13,6 +13,7 @@ import {
 import { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 import { buildStockReplenishmentReport, stockReplenishmentCsv } from "./stock-replenishment.js";
 import { openReplenishmentPurchaseOrder } from "./purchases.js";
+import { chartModeControls, bindChartMode, renderBarChart, renderLineChart } from "./charts.js";
 
 const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
 const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
@@ -225,6 +226,12 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
     return `<tr><td>${esc(item.sku)} — ${esc(item.name)}</td><td class="num">${fmtQty(item.onHand)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.reserved)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.available)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.minimumStock)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.targetStock)} ${esc(item.unit)}</td><td class="num"><strong>${fmtQty(item.reorderQuantity)} ${esc(item.unit)}</strong></td><td>${statusLabel}</td></tr>`;
   }).join("");
   const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt||"").localeCompare(String(b.createdAt||""))).reverse().slice(0,12);
+  const stockValueRows = stock.products.filter(p => p.type !== "service").map(p => ({label:p.name || p.sku || "Article", value:stockValuation(stock,p.id)})).filter(x => x.value > 0).sort((a,b) => b.value-a.value).slice(0,10);
+  const monthlyMovements = new Map();
+  (stock.movements || []).forEach(m => { const date=new Date(String(m.date || m.createdAt || "")); if(Number.isNaN(date.getTime())) return; const key=date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0"); const row=monthlyMovements.get(key)||{label:date.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),receipts:0,issues:0}; const qty=Math.abs(Number(m.quantityDelta ?? m.quantity ?? 0)); if(m.kind==="receipt") row.receipts+=qty; else if(m.kind==="issue") row.issues+=qty; monthlyMovements.set(key,row); });
+  const movementChartRows=[...monthlyMovements.entries()].sort((a,b)=>a[0].localeCompare(b[0])).slice(-12).map(x=>x[1]);
+  const replenishmentChartRows = replenishmentReport.alerts.filter(x=>Number(x.reorderQuantity)>0).slice(0,10).map(x=>({label:x.name || x.sku || "Article",quantity:Number(x.reorderQuantity)||0}));
+  const stockChartsHtml = renderBarChart("Valeur du stock par article",stockValueRows,[{key:"value",label:"Valeur"}],value=>money(value)) + renderLineChart("Évolution des entrées et sorties",movementChartRows,[{key:"receipts",label:"Entrées"},{key:"issues",label:"Sorties"}],value=>fmtQty(value)) + renderBarChart("Quantités à réapprovisionner",replenishmentChartRows,[{key:"quantity",label:"À commander"}],value=>fmtQty(value));
   const legacyStock=cloudMode ? store.stock : null;
   const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
   const remoteIsEmpty=cloudMode && !stock.products.length && !stock.movements.length && !(stock.balances||[]).length;
@@ -237,6 +244,8 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
       <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>'}${cloudMode && !readOnly ? '<button class="secondary" id="stock-new-reservation">Réserver du stock</button>' : ""}</div>
     </div>
+    ${chartModeControls("stock")}
+    <div id="stock-table-view">
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
       <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
@@ -292,7 +301,18 @@ function renderStock(stock, readOnly, companyRole, cloudMode) {
       </div>
       <p class="muted">L'autorisation des stocks négatifs est désactivée par défaut. Toute activation est réservée à l'administrateur et auditée côté serveur.</p>
       ${cloudMode ? `<p class="muted">Réservations actives : ${stock.reservations.length}</p>` : ""}
-    </section>`;
+    </section>
+    </div>
+    <div id="stock-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
+        <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
+        <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
+      </div>
+      ${stockChartsHtml}
+      <p class="muted">Les quantités sont présentées par article et par unité ; elles ne sont pas additionnées entre unités différentes. Les valorisations utilisent la méthode ${esc(stock.settings.valuationMethod.toUpperCase())} configurée pour l'entreprise.</p>
+    </div>`;
+  bindChartMode("stock");
   document.getElementById("stock-replenishment-export")?.addEventListener("click", () => {
     const blob = new Blob([stockReplenishmentCsv(replenishmentReport)], { type:"text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);

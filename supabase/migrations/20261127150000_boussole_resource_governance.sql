@@ -13,6 +13,9 @@ alter table public.boussole_editor_audit
     'compatibility_updated'
   ));
 
+create unique index if not exists boussole_document_versions_id_document_uidx
+  on public.boussole_document_versions(id,document_id);
+
 create table public.boussole_media_assets (
   id uuid primary key default gen_random_uuid(),
   document_id uuid not null references public.boussole_documents(id) on delete cascade,
@@ -116,7 +119,7 @@ begin
   if p_actor_id is null or not exists (select 1 from auth.users u where u.id=p_actor_id) then
     raise exception 'Utilisateur invalide.' using errcode='42501';
   end if;
-  if p_action not in (
+  if p_action is null or p_action not in (
     'synonym_upsert','synonym_deactivate','relation_upsert','relation_delete',
     'media_register','media_archive','compatibility_update'
   ) then
@@ -132,7 +135,7 @@ begin
     if not v_allowed then raise exception 'Droit global de publication requis.' using errcode='42501'; end if;
 
     if p_action='synonym_upsert' then
-      if p_locale not in ('fr','ar','en')
+      if p_locale is null or p_locale not in ('fr','ar','en')
         or p_term is null or length(btrim(p_term)) not between 1 and 180
         or p_normalized_term is null or length(btrim(p_normalized_term)) not between 1 and 180
         or coalesce(array_length(p_synonyms,1),0)>30
@@ -178,6 +181,7 @@ begin
   if p_action in ('relation_upsert','relation_delete') then
     if p_action='relation_upsert' then
       if p_target_document_id is null or p_relation_type not in ('prerequisite','next','troubleshooting','related','replaces')
+        or p_relation_type is null or p_relation_type not in ('prerequisite','next','troubleshooting','related','replaces')
         or p_document_id=p_target_document_id then
         raise exception 'Relation documentaire invalide.' using errcode='22023';
       end if;
@@ -222,9 +226,9 @@ begin
     if p_action='media_register' then
       if p_storage_path is null or p_storage_path not like p_document_id::text || '/%'
         or p_file_name is null or length(btrim(p_file_name)) not between 1 and 240
-        or p_content_type not in ('image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf')
+        or p_content_type is null or p_content_type not in ('image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf')
         or p_byte_size is null or p_byte_size not between 1 and 20971520
-        or jsonb_typeof(p_alt_text)<>'object' or jsonb_typeof(p_caption)<>'object'
+        or jsonb_typeof(p_alt_text) is distinct from 'object' or jsonb_typeof(p_caption) is distinct from 'object'
         or (p_version_id is not null and not exists (
           select 1 from public.boussole_document_versions v
           where v.id=p_version_id and v.document_id=p_document_id

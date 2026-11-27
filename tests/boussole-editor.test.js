@@ -93,3 +93,18 @@ assert.ok(editorUi.includes("uploadToSignedUrl"));
 assert.ok(editorUi.includes("altEn"));
 assert.ok(editorUi.includes("compatibility_update"));
 console.log("Boussole resources: trilingual administration, signed uploads, MIME signature checks and storage cleanup statically checked.");
+
+
+// Les auteurs ne doivent jamais recevoir les brouillons d'autres auteurs ni leurs médias signés.
+assert.match(edge, /const visibleVersions = canReviewAll/);
+assert.match(edge, /version\.status === "published" \|\| version\.created_by === authData\.user\.id/);
+assert.match(edge, /const visibleVersionIds = new Set\(visibleVersions\.map/);
+assert.match(edge, /asset\.version_id !== null && visibleVersionIds\.has\(asset\.version_id\)/);
+assert.match(edge, /versions: visibleVersions/);
+
+// Le droit de publication est vérifié avant toute lecture privilégiée d'un fichier Storage.
+const mediaRegisterStart = edge.indexOf('if (resourceAction === "media_register")');
+const mediaAuthorizeIndex = edge.indexOf('p_action: "media_upload_authorize"', mediaRegisterStart);
+const mediaInfoIndex = edge.indexOf('.info(body.storage_path)', mediaRegisterStart);
+assert.ok(mediaRegisterStart >= 0 && mediaAuthorizeIndex > mediaRegisterStart && mediaInfoIndex > mediaAuthorizeIndex);
+console.log("Boussole resources: author version isolation and pre-read media authorization verified.");

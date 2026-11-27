@@ -696,7 +696,7 @@ test("service worker : les dépendances locales directes de l'application sont p
   const modules = [...appSource.matchAll(/from\s+["']\.\/([^"']+)["']/g)].map(match => match[1]);
   const missing = modules.filter(path => !serviceWorkerSource.includes('"js/' + path + '"'));
   assert.deepEqual(missing, [], "tous les modules importés directement par app.js doivent être précachés");
-  assert.match(serviceWorkerSource, /const CACHE = "mizane-v115"/);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v116"/);
 });
 
 console.log("— Internationalisation —");

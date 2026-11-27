@@ -18,7 +18,7 @@ Les deux PR restent indépendantes et en brouillon. La PR #171 ne dépend pas de
 
 ## 2. Validation de la fondation cloud — terminée sur DEV
 
-La migration `20261127000100_boussole_foundation.sql` a été appliquée à MIZANE-DEV sous la version `20261127105326_boussole_foundation`. Les six tables existent et sont vides après validation.
+La migration `20261127105326_boussole_foundation.sql` a été appliquée à MIZANE-DEV sous la version `20261127105326_boussole_foundation`. Les six tables existent et sont vides après validation.
 
 Le script `supabase/tests/boussole_rls_smoke.sql` a été exécuté sur DEV. Il crée des identités Auth synthétiques et deux entreprises dans une transaction, bascule sur les rôles PostgreSQL `anon` et `authenticated`, puis annule l'ensemble par `ROLLBACK`. Résultat vérifié : **PASS**. Aucun compte réel ni donnée métier n'a été utilisé.
 

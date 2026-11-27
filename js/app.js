@@ -189,6 +189,7 @@ async function start() {
   initStore(loadStore(allAccounts("syscohada")));
   renderNav();
   render();
+  initBoussole();
   const historyAccess = await initWorkHistory();
   await initNotifications();
   if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);

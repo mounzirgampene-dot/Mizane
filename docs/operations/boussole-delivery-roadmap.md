@@ -102,3 +102,27 @@ Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune 
 3. PR #172 : lecteur cloud en lecture seule, construit au-dessus du guide et dépendant du schéma de PR #170.
 
 Les trois PR restent en brouillon et aucune n'est fusionnée automatiquement. La migration DEV déjà appliquée ne vaut pas autorisation de migration Production. L'éditeur, le workflow éditorial, la progression cloud, les médias et l'assistant IA restent des lots distincts.
+
+
+## 7. Gouvernance éditoriale — PR #173 en préparation
+
+La branche `feat/boussole-editorial-governance-dev` ajoute une première couche serveur de gouvernance, sans ouvrir l'édition directe depuis le navigateur.
+
+- Registre des rôles `author`, `reviewer`, `publisher` et `admin`, avec portée globale ou par entreprise.
+- Aucun rôle n'est préattribué ; aucune identité réelle n'est choisie automatiquement.
+- Tables de rôles et d'audit protégées par RLS/FORCE RLS, sans privilège direct pour `anon` ou `authenticated`.
+- Fonction transactionnelle serveur pour créer/modifier un brouillon, créer une version linguistique, soumettre en relecture, demander des corrections, approuver, publier, archiver et restaurer.
+- Fonction Edge authentifiant le JWT avec Auth puis appelant uniquement la RPC protégée ; l'identité d'acteur vient du jeton vérifié, jamais du corps envoyé par le navigateur.
+- Séparation des tâches : un auteur ne peut pas approuver sa propre version ; un auteur ou approbateur ne peut pas publier sa propre version.
+- Publication bilingue : les versions française et arabe d'un même numéro doivent toutes deux être approuvées avant publication.
+- Une nouvelle relecture ne masque pas la dernière version déjà publiée.
+- L'attribution des rôles reste une opération d'administration privilégiée, hors interface utilisateur de cette tranche.
+
+**État de validation :** code ajouté à la branche de travail ; migration non appliquée à Supabase DEV, fonction Edge non déployée, aucun rôle attribué et aucun document créé. Les tests CI doivent encore être exécutés sur le commit final. Cette tranche ne modifie pas Production ni `main`.
+
+### Étapes avant activation
+1. Revue SQL et test transactionnel réel sur DEV avec rôles synthétiques, sans persistance des fixtures.
+2. Vérification des droits d'exécution de la RPC, des refus sans rôle, des rôles révoqués et de la séparation auteur/vérificateur/éditeur.
+3. Application de la migration DEV uniquement après validation du SQL et rapprochement exact de l'historique.
+4. Déploiement de `boussole-editor` sur DEV seulement après migration et CI réussies.
+5. Interface d'administration éditoriale et procédure d'attribution explicite des rôles dans un lot distinct.

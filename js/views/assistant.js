@@ -657,21 +657,49 @@ export function viewSettings() {
     document.getElementById("plan-description").textContent = selectedPlan?.description ||
       (selectedPlan?.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE.");
   };
-  document.getElementById("s-plan").addEventListener("change", updatePlanDescription);
+  const hasPostedEntries = () => Array.isArray(store.entries) && store.entries.length > 0;
+  const showPlanSafetyNotice = (message) => {
+    const target = document.getElementById("country-framework-info");
+    target.insertAdjacentHTML("beforeend", '<p class="warn plan-safety-notice" role="alert">' + esc(message) + '</p>');
+  };
+  document.getElementById("s-plan").addEventListener("change", (event) => {
+    if (hasPostedEntries() && event.target.value !== s.plan) {
+      event.target.value = s.plan;
+      showPlanSafetyNotice("Changement de plan bloqué : cette entreprise possède déjà des écritures. Pour éviter les comptes inconnus et les états financiers incohérents, utilisez l’Assistant de conversion entre référentiels, puis appliquez une migration contrôlée avant de changer le plan.");
+      updatePlanDescription();
+      return;
+    }
+    updatePlanDescription();
+  });
   document.getElementById("s-country").addEventListener("change", (e) => {
     const c = getCountry(e.target.value);
-    if (c.plan && PLANS[c.plan]) document.getElementById("s-plan").value = c.plan;
+    const targetPlan = c.plan && PLANS[c.plan] ? c.plan : "";
+    if (targetPlan && targetPlan !== s.plan && hasPostedEntries()) {
+      document.getElementById("s-plan").value = s.plan;
+      showPlanSafetyNotice("Le pays a changé, mais le plan comptable actif est conservé car des écritures existent déjà. Le pays et la devise peuvent être actualisés sans convertir les écritures. Pour adopter le plan recommandé (" + esc(getPlan(targetPlan, s.customPlans).name) + "), préparez et appliquez d’abord une migration dans l’Assistant de conversion.");
+    } else if (targetPlan) {
+      document.getElementById("s-plan").value = targetPlan;
+    }
     document.getElementById("s-currency").value = c.currency;
     updateVat();
     updatePlanDescription();
     updateCountryFramework();
+    if (targetPlan && targetPlan !== s.plan && hasPostedEntries()) {
+      showPlanSafetyNotice("Attention : le changement de pays ne convertit ni les comptes, ni les écritures historiques. Le plan antérieur reste actif jusqu’à une migration validée.");
+    }
   });
 
   document.getElementById("s-save").addEventListener("click", () => {
     const c = getCountry(document.getElementById("s-country").value);
+    const selectedPlanId = document.getElementById("s-plan").value;
+    if (hasPostedEntries() && selectedPlanId !== s.plan) {
+      document.getElementById("s-plan").value = s.plan;
+      showPlanSafetyNotice("Enregistrement refusé : une migration comptable contrôlée est obligatoire avant de remplacer le plan actif.");
+      return;
+    }
     s.companyName = document.getElementById("s-company").value.trim() || "Ma société";
     s.country = c.code;
-    s.plan = document.getElementById("s-plan").value;
+    s.plan = selectedPlanId;
     s.currency = document.getElementById("s-currency").value.trim().toUpperCase() || c.currency;
     s.locale = c.locale;
     s.exerciceStart = document.getElementById("s-start").value || s.exerciceStart;

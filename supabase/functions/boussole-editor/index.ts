@@ -9,12 +9,26 @@ const allowedOrigins = new Set([
 ]);
 const actions = new Set([
   "list", "get", "create_draft", "update_draft", "create_locale_version", "submit_review",
-  "request_changes", "approve", "publish", "archive", "restore",
+  "request_changes", "approve", "publish", "archive", "restore", "manage_resource", "list_synonyms", "media_upload_url",
 ]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value: unknown): value is string => typeof value === "string" && uuidPattern.test(value);
 const optionalText = (value: unknown, max: number) =>
   typeof value === "string" && value.length <= max ? value : null;
+
+
+function validMediaSignature(contentType: string, bytes: Uint8Array): boolean {
+  const starts = (...values: number[]) => values.every((value, index) => bytes[index] === value);
+  const ascii = (start: number, length: number) => new TextDecoder().decode(bytes.slice(start, start + length));
+  if (contentType === "image/jpeg") return starts(0xff, 0xd8, 0xff);
+  if (contentType === "image/png") return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  if (contentType === "image/webp") return ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
+  if (contentType === "image/avif") return ascii(4, 4) === "ftyp" && ["avif", "avis"].includes(ascii(8, 4));
+  if (contentType === "application/pdf") return ascii(0, 5) === "%PDF-";
+  if (contentType === "video/mp4") return ascii(4, 4) === "ftyp";
+  if (contentType === "video/webm") return starts(0x1a, 0x45, 0xdf, 0xa3);
+  return false;
+}
 
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
@@ -133,7 +147,7 @@ Deno.serve(async (request) => {
     if (!isUuid(body.document_id)) return json(400, { error: "Identifiant documentaire invalide." });
     const { data: document, error: documentError } = await adminClient
       .from("boussole_documents")
-      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
+      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,min_app_version,max_app_version,created_by,updated_at,published_at")
       .eq("id", body.document_id)
       .maybeSingle();
     if (documentError || !document) return json(404, { error: "Document introuvable." });
@@ -150,7 +164,170 @@ Deno.serve(async (request) => {
       .order("version_number", { ascending: false })
       .order("locale", { ascending: true });
     if (versionsError) return json(500, { error: "Chargement des versions éditoriales impossible." });
-    return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role), document, versions: versions ?? [] });
+    const { data: relations, error: relationsError } = await adminClient
+      .from("boussole_document_relations")
+      .select("id,source_document_id,target_document_id,relation_type,sort_order")
+      .eq("source_document_id", document.id)
+      .order("sort_order", { ascending: true });
+    if (relationsError) return json(500, { error: "Chargement des relations documentaires impossible." });
+    const { data: mediaRows, error: mediaError } = await adminClient
+      .from("boussole_media_assets")
+      .select("id,document_id,version_id,storage_path,file_name,content_type,byte_size,alt_text,caption,sort_order,is_active,created_at")
+      .eq("document_id", document.id).eq("is_active", true)
+      .order("sort_order", { ascending: true });
+    if (mediaError) return json(500, { error: "Chargement des ressources médias impossible." });
+    const media = await Promise.all((mediaRows ?? []).map(async (asset) => {
+      const { data: signed } = await adminClient.storage.from("boussole-media").createSignedUrl(asset.storage_path, 900);
+      return { ...asset, signed_url: signed?.signedUrl ?? null };
+    }));
+    return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role),
+      document, versions: versions ?? [], relations: relations ?? [], media });
+  }
+
+  if (action === "list_synonyms") {
+    const { data: roles, error: rolesError } = await adminClient.from("boussole_editor_roles")
+      .select("role").eq("user_id", authData.user.id).eq("scope_type", "global")
+      .is("company_id", null).is("revoked_at", null);
+    if (rolesError) return json(500, { error: "Vérification des droits impossible." });
+    if (!(roles ?? []).some((row) => ["publisher", "admin"].includes(row.role))) {
+      return json(403, { error: "Droit global de publication requis." });
+    }
+    const { data, error } = await adminClient.from("boussole_search_synonyms")
+      .select("id,locale,term,normalized_term,synonyms,is_active,updated_at")
+      .order("locale").order("term").limit(500);
+    if (error) return json(500, { error: "Chargement des synonymes impossible." });
+    return json(200, { synonyms: data ?? [] });
+  }
+
+  if (action === "media_upload_url") {
+    if (!isUuid(body.document_id) ||
+      (body.version_id !== null && body.version_id !== undefined && !isUuid(body.version_id))) {
+      return json(400, { error: "Document ou version invalide." });
+    }
+    const mime = body.content_type, size = body.byte_size;
+    const allowedMime = ["image/jpeg","image/png","image/webp","image/avif","video/mp4","video/webm","application/pdf"];
+    if (!allowedMime.includes(String(mime)) || !Number.isInteger(size) || Number(size) < 1 || Number(size) > 20971520) {
+      return json(400, { error: "Type ou taille de fichier non autorisé." });
+    }
+    const safeName = String(body.file_name ?? "resource").normalize("NFKD")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 100) || "resource";
+    const path = body.document_id + "/" + crypto.randomUUID() + "-" + safeName;
+    const { error: authzError } = await adminClient.rpc("boussole_editor_manage_resource", {
+      p_actor_id: authData.user.id, p_action: "media_upload_authorize",
+      p_document_id: body.document_id, p_version_id: body.version_id ?? null,
+      p_storage_path: path, p_content_type: mime, p_byte_size: size,
+    });
+    if (authzError) {
+      if (authzError.code === "42501") return json(403, { error: "Droit éditorial insuffisant." });
+      return json(400, { error: "Téléversement non autorisé." });
+    }
+    const { data, error } = await adminClient.storage.from("boussole-media").createSignedUploadUrl(path, { upsert: false });
+    if (error || !data?.token) return json(500, { error: "Création du téléversement sécurisé impossible." });
+    return json(200, { path, token: data.token });
+  }
+
+  if (action === "manage_resource") {
+    const resourceAction = body.resource_action;
+    const supportedResourceActions = new Set([
+      "synonym_upsert", "synonym_deactivate", "relation_upsert", "relation_delete",
+      "media_register", "media_archive", "media_upload_authorize", "compatibility_update",
+    ]);
+    if (typeof resourceAction !== "string" || !supportedResourceActions.has(resourceAction)) {
+      return json(400, { error: "Action de ressource invalide." });
+    }
+    if (body.document_id !== undefined && body.document_id !== null && !isUuid(body.document_id)) {
+      return json(400, { error: "Identifiant documentaire invalide." });
+    }
+    if (body.target_document_id !== undefined && body.target_document_id !== null && !isUuid(body.target_document_id)) {
+      return json(400, { error: "Identifiant du document lié invalide." });
+    }
+    if (body.resource_id !== undefined && body.resource_id !== null && !isUuid(body.resource_id)) {
+      return json(400, { error: "Identifiant de ressource invalide." });
+    }
+    if (body.version_id !== undefined && body.version_id !== null && !isUuid(body.version_id)) {
+      return json(400, { error: "Identifiant de version invalide." });
+    }
+    if (body.synonyms !== undefined &&
+        (!Array.isArray(body.synonyms) || body.synonyms.length > 30 ||
+         body.synonyms.some((item) => typeof item !== "string" || item.length > 180))) {
+      return json(400, { error: "Liste de synonymes invalide." });
+    }
+    if (body.alt_text !== undefined &&
+        (!body.alt_text || typeof body.alt_text !== "object" || Array.isArray(body.alt_text))) {
+      return json(400, { error: "Textes alternatifs invalides." });
+    }
+    if (body.caption !== undefined &&
+        (!body.caption || typeof body.caption !== "object" || Array.isArray(body.caption))) {
+      return json(400, { error: "Légendes invalides." });
+    }
+    let archivedStoragePath: string | null = null;
+    if (resourceAction === "media_register") {
+      if (typeof body.storage_path !== "string" || !body.document_id ||
+          !body.storage_path.startsWith(String(body.document_id) + "/")) {
+        return json(400, { error: "Chemin média invalide." });
+      }
+      const { data: objectInfo, error: objectError } = await adminClient.storage.from("boussole-media").info(body.storage_path);
+      if (objectError || !objectInfo) return json(400, { error: "Le fichier téléversé est introuvable." });
+      if (objectInfo.metadata?.size !== undefined && Number(objectInfo.metadata.size) !== Number(body.byte_size)) {
+        return json(400, { error: "La taille réelle du fichier ne correspond pas aux métadonnées." });
+      }
+      if (objectInfo.contentType && objectInfo.contentType !== body.content_type) {
+        return json(400, { error: "Le type réel du fichier ne correspond pas aux métadonnées." });
+      }
+      const { data: uploadedFile, error: downloadError } = await adminClient.storage.from("boussole-media").download(body.storage_path);
+      if (downloadError || !uploadedFile) return json(400, { error: "Lecture de contrôle du fichier impossible." });
+      const bytes = new Uint8Array(await uploadedFile.arrayBuffer());
+      if (bytes.byteLength !== Number(body.byte_size) || !validMediaSignature(String(body.content_type), bytes)) {
+        return json(400, { error: "Le contenu réel du fichier ne correspond pas au type déclaré." });
+      }
+    }
+    if (resourceAction === "media_archive" && isUuid(body.resource_id)) {
+      const { data: asset } = await adminClient.from("boussole_media_assets").select("storage_path")
+        .eq("id", body.resource_id).eq("document_id", body.document_id).maybeSingle();
+      archivedStoragePath = asset?.storage_path ?? null;
+    }
+    const resourceArgs = {
+      p_actor_id: authData.user.id,
+      p_action: resourceAction,
+      p_document_id: body.document_id ?? null,
+      p_target_document_id: body.target_document_id ?? null,
+      p_resource_id: body.resource_id ?? null,
+      p_version_id: body.version_id ?? null,
+      p_locale: body.locale ?? null,
+      p_term: optionalText(body.term, 180),
+      p_normalized_term: optionalText(body.normalized_term, 180),
+      p_synonyms: body.synonyms ?? [],
+      p_relation_type: body.relation_type ?? null,
+      p_sort_order: Number.isInteger(body.sort_order) ? body.sort_order : 0,
+      p_storage_path: optionalText(body.storage_path, 500),
+      p_file_name: optionalText(body.file_name, 240),
+      p_content_type: body.content_type ?? null,
+      p_byte_size: body.byte_size ?? null,
+      p_alt_text: body.alt_text ?? {},
+      p_caption: body.caption ?? {},
+      p_min_app_version: optionalText(body.min_app_version, 80),
+      p_max_app_version: optionalText(body.max_app_version, 80),
+    };
+    const { data, error } = await adminClient.rpc("boussole_editor_manage_resource", resourceArgs);
+    if (error) {
+      if (resourceAction === "media_register" && typeof body.storage_path === "string") {
+        const { error: cleanupError } = await adminClient.storage.from("boussole-media").remove([body.storage_path]);
+        if (cleanupError) console.error("Boussole unregistered media cleanup pending:", cleanupError.message);
+      }
+      if (error.code === "42501") return json(403, { error: "Droit éditorial insuffisant ou opération refusée." });
+      if (error.code === "P0002") return json(404, { error: "Ressource ou document introuvable." });
+      if (error.code === "22023") return json(400, { error: "Les paramètres de la ressource sont invalides." });
+      console.error("boussole_editor_manage_resource failed:", error.code ?? "unknown");
+      return json(500, { error: "La gestion de la ressource n’a pas pu être exécutée." });
+    }
+    if (resourceAction === "media_archive" && archivedStoragePath) {
+      const { error: removeError } = await adminClient.storage.from("boussole-media").remove([archivedStoragePath]);
+      if (removeError) {
+        console.error("Boussole media cleanup pending:", removeError.message);
+        return json(200, { result: data, cleanup_pending: true });
+      }
+    }
+    return json(200, { result: data });
   }
 
   if (body.structured_content !== undefined &&

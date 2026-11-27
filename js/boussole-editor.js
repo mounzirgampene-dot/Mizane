@@ -21,7 +21,8 @@ const COPY = {
     saved:"Opération enregistrée.", confirmArchive:"Archiver ce document ?", reviewNote:"Note de relecture (facultatif)",
     minutes:"Durée estimée (minutes)", level:"Niveau pédagogique", beginner:"Débutant", intermediate:"Intermédiaire", advanced:"Avancé",
     draft:"Brouillon", review:"En relecture", approved:"Approuvé", published:"Publié", archived:"Archivé", withdrawn:"Retiré",
-    fr:"Français", ar:"العربية", en:"English", error:"Une erreur est survenue."
+    fr:"Français", ar:"العربية", en:"English", error:"Une erreur est survenue.",
+    resources:"Ressources documentaires", synonyms:"Synonymes", term:"Terme", normalized:"Terme normalisé", synonymsList:"Synonymes séparés par des virgules", saveSynonym:"Enregistrer le synonyme", deactivate:"Désactiver", relation:"Relation", target:"Document cible", prerequisite:"Prérequis", next:"Étape suivante", troubleshooting:"Dépannage", related:"Contenu associé", replaces:"Remplace", addRelation:"Ajouter la relation", compatibility:"Compatibilité de l’application", minVersion:"Version minimale", maxVersion:"Version maximale", saveCompatibility:"Enregistrer la compatibilité", media:"Médias et pièces jointes", file:"Fichier (20 Mio maximum)", upload:"Téléverser", altFr:"Texte alternatif français", altAr:"Texte alternatif arabe", altEn:"Texte alternatif anglais", captionFr:"Légende française", captionAr:"Légende arabe", captionEn:"Légende anglaise", archiveMedia:"Archiver le média", noResources:"Aucune ressource enregistrée.", uploadError:"Téléversement impossible."
   },
   en: {
     button:"Boussole administration", title:"Editorial administration",
@@ -39,7 +40,8 @@ const COPY = {
     saved:"Operation saved.", confirmArchive:"Archive this document?", reviewNote:"Review note (optional)",
     minutes:"Estimated duration (minutes)", level:"Learning level", beginner:"Beginner", intermediate:"Intermediate", advanced:"Advanced",
     draft:"Draft", review:"In review", approved:"Approved", published:"Published", archived:"Archived", withdrawn:"Withdrawn",
-    fr:"French", ar:"Arabic", en:"English", error:"An error occurred."
+    fr:"French", ar:"Arabic", en:"English", error:"An error occurred.",
+    resources:"Document resources", synonyms:"Synonyms", term:"Term", normalized:"Normalized term", synonymsList:"Comma-separated synonyms", saveSynonym:"Save synonym", deactivate:"Deactivate", relation:"Relation", target:"Target document", prerequisite:"Prerequisite", next:"Next step", troubleshooting:"Troubleshooting", related:"Related content", replaces:"Replaces", addRelation:"Add relation", compatibility:"Application compatibility", minVersion:"Minimum version", maxVersion:"Maximum version", saveCompatibility:"Save compatibility", media:"Media and attachments", file:"File (20 MiB maximum)", upload:"Upload", altFr:"French alternative text", altAr:"Arabic alternative text", altEn:"English alternative text", captionFr:"French caption", captionAr:"Arabic caption", captionEn:"English caption", archiveMedia:"Archive media", noResources:"No resources registered.", uploadError:"Upload failed."
   },
   ar: {
     button:"إدارة بوصلة ميزان", title:"الإدارة التحريرية",
@@ -57,7 +59,8 @@ const COPY = {
     saved:"تم حفظ العملية.", confirmArchive:"هل تريد أرشفة هذه الوثيقة؟", reviewNote:"ملاحظة المراجعة (اختياري)",
     minutes:"المدة التقديرية (بالدقائق)", level:"المستوى التعليمي", beginner:"مبتدئ", intermediate:"متوسط", advanced:"متقدم",
     draft:"مسودة", review:"قيد المراجعة", approved:"معتمد", published:"منشور", archived:"مؤرشف", withdrawn:"مسحوب",
-    fr:"Français", ar:"العربية", en:"English", error:"حدث خطأ."
+    fr:"Français", ar:"العربية", en:"English", error:"حدث خطأ.",
+    resources:"موارد الوثيقة", synonyms:"المرادفات", term:"المصطلح", normalized:"المصطلح الموحّد", synonymsList:"مرادفات مفصولة بفواصل", saveSynonym:"حفظ المرادف", deactivate:"تعطيل", relation:"العلاقة", target:"الوثيقة المستهدفة", prerequisite:"متطلب سابق", next:"الخطوة التالية", troubleshooting:"حل المشكلات", related:"محتوى مرتبط", replaces:"يحل محل", addRelation:"إضافة العلاقة", compatibility:"توافق التطبيق", minVersion:"أدنى إصدار", maxVersion:"أقصى إصدار", saveCompatibility:"حفظ التوافق", media:"الوسائط والمرفقات", file:"الملف (20 ميغابايت كحد أقصى)", upload:"رفع", altFr:"النص البديل بالفرنسية", altAr:"النص البديل بالعربية", altEn:"النص البديل بالإنجليزية", captionFr:"التعليق بالفرنسية", captionAr:"التعليق بالعربية", captionEn:"التعليق بالإنجليزية", archiveMedia:"أرشفة الوسيط", noResources:"لا توجد موارد مسجلة.", uploadError:"تعذر رفع الملف."
   }
 };
 let clientPromise;
@@ -71,6 +74,8 @@ let activeVersions = [];
 let activeEdition = 1;
 let activeLocale = "fr";
 let activeVersion = null;
+let activeRelations = [];
+let activeMedia = [];
 
 const copy = () => COPY[LANGS.includes(lang()) ? lang() : "fr"];
 const companyId = () => localStorage.getItem("mizane_active_company_v1");
@@ -159,6 +164,8 @@ async function loadDocument(id) {
   const data = await invoke("get", { ...scopePayload(activeScope), document_id: id });
   activeDocument = data.document;
   activeVersions = data.versions || [];
+  activeRelations = data.relations || [];
+  activeMedia = data.media || [];
   const editions = [...new Set(activeVersions.map(version => version.version_number))].sort((a,b) => b-a);
   activeEdition = editions[0] || activeDocument.current_published_version || 1;
   activeLocale = LANGS.find(locale => activeVersions.some(v => v.version_number === activeEdition && v.locale === locale)) || "fr";
@@ -177,8 +184,10 @@ function render() {
   scopeSelect.setAttribute("aria-label", c.scope);
   scopeSelect.addEventListener("change", async () => { activeScope = availableScopes[Number(scopeSelect.value)]; try { await loadDocuments(); } catch (error) { showMessage(error.message || c.error, true); } });
   const createButton = buttonNode(c.create, "new");
+  const synonymsButton = buttonNode(c.synonyms, "synonyms");
+  synonymsButton.hidden = activeScope.type !== "global" || !(activeScope.roles || []).some(role => role === "publisher" || role === "admin");
   createButton.disabled = !(activeScope.roles || []).some(role => role === "author" || role === "admin");
-  header.append(field(c.scope, scopeSelect), buttonNode(c.reload, "reload"), createButton);
+  header.append(field(c.scope, scopeSelect), buttonNode(c.reload, "reload"), createButton, synonymsButton);
   body.append(header);
   body.append(make("p", "boussole-editor-intro", c.intro));
   body.append(make("p", "boussole-editor-message"));
@@ -198,6 +207,138 @@ function render() {
   else renderDocumentEditor(editor);
   layout.append(list, editor); body.append(layout);
 }
+
+function resourceActionButton(label, handler) {
+  const node = buttonNode(label, "resource-action");
+  node.addEventListener("click", async event => {
+    event.preventDefault(); node.disabled = true;
+    try { await handler(); } catch (error) { showMessage(error.message || copy().error, true); }
+    finally { node.disabled = false; }
+  });
+  return node;
+}
+function renderResourceAdmin(root) {
+  const c = copy();
+  const panel = make("section", "boussole-editor-resources");
+  panel.append(make("h4", "", c.resources));
+  const compatibility = make("div", "boussole-editor-resource-group");
+  compatibility.append(make("h5", "", c.compatibility));
+  const minVersion = input(activeDocument.min_app_version || "");
+  const maxVersion = input(activeDocument.max_app_version || "");
+  compatibility.append(field(c.minVersion, minVersion), field(c.maxVersion, maxVersion));
+  compatibility.append(resourceActionButton(c.saveCompatibility, async () => {
+    await invoke("manage_resource", { resource_action:"compatibility_update", document_id:activeDocument.id,
+      version_id:activeVersion?.id || null, min_app_version:minVersion.value.trim() || null,
+      max_app_version:maxVersion.value.trim() || null });
+    await loadDocument(activeDocument.id); showMessage(c.saved);
+  }));
+  panel.append(compatibility);
+
+  const relations = make("div", "boussole-editor-resource-group");
+  relations.append(make("h5", "", c.relation));
+  const targets = documents.filter(doc => doc.id !== activeDocument.id && doc.status === "published");
+  const target = select(targets.map(doc => [doc.id, doc.slug]), targets[0]?.id || "");
+  const relationType = select(["prerequisite","next","troubleshooting","related","replaces"].map(type => [type,c[type]]), "related");
+  relations.append(field(c.target,target),field(c.relation,relationType));
+  relations.append(resourceActionButton(c.addRelation, async () => {
+    if (!target.value) throw new Error(c.noDocs);
+    await invoke("manage_resource",{resource_action:"relation_upsert",document_id:activeDocument.id,
+      target_document_id:target.value,relation_type:relationType.value});
+    await loadDocument(activeDocument.id); showMessage(c.saved);
+  }));
+  if (activeRelations.length) {
+    const list = make("ul","boussole-editor-resource-list");
+    for (const relation of activeRelations) {
+      const doc = documents.find(item => item.id === relation.target_document_id);
+      const row = make("li","",(c[relation.relation_type] || relation.relation_type) + " — " + (doc?.slug || relation.target_document_id));
+      row.append(resourceActionButton(c.deactivate,async()=>{
+        await invoke("manage_resource",{resource_action:"relation_delete",document_id:activeDocument.id,resource_id:relation.id});
+        await loadDocument(activeDocument.id); showMessage(c.saved);
+      }));
+      list.append(row);
+    }
+    relations.append(list);
+  }
+  panel.append(relations);
+
+  const media = make("div","boussole-editor-resource-group");
+  media.append(make("h5","",c.media));
+  const file = input("","file");
+  file.accept = "image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm,application/pdf";
+  const metadata = {};
+  for (const [key,labels] of [["alt_text",["altFr","altAr","altEn"]],["caption",["captionFr","captionAr","captionEn"]]]) {
+    metadata[key] = {};
+    for (const locale of LANGS) {
+      const control = input("");
+      metadata[key][locale] = control;
+      media.append(field(c[labels[LANGS.indexOf(locale)]],control));
+    }
+  }
+  media.append(field(c.file,file));
+  media.append(resourceActionButton(c.upload,async()=>{
+    const selected = file.files?.[0];
+    if (!selected || selected.size < 1 || selected.size > 20971520) throw new Error(c.uploadError);
+    const upload = await invoke("media_upload_url",{document_id:activeDocument.id,version_id:activeVersion?.id || null,
+      file_name:selected.name,content_type:selected.type,byte_size:selected.size});
+    const supabase = await getClient();
+    const {error:uploadError} = await supabase.storage.from("boussole-media")
+      .uploadToSignedUrl(upload.path,upload.token,selected,{contentType:selected.type,upsert:false});
+    if (uploadError) throw uploadError;
+    const payload = {};
+    for (const key of ["alt_text","caption"]) {
+      payload[key] = {};
+      for (const locale of LANGS) payload[key][locale] = metadata[key][locale].value.trim();
+    }
+    await invoke("manage_resource",{resource_action:"media_register",document_id:activeDocument.id,
+      version_id:activeVersion?.id || null,storage_path:upload.path,file_name:selected.name,
+      content_type:selected.type,byte_size:selected.size,alt_text:payload.alt_text,caption:payload.caption});
+    await loadDocument(activeDocument.id); showMessage(c.saved);
+  }));
+  if (activeMedia.length) {
+    const list = make("ul","boussole-editor-resource-list");
+    for (const asset of activeMedia) {
+      const row = make("li");
+      if (asset.signed_url) {
+        const link = make("a","",asset.file_name); link.href = asset.signed_url;
+        link.target = "_blank"; link.rel = "noopener noreferrer"; row.append(link);
+      } else row.append(make("span","",asset.file_name));
+      row.append(resourceActionButton(c.archiveMedia,async()=>{
+        await invoke("manage_resource",{resource_action:"media_archive",document_id:activeDocument.id,resource_id:asset.id});
+        await loadDocument(activeDocument.id); showMessage(c.saved);
+      }));
+      list.append(row);
+    }
+    media.append(list);
+  } else media.append(make("p","muted",c.noResources));
+  panel.append(media);
+  root.append(panel);
+}
+async function renderSynonymAdmin() {
+  const c=copy();
+  const data=await invoke("list_synonyms");
+  const panel=make("section","boussole-editor-resources");
+  panel.append(make("h3","",c.synonyms));
+  const locale=select(LANGS.map(code=>[code,c[code]]),"fr");
+  const term=input(""), normalized=input(""), synonyms=input("");
+  panel.append(field(c.locale,locale),field(c.term,term),field(c.normalized,normalized),field(c.synonymsList,synonyms));
+  panel.append(resourceActionButton(c.saveSynonym,async()=>{
+    await invoke("manage_resource",{resource_action:"synonym_upsert",locale:locale.value,term:term.value.trim(),
+      normalized_term:normalized.value.trim(),synonyms:synonyms.value.split(",").map(value=>value.trim()).filter(Boolean)});
+    await renderSynonymAdmin(); showMessage(c.saved);
+  }));
+  const list=make("ul","boussole-editor-resource-list");
+  for(const item of data.synonyms || []) {
+    const row=make("li","",item.locale.toUpperCase()+" — "+item.term+" ("+(item.synonyms||[]).join(", ")+")"+(item.is_active ? "" : " — inactive"));
+    if(item.is_active) row.append(resourceActionButton(c.deactivate,async()=>{
+      await invoke("manage_resource",{resource_action:"synonym_deactivate",resource_id:item.id});
+      await renderSynonymAdmin();
+    }));
+    list.append(row);
+  }
+  panel.append(list);
+  body.replaceChildren(panel,make("p","boussole-editor-message"));
+}
+
 function renderDocumentEditor(root) {
   const c = copy(), doc = activeDocument;
   root.append(make("h3", "", doc.slug), make("p", "muted", c.status + ": " + statusLabel(doc.status)));
@@ -253,6 +394,7 @@ function renderDocumentEditor(root) {
     if (doc.status === "published" && canPublish) actions.append(buttonNode(c.archive, "archive"));
     if (doc.status === "archived" && canPublish) actions.append(buttonNode(c.restore, "restore"));
     root.append(actions);
+    if (roles.includes("publisher") || roles.includes("admin")) renderResourceAdmin(root);
     root.dataset.versionPayload = "ready";
     root._editorPayload = payload;
   }
@@ -298,6 +440,8 @@ async function handleAction(action) {
       await loadDocuments(); return;
     }
     if (action === "new") { renderNewDocument(); return; }
+    if (action === "synonyms") { await renderSynonymAdmin(); return; }
+    if (action === "resource-action") return;
     if (action === "cancel") { render(); return; }
     if (action === "open") { await loadDocument(eventDocumentId); return; }
     if (action === "add-locale") {

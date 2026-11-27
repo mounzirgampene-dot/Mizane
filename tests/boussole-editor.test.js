@@ -58,3 +58,38 @@ assert.ok(edge.includes("document.created_by !== authData.user.id"));
 
 assert.ok(editorUi.includes('action === "new-edition"'));
 assert.ok(editorUi.includes('newEdition:"New edition"'));
+
+const resourceMigration = readFileSync(new URL("../supabase/migrations/20261127150000_boussole_resource_governance.sql", import.meta.url), "utf8");
+assert.ok(resourceMigration.includes("create table public.boussole_media_assets"));
+assert.ok(resourceMigration.includes("enable row level security"));
+assert.ok(resourceMigration.includes("force row level security"));
+assert.ok(resourceMigration.includes("revoke all on public.boussole_media_assets from public,anon,authenticated"));
+assert.ok(resourceMigration.includes("'boussole-media','boussole-media',false,20971520"));
+assert.ok(resourceMigration.includes("boussole_editor_manage_resource"));
+assert.ok(resourceMigration.includes("grant execute on function public.boussole_editor_manage_resource"));
+assert.ok(resourceMigration.includes("Cette relation créerait un cycle"));
+assert.ok(resourceMigration.includes("compatibility_updated"));
+assert.ok(edge.includes('"manage_resource"'));
+assert.ok(edge.includes('adminClient.rpc("boussole_editor_manage_resource"'));
+assert.ok(edge.includes("supportedResourceActions"));
+assert.ok(!edge.includes("p_actor_id: body."));
+console.log("Boussole resources: synonym, relation, media and compatibility governance statically checked.");
+
+assert.ok(resourceMigration.includes("on delete set null (version_id)"));
+assert.ok(resourceMigration.includes("'media_upload_authorize'"));
+assert.ok(resourceMigration.includes("public=false"));
+assert.ok(edge.includes("createSignedUploadUrl"));
+assert.ok(edge.includes("unregistered media cleanup pending"));
+assert.ok(resourceMigration.includes("where v.id=p_version_id and v.document_id=p_document_id"));
+assert.ok(edge.includes("uploadToSignedUrl") === false);
+assert.ok(edge.includes("validMediaSignature"));
+assert.ok(edge.includes(".storage.from(\"boussole-media\").download"));
+assert.ok(edge.includes(".storage.from(\"boussole-media\").remove"));
+assert.ok(edge.includes('action === "list_synonyms"'));
+assert.ok(edge.includes('action === "media_upload_url"'));
+assert.ok(editorUi.includes("renderResourceAdmin"));
+assert.ok(editorUi.includes("renderSynonymAdmin"));
+assert.ok(editorUi.includes("uploadToSignedUrl"));
+assert.ok(editorUi.includes("altEn"));
+assert.ok(editorUi.includes("compatibility_update"));
+console.log("Boussole resources: trilingual administration, signed uploads, MIME signature checks and storage cleanup statically checked.");

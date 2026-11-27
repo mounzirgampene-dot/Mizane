@@ -188,7 +188,7 @@ begin
     end if;
     select * into v_version from public.boussole_document_versions v
       where v.id=p_version_id and v.document_id=v_document.id for update;
-    if not found or v_version.status<>'draft' or v_version.created_by<>p_actor_id then
+    if not found or v_version.status<>'draft' or v_version.created_by is distinct from p_actor_id then
       raise exception 'Seul l’auteur peut modifier son brouillon.' using errcode='42501';
     end if;
     update public.boussole_document_versions set
@@ -233,7 +233,7 @@ begin
       where id=p_version_id and document_id=v_document.id and status='draft' and created_by=p_actor_id
       returning * into v_version;
     if not found then raise exception 'Brouillon non modifiable ou non attribué à cet auteur.' using errcode='42501'; end if;
-    update public.boussole_documents set status='review',updated_by=p_actor_id,updated_at=now() where id=v_document.id;
+    update public.boussole_documents set status=case when current_published_version is null then 'review' else status end,updated_by=p_actor_id,updated_at=now() where id=v_document.id;
     insert into public.boussole_editor_audit(actor_user_id,company_id,document_id,version_id,action)
     values(p_actor_id,v_company_id,v_document.id,v_version.id,'review_submitted');
     return jsonb_build_object('document_id',v_document.id,'version_id',v_version.id,'status','review');
@@ -266,7 +266,7 @@ begin
     select count(distinct v.locale) into v_other_locale_count
       from public.boussole_document_versions v
       where v.document_id=v_document.id and v.version_number=v_version.version_number
-        and v.locale in ('fr','ar') and v.status='approved';
+        and v.locale in ('fr','ar') and v.status='approved'\n        and v.created_by is distinct from p_actor_id\n        and v.approved_by is distinct from p_actor_id;
     if v_other_locale_count<>2 then
       raise exception 'Les versions française et arabe doivent être approuvées avant publication.' using errcode='42501';
     end if;

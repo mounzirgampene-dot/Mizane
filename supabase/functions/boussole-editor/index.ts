@@ -133,7 +133,7 @@ Deno.serve(async (request) => {
     if (!isUuid(body.document_id)) return json(400, { error: "Identifiant documentaire invalide." });
     const { data: document, error: documentError } = await adminClient
       .from("boussole_documents")
-      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,updated_at,published_at")
+      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
       .eq("id", body.document_id)
       .maybeSingle();
     if (documentError || !document) return json(404, { error: "Document introuvable." });

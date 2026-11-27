@@ -5,6 +5,7 @@ on:
     branches:
       - feat/resilience-load-hardening
       - feat/stock-integrated-dev
+      - feat/boussole-foundation-dev
       - fix/lot2-billing-integrity
       - feat/lot3-stock-operations-accounting
       - feat/lot4-periodic-inventory-closing

@@ -6,6 +6,8 @@ const edge = readFileSync(new URL("../supabase/functions/boussole-editor/index.t
 
 assert.match(migration, /create table public\.boussole_editor_roles/);
 assert.match(migration, /create table public\.boussole_editor_audit/);
+assert.match(migration, /boussole_editor_roles_grantor_fk_idx/);
+assert.match(migration, /boussole_editor_audit_version_fk_idx/);
 assert.match(migration, /enable row level security[\s\S]*force row level security/);
 assert.match(migration, /revoke all on public\.boussole_editor_roles,public\.boussole_editor_audit[\s\S]*from public,anon,authenticated/);
 assert.match(migration, /grant select on public\.boussole_editor_roles to service_role/);

@@ -5,6 +5,7 @@ on:
     branches:
       - feat/resilience-load-hardening
       - feat/stock-integrated-dev
+      - feat/boussole-cloud-reader-dev
       - fix/lot2-billing-integrity
       - feat/lot3-stock-operations-accounting
       - feat/lot4-periodic-inventory-closing
@@ -44,6 +45,7 @@ on:
     branches:
       - main
       - feat/stock-integrated-dev
+      - feat/boussole-guide-mvp-dev
       - feat/lot31-tax-document-traceability
       - feat/lot32-central-tax-document-vault
       - feat/lot33-central-africa-tax-profiles

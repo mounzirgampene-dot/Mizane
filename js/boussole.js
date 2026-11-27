@@ -1,6 +1,7 @@
 // MIZANE — Guide local bilingue et aide contextuelle.
 import { lang } from "./i18n.js";
 import { normalizeBoussoleQuery, matchesBoussoleQuery } from "./boussole-search.js";
+import { searchCloudBoussoleDocuments } from "./boussole-cloud.js";
 
 const ARTICLES = [
  {id:"start",routes:["dashboard"],keys:"accueil tableau de bord démarrer البداية لوحة التحكم",fr:["Prendre en main MIZANE","Repérer les espaces de travail et le tableau de bord.",["Le tableau de bord présente une synthèse des données de l’espace actif.","Utilisez la navigation pour ouvrir la saisie, les écritures, les rapports, les achats, les stocks ou les paramètres.","Vérifiez le nom de l’entreprise et la devise avant toute opération.","Les données de démonstration sont fictives et ne doivent pas être confondues avec les données réelles."]],ar:["التعرّف على ميزان","اكتشف مساحات العمل وافهم لوحة التحكم.",["تعرض لوحة التحكم ملخصاً لبيانات المساحة النشطة.","استخدم شريط التنقل لفتح الإدخال والقيود والتقارير والمشتريات والمخزون والإعدادات.","تحقق من اسم المؤسسة والعملة قبل أي عملية.","بيانات العرض التجريبي افتراضية ولا تمثل البيانات الحقيقية."]]},
@@ -21,29 +22,79 @@ const ARTICLES = [
  {id:"exports",routes:["tools","settings"],keys:"export pdf excel csv impression téléchargement استخراج تصدير طباعة",fr:["Exports, impressions et documents","Préparer un export fiable et maîtriser sa diffusion.",["Choisissez la période, l’entreprise, la devise et le format avant l’export.","Vérifiez les totaux et le nombre de lignes dans le fichier produit.","Les exports peuvent contenir des données confidentielles : utilisez un emplacement autorisé et limitez les destinataires.","Un export est un instantané ; il peut devenir différent des données après de nouvelles opérations."]],ar:["التصدير والطباعة والمستندات","إعداد تصدير موثوق والتحكم في نشره.",["حدد الفترة والمؤسسة والعملة والصيغة قبل التصدير.","تحقق من المجاميع وعدد السطور في الملف الناتج.","قد تحتوي الملفات المصدرة على بيانات سرية؛ استخدم مكاناً مصرحاً وحدد المستلمين.","ملف التصدير يمثل لقطة زمنية وقد يختلف عن البيانات بعد عمليات جديدة."]]}
 ];
 const ROUTES={dashboard:["Tableau de bord","لوحة التحكم"],entry:["Saisie","الإدخال"],entries:["Écritures","القيود"],ledger:["Grand livre","دفتر الأستاذ"],balance:["Balance","ميزان المراجعة"],income:["Résultat","النتيجة"],sheet:["Bilan","الميزانية"],thirds:["Tiers","الأطراف"],financial:["Pilotage","القيادة"],billing:["Facturation","الفوترة"],purchases:["Achats","المشتريات"],stock:["Gestion de stock","إدارة المخزون"],tax:["Fiscalité","الضرائب"],settings:["Paramètres","الإعدادات"],assistant:["Assistant IA","المساعد الذكي"],budget:["Budget","الميزانية"],analytical:["Analytique","التحليلية"],tools:["Outils","الأدوات"],calculator:["Calculatrice","الآلة الحاسبة"],notifications:["Notifications","الإشعارات"],history:["Historique","السجل"],"my-work":["Mes travaux","أعمالي"]};
-let initialized=false, route="dashboard", query="", panel, results, detail, context, search, toggle, expandButton, expanded=false, selected=null;
+let initialized=false, route="dashboard", query="", panel, results, cloudResults, detail, context, search, toggle, expandButton, expanded=false, selected=null, selectedCloud=null, cloudRequestId=0, cloudTimer=null;
+const cloudDocuments=new Map();
 const ar=()=>lang()==="ar";
 const norm=normalizeBoussoleQuery;
 const el=(tag,cls,value)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(value!=null)n.textContent=value;return n;};
 function setExpanded(value){expanded=Boolean(value);panel.classList.toggle("is-expanded",expanded);if(expandButton){expandButton.setAttribute("aria-pressed",String(expanded));expandButton.textContent=ar()?(expanded?"تصغير":"ملء الشاشة"):(expanded?"Réduire":"Plein écran");expandButton.setAttribute("aria-label",ar()?(expanded?"تصغير لوحة البوصلة":"توسيع لوحة البوصلة إلى كامل الشاشة"):(expanded?"Réduire la Boussole":"Agrandir la Boussole en plein écran"));}}
-function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");setExpanded(false);toggle.focus();}
+function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");cloudRequestId++;if(cloudTimer)clearTimeout(cloudTimer);setExpanded(false);toggle.focus();}
 function showArticle(id){
- const a=ARTICLES.find(x=>x.id===id);if(!a)return;selected=id;const c=a[ar()?"ar":"fr"];
- results.hidden=true;detail.hidden=false;detail.replaceChildren();
+ const a=ARTICLES.find(x=>x.id===id);if(!a)return;selected=id;selectedCloud=null;cloudRequestId++;const c=a[ar()?"ar":"fr"];
+ results.hidden=true;if(cloudResults)cloudResults.hidden=true;detail.hidden=false;detail.replaceChildren();
  const back=el("button","secondary small",ar()?"العودة إلى النتائج":"Retour aux résultats");back.type="button";
  back.addEventListener("click",()=>{selected=null;renderResults();});
  detail.append(back,el("h3","boussole-article-title",c[0]),el("p","muted",c[1]));
  const list=el("ol","boussole-steps");c[2].forEach(line=>list.append(el("li","",line)));detail.append(list);
 }
+function showCloudArticle(document){
+ if(!document)return;selected=null;selectedCloud=document.id;cloudRequestId++;
+ results.hidden=true;if(cloudResults)cloudResults.hidden=true;detail.hidden=false;detail.replaceChildren();
+ const back=el("button","secondary small",ar()?"العودة إلى النتائج":"Retour aux résultats");back.type="button";
+ back.addEventListener("click",()=>{selectedCloud=null;renderResults();});
+ detail.append(back,el("h3","boussole-article-title",document.title),el("p","muted",document.summary));
+ detail.append(el("pre","boussole-cloud-content",document.content_markdown||""));
+ if(document.source_references.length){
+  const sources=el("section","boussole-cloud-sources");
+  sources.append(el("h4","",ar()?"المراجع":"Références"));
+  const list=el("ul","");
+  document.source_references.forEach(source=>{
+   const label=typeof source==="string"?source:(source?.title||source?.label||source?.reference||source?.url||JSON.stringify(source));
+   list.append(el("li","",String(label)));
+  });
+  sources.append(list);detail.append(sources);
+ }
+}
+function renderCloudResults(q){
+ if(!cloudResults)return;
+ const request=++cloudRequestId;
+ if(cloudTimer)clearTimeout(cloudTimer);
+ cloudDocuments.clear();cloudResults.replaceChildren();
+ if(!q||q.length<2){cloudResults.hidden=true;return;}
+ cloudResults.hidden=false;
+ cloudResults.append(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"));
+ cloudResults.append(el("p","muted",ar()?"جارٍ البحث في الوثائق المنشورة...":"Recherche dans les documents publiés..."));
+ cloudTimer=setTimeout(async()=>{
+  try{
+   const response=await searchCloudBoussoleDocuments(q,{locale:ar()?"ar":"fr",limit:8});
+   if(request!==cloudRequestId||norm(query)!==q||selected||selectedCloud)return;
+   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"));
+   if(!response.available){cloudResults.append(el("p","muted",ar()?"السحابة غير متاحة؛ تبقى نتائج الدليل المحلي متوفرة.":"Cloud indisponible ; les résultats du guide local restent accessibles."));return;}
+   if(!response.results.length){cloudResults.append(el("p","muted",ar()?"لا توجد وثائق منشورة تطابق البحث.":"Aucun document publié ne correspond à cette recherche."));return;}
+   response.results.forEach(document=>{
+    cloudDocuments.set(document.id,document);
+    const button=el("button","boussole-result");button.type="button";button.dataset.cloudDocumentId=document.id;
+    button.append(el("strong","",document.title),el("span","",document.summary||document.slug));cloudResults.append(button);
+   });
+  }catch(error){
+   if(request!==cloudRequestId||norm(query)!==q)return;
+   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"),
+    el("p","muted",ar()?"تعذر الاتصال بالوثائق المنشورة؛ يمكنك متابعة البحث المحلي.":"Connexion aux documents publiés impossible ; la recherche locale reste disponible."));
+   console.warn("Recherche documentaire Boussole indisponible :",error?.message||error);
+  }
+ },320);
+}
+
 function renderResults(){
- if(!results)return;detail.hidden=true;results.hidden=false;results.replaceChildren();
+ if(!results)return;selectedCloud=null;detail.hidden=true;results.hidden=false;results.replaceChildren();
  const q=norm(query);
  const found=ARTICLES.map(a=>({a,c:a[ar()?"ar":"fr"],context:a.routes.includes(route)}))
   .filter(x=>q?matchesBoussoleQuery([x.c[0],x.c[1],...x.c[2],x.a.keys].join(" "),q):x.context)
   .sort((a,b)=>Number(b.context)-Number(a.context));
  const items=found.length?found:(q?[]:ARTICLES.slice(0,5).map(a=>({a,c:a[ar()?"ar":"fr"],context:false})));
- if(!items.length){results.append(el("p","muted",ar()?"لا توجد نتائج. جرّب كلمة أخرى.":"Aucun résultat. Essayez un autre mot."));return;}
+ if(!items.length)results.append(el("p","muted",ar()?"لا توجد نتائج محلية.":"Aucun résultat dans le guide local."));
  items.slice(0,12).forEach(x=>{const b=el("button","boussole-result");b.type="button";b.dataset.articleId=x.a.id;b.append(el("strong","",x.c[0]),el("span","",x.c[1]));results.append(b);});
+ renderCloudResults(q);
 }
 function refresh(){
  const arabic=ar(), routeLabel=ROUTES[route]||["Espace de travail","مساحة العمل"];
@@ -51,27 +102,28 @@ function refresh(){
  toggle.textContent=arabic?"البوصلة":"Boussole";
  panel.querySelector(".boussole-title").textContent=arabic?"بوصلة ميزان":"Boussole MIZANE";
  panel.querySelector('label[for="boussole-search"]').textContent=arabic?"البحث":"Recherche";
- panel.querySelector(".boussole-intro").textContent=arabic?"دليل محلي وبحث في المساعدة، متاحان دون اتصال بعد تحميل التطبيق.":"Guide local et recherche d’aide, disponibles hors connexion après chargement.";
+ panel.querySelector(".boussole-intro").textContent=arabic?"دليل محلي ووثائق منشورة في سحابة ميزان عند توفر الاتصال.":"Guide local et documents publiés dans MIZANE Cloud lorsque la connexion est disponible.";
  search.placeholder=arabic?"ابحث في دليل ميزان...":"Rechercher dans le guide MIZANE...";
  search.setAttribute("aria-label",search.placeholder);
  context.textContent=arabic?"مساعدة مرتبطة بـ: "+routeLabel[1]:"Aide liée à : "+routeLabel[0];
- panel.querySelector(".boussole-local-note").textContent=arabic?"بحث محلي فقط — لا تُقرأ البيانات المحاسبية ولا تُرسل إلى خدمة خارجية.":"Recherche locale uniquement — aucune donnée comptable n’est lue ni transmise.";
+ panel.querySelector(".boussole-local-note").textContent=arabic?"يبقى الدليل المحلي متاحاً دون اتصال. عند توفر الإنترنت يُرسل نص البحث إلى سحابة ميزان للعثور على الوثائق المنشورة فقط؛ لا تُقرأ البيانات المحاسبية ولا يُستعمل الذكاء الاصطناعي.":"Le guide local reste disponible hors connexion. En ligne, le texte recherché est envoyé à MIZANE Cloud pour trouver les documents publiés ; aucune donnée comptable n’est lue et aucune IA n’est appelée.";
  panel.querySelector("[data-boussole-close]").textContent=arabic?"إغلاق":"Fermer";
  setExpanded(expanded);
- if(selected)showArticle(selected);else renderResults();
+ if(selected)showArticle(selected);else if(selectedCloud&&cloudDocuments.has(selectedCloud))showCloudArticle(cloudDocuments.get(selectedCloud));else renderResults();
 }
 export function setBoussoleContext(nextRoute){route=nextRoute||"dashboard";if(initialized)refresh();}
 export function initBoussole(){
  if(initialized)return;toggle=document.getElementById("boussole-toggle");if(!toggle)return;
  panel=el("aside","boussole-panel");panel.id="boussole-panel";panel.hidden=true;panel.setAttribute("aria-label","Boussole MIZANE");
- panel.innerHTML='<div class="boussole-head"><div><h2 class="boussole-title"></h2><p class="boussole-intro"></p></div><div class="boussole-head-actions"><button type="button" class="secondary small" data-boussole-expand aria-pressed="false"></button><button type="button" class="secondary small" data-boussole-close></button></div></div><label for="boussole-search">Recherche</label><input id="boussole-search" type="search" autocomplete="off"><p class="boussole-context" id="boussole-context"></p><div class="boussole-results" id="boussole-results"></div><div class="boussole-article" id="boussole-article" hidden></div><p class="boussole-local-note"></p>';
- document.body.append(panel);results=panel.querySelector("#boussole-results");detail=panel.querySelector("#boussole-article");context=panel.querySelector("#boussole-context");search=panel.querySelector("#boussole-search");expandButton=panel.querySelector("[data-boussole-expand]");
+ panel.innerHTML='<div class="boussole-head"><div><h2 class="boussole-title"></h2><p class="boussole-intro"></p></div><div class="boussole-head-actions"><button type="button" class="secondary small" data-boussole-expand aria-pressed="false"></button><button type="button" class="secondary small" data-boussole-close></button></div></div><label for="boussole-search">Recherche</label><input id="boussole-search" type="search" autocomplete="off"><p class="boussole-context" id="boussole-context"></p><div class="boussole-results" id="boussole-results"></div><div class="boussole-cloud-results" id="boussole-cloud-results" hidden></div><div class="boussole-article" id="boussole-article" hidden></div><p class="boussole-local-note"></p>';
+ document.body.append(panel);results=panel.querySelector("#boussole-results");cloudResults=panel.querySelector("#boussole-cloud-results");detail=panel.querySelector("#boussole-article");context=panel.querySelector("#boussole-context");search=panel.querySelector("#boussole-search");expandButton=panel.querySelector("[data-boussole-expand]");
  toggle.setAttribute("aria-controls","boussole-panel");toggle.setAttribute("aria-expanded","false");
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));if(!panel.hidden)search.focus();});
  panel.querySelector("[data-boussole-close]").addEventListener("click",closePanel);
  expandButton.addEventListener("click",()=>setExpanded(!expanded));
  search.addEventListener("input",()=>{query=search.value;selected=null;renderResults();});
  results.addEventListener("click",event=>{const b=event.target.closest("[data-article-id]");if(b)showArticle(b.dataset.articleId);});
+ cloudResults.addEventListener("click",event=>{const b=event.target.closest("[data-cloud-document-id]");if(b)showCloudArticle(cloudDocuments.get(b.dataset.cloudDocumentId));});
  document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!panel.hidden){event.preventDefault();if(expanded)setExpanded(false);else closePanel();}});
  initialized=true;refresh();
 }

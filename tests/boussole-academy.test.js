@@ -6,10 +6,16 @@ import {
   normalizeAcademyProgress,
   isAcademyCourseCompleted,
   getAcademyScopeKey,
+  searchAcademyCourses,
 } from "../js/academy.js";
 
 assert.equal(ACADEMY_COURSE_COUNT,10);
 assert.equal(ACADEMY_COURSES.length,10);
+assert.ok(searchAcademyCourses("inventaire").some(course=>course.id==="stock"));
+assert.ok(searchAcademyCourses("المخزون").some(course=>course.id==="stock"));
+assert.ok(searchAcademyCourses("rapprochement bancaire").some(course=>course.id==="treasury"));
+assert.equal(searchAcademyCourses("requête-inexistante").length,0);
+assert.equal(searchAcademyCourses("").length,10);
 const ids=new Set();
 for(const course of ACADEMY_COURSES){
   assert.ok(course.id && !ids.has(course.id), "identifiant de parcours unique");

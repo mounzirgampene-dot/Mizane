@@ -3,7 +3,7 @@ import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildAnalyticalReport, validateAnalyticalCenter, validateAnalyticalAllocation } from "./analytical-core.js";
 import { validateAllocationKey, applyAllocationKey, calculateBreakEven, buildProjectAnalyticalReport, buildProjectComparison, buildAnalyticalDecisionReport } from "./analytical-advanced-core.js";
-import { renderBarChart } from "./charts.js";
+import { renderBarChart, renderLineChart } from "./charts.js";
 
 const accountTypes = () => Object.fromEntries([...planAccounts, ...(store.settings.customAccounts || [])].map(item => [String(item.code), item.type]));
 const ensureData = () => {

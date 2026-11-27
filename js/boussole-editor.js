@@ -12,7 +12,7 @@ const COPY = {
     reload:"Actualiser", create:"Nouveau document", noDocs:"Aucun document dans cet espace.",
     slug:"Identifiant (slug)", titleField:"Titre", locale:"Langue", summary:"Résumé",
     content:"Contenu Markdown", createDraft:"Créer le brouillon", cancel:"Annuler",
-    selectDoc:"Sélectionnez un document.", edition:"Édition", addLocale:"Ajouter cette langue à l'édition",
+    selectDoc:"Sélectionnez un document.", edition:"Édition", newEdition:"Nouvelle édition", addLocale:"Ajouter cette langue à l'édition",
     save:"Enregistrer le brouillon", submit:"Soumettre en relecture", changes:"Demander des corrections",
     approve:"Approuver", publish:"Publier les trois langues", archive:"Archiver", restore:"Restaurer",
     preview:"Aperçu texte", status:"État", versions:"Versions linguistiques",
@@ -30,7 +30,7 @@ const COPY = {
     reload:"Refresh", create:"New document", noDocs:"No documents in this workspace.",
     slug:"Identifier (slug)", titleField:"Title", locale:"Language", summary:"Summary",
     content:"Markdown content", createDraft:"Create draft", cancel:"Cancel",
-    selectDoc:"Select a document.", edition:"Edition", addLocale:"Add this language to the edition",
+    selectDoc:"Select a document.", edition:"Edition", newEdition:"New edition", addLocale:"Add this language to the edition",
     save:"Save draft", submit:"Submit for review", changes:"Request changes",
     approve:"Approve", publish:"Publish all three languages", archive:"Archive", restore:"Restore",
     preview:"Text preview", status:"Status", versions:"Language versions",
@@ -48,7 +48,7 @@ const COPY = {
     reload:"تحديث", create:"وثيقة جديدة", noDocs:"لا توجد وثائق في هذا النطاق.",
     slug:"المعرّف", titleField:"العنوان", locale:"اللغة", summary:"الملخص",
     content:"المحتوى بصيغة Markdown", createDraft:"إنشاء مسودة", cancel:"إلغاء",
-    selectDoc:"اختر وثيقة.", edition:"الإصدار", addLocale:"إضافة هذه اللغة إلى الإصدار",
+    selectDoc:"اختر وثيقة.", edition:"الإصدار", newEdition:"إصدار جديد", addLocale:"إضافة هذه اللغة إلى الإصدار",
     save:"حفظ المسودة", submit:"إرسال للمراجعة", changes:"طلب تعديلات",
     approve:"اعتماد", publish:"نشر اللغات الثلاث", archive:"أرشفة", restore:"استعادة",
     preview:"معاينة نصية", status:"الحالة", versions:"النسخ اللغوية",
@@ -207,6 +207,9 @@ function renderDocumentEditor(root) {
   const localeSelect = select(LANGS.map(locale => [locale, c[locale]]), activeLocale);
   localeSelect.addEventListener("change", () => { activeLocale = localeSelect.value; selectActiveVersion(); render(); });
   root.append(field(c.edition, editionSelect), field(c.locale, localeSelect));
+  const rolesForDoc = activeScope.roles || [];
+  const canCreateEdition = rolesForDoc.includes("author") || rolesForDoc.includes("admin");
+  if (doc.status === "published" && canCreateEdition) root.append(buttonNode(c.newEdition, "new-edition"));
   const statusGrid = make("div", "boussole-editor-language-status");
   for (const locale of LANGS) {
     const version = activeVersions.find(v => v.version_number === activeEdition && v.locale === locale);
@@ -295,6 +298,23 @@ async function handleAction(action) {
       const current = activeVersions.find(v => v.version_number === activeEdition && v.locale === activeLocale);
       if (current) return;
       await invoke("create_locale_version", { ...scopePayload(activeScope), document_id: activeDocument.id, locale: activeLocale, title: c[activeLocale] });
+      await loadDocument(activeDocument.id); showMessage(c.saved); return;
+    }
+    if (action === "new-edition") {
+      const nextEdition = Number(activeDocument.current_published_version || 0) + 1;
+      if (activeVersions.some(v => v.version_number === nextEdition && v.locale === activeLocale)) {
+        activeEdition = nextEdition; selectActiveVersion(); render(); return;
+      }
+      const source = activeVersions.find(v => v.version_number === activeDocument.current_published_version && v.locale === activeLocale);
+      await invoke("create_locale_version", {
+        ...scopePayload(activeScope), document_id: activeDocument.id, locale: activeLocale,
+        title: source?.title || c[activeLocale], summary: source?.summary || "",
+        content_markdown: source?.content_markdown || "",
+        learning_level: source?.learning_level || null,
+        estimated_minutes: source?.estimated_minutes || null,
+        structured_content: source?.structured_content || {},
+        source_references: source?.source_references || []
+      });
       await loadDocument(activeDocument.id); showMessage(c.saved); return;
     }
     if (!activeDocument || !activeVersion) return;

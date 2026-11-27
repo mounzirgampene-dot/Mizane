@@ -1,4 +1,5 @@
 // MIZANE — Archivage local des justificatifs liés aux écritures comptables.
+import { resolveDocumentStorageScope } from "./document-storage-scope.js";
 const DB_NAME="mizane_accounting_documents_v1", STORE_NAME="files";
 export const ACCOUNTING_DOCUMENT_TYPES=["supplier_invoice","customer_invoice","receipt","bank_statement","tax_document","contract","other"];
 export function normalizeAccountingDocumentClassification(value={}){
@@ -28,7 +29,7 @@ export function createAccountingDocumentMetadata({id,file,entryIds,metadata={},u
 }
 function openDb(){
  if(typeof indexedDB==="undefined")return Promise.reject(new Error("Le stockage documentaire local n’est pas disponible sur cet appareil."));
- return new Promise((resolve,reject)=>{const request=indexedDB.open(DB_NAME,2);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE_NAME))request.result.createObjectStore(STORE_NAME,{keyPath:"id"});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error("Ouverture du coffre local impossible."));});
+ return new Promise((resolve,reject)=>{const scope=resolveDocumentStorageScope();const request=indexedDB.open(DB_NAME+"_"+scope.databaseSuffix,2);request.onupgradeneeded=()=>{if(!request.result.objectStoreNames.contains(STORE_NAME))request.result.createObjectStore(STORE_NAME,{keyPath:"id"});};request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error||new Error("Ouverture du coffre local impossible."));});
 }
 function runTransaction(db,mode,action){
  return new Promise((resolve,reject)=>{const tx=db.transaction(STORE_NAME,mode),request=action(tx.objectStore(STORE_NAME));let result;

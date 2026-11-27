@@ -42,6 +42,7 @@ const ASSETS = [
   "js/periods.js",
   "js/cloud-sync.js",
   "js/company-storage.js",
+  "js/document-storage-scope.js",
   "js/billing-sync.js",
   "js/billing.js",
   "js/billing-core.js",

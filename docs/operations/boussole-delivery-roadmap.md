@@ -170,29 +170,54 @@ La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration édi
 3. Effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
 4. Ajouter la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.
 
-## 9. Gestion documentaire avancée — nouvelle tranche DEV
+## 9. Gestion documentaire avancée — PR #175
 
-Branche de travail : `feat/boussole-document-relations-media-dev`, créée au-dessus de `feat/boussole-editorial-admin-i18n-dev`. Cette tranche ne fusionne aucune PR précédente et ne déclenche aucune migration ni aucun déploiement.
+Branche : `feat/boussole-document-relations-media-dev`, empilée sur `feat/boussole-editorial-admin-i18n-dev` (base #174, commit `598e99ab04a1480e394b5a741ea568ea8bad47da`). La PR reste en brouillon et n'active aucune migration ni fonction Edge.
 
-### Socle serveur ajouté dans cette tranche
+### 9.1 Administration trilingue intégrée à l'interface
 
-- Migration additive `20261127150000_boussole_resource_governance.sql`.
-- RPC privilégiée `boussole_editor_manage_resource`, exécutable uniquement par `service_role`, avec identité d'acteur fournie par l'Edge Function après validation Auth.
-- Gestion trilingue des synonymes : création/mise à jour et désactivation, avec audit.
-- Gestion des relations entre documents : prérequis, suite, dépannage, contenus associés et remplacement ; les documents liés doivent appartenir au même espace, être publiés et les relations de type prérequis/suite refusent les cycles.
-- Compatibilité de versions : mise à jour des bornes minimales et maximales au niveau document et version, avec validation du format et journalisation.
-- Ressources médias : métadonnées trilingues de texte alternatif et légende, association à un document et éventuellement une version, liste MIME autorisée et limite de 20 Mio.
-- Bucket Storage privé `boussole-media`. Aucun accès public direct n'est créé ; aucun téléchargement signé ni téléversement depuis l'interface n'est activé dans cette première étape.
-- Table média protégée par RLS/FORCE RLS, sans privilèges directs d'écriture pour `anon` ou `authenticated`. Les métadonnées visibles publiquement sont limitées aux documents et versions publiés.
-- Extension de l'Edge Function `boussole-editor` avec l'action authentifiée `manage_resource`. Les permissions restent vérifiées dans la RPC côté serveur.
+- Synonymes FR/AR/EN : consultation, ajout/mise à jour par clé normalisée et désactivation ; accès réservé au rôle global publisher/admin.
+- Relations : prérequis, étape suivante, dépannage, contenu associé et remplacement ; sélection des documents publiés du même espace ; suppression contrôlée.
+- Compatibilité : édition des versions minimale et maximale au niveau document ou version.
+- Médias : formulaire trilingue pour textes alternatifs et légendes, association à une version, liste des ressources, lien signé temporaire et archivage.
+- Les contrôles d'interface ne constituent jamais une autorisation ; chaque écriture repasse par l'Edge Function et la RPC privilégiée.
+- Arabe RTL ; français et anglais LTR, selon les paramètres de l'interface déjà établis dans PR #174.
 
-### Limites et validations restant à réaliser
+### 9.2 Sécurité serveur et Storage
 
-- La migration n'est pas appliquée à MIZANE-DEV et la fonction Edge n'est pas déployée.
-- Aucun rôle réel n'est attribué et aucun média réel n'est téléversé.
-- L'interface d'administration des synonymes, relations, compatibilités et médias reste à intégrer.
-- Les procédures sécurisées de téléversement, contrôle du contenu, génération d'URL signées et suppression physique des objets Storage restent à développer avant d'ouvrir la gestion des médias.
-- Ajouter des tests transactionnels PostgreSQL avec identités synthétiques et `ROLLBACK`, tests de cycles, isolation globale/entreprise, droits révoqués, validation des MIME/tailles et tests d'API.
-- Exécuter ESLint, la suite complète, le workflow Preview et les advisors sur le commit exact avant de déclarer la tranche validée.
+- RPC `boussole_editor_manage_resource` limitée à `service_role`, avec identité d'acteur issue du JWT vérifié par Auth.
+- Autorisation d'envoi média vérifiée dans la RPC : rôle publisher/admin dans le périmètre, appartenance active à l'entreprise, document et version associés.
+- Bucket `boussole-media` privé, limite de 20 Mio et liste MIME explicite ; la migration réapplique la configuration privée si le bucket existe déjà.
+- Téléversement par URL signée à usage contrôlé ; le navigateur ne reçoit jamais la clé `service_role`.
+- Avant enregistrement, l'Edge Function vérifie l'existence, la taille, le type déclaré et la signature binaire du fichier (JPEG, PNG, WebP, AVIF, MP4, WebM ou PDF).
+- Si l'enregistrement échoue, l'objet téléversé est supprimé ; lors de l'archivage, les métadonnées sont désactivées puis l'objet Storage est supprimé. Un échec de nettoyage est signalé comme `cleanup_pending`.
+- Les liens de lecture des médias sont signés pour 15 minutes et délivrés seulement après contrôle d'accès éditorial au document.
+- Table média protégée par RLS/FORCE RLS ; aucun privilège direct d'écriture accordé à `anon` ou `authenticated`.
+- La clé étrangère composite met uniquement `version_id` à NULL lors de la suppression d'une version, sans tenter de mettre `document_id` à NULL.
 
-Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune modification de Supabase Production.
+### 9.3 Tests ajoutés et vérifications requises
+
+- Tests statiques sur la migration, la portée des rôles, la séparation de l'identité Auth, les synonymes, les relations, la compatibilité, les URL signées, les signatures MIME et le nettoyage Storage.
+- Le test Boussole éditorial est inclus dans `tests/run.mjs`.
+- À confirmer sur le commit final : ESLint, suite complète, CI GitHub, Preview, revue SQL, tests transactionnels PostgreSQL DEV avec identités synthétiques et `ROLLBACK`, et Supabase Advisors.
+- Les tests statiques ne remplacent pas les tests d'exécution Postgres/Storage. Aucune réussite de CI, Preview ou Advisors n'est revendiquée avant lecture des résultats du commit exact.
+
+### 9.4 Activation et limites
+
+- Migration `20261127150000_boussole_resource_governance.sql` non appliquée.
+- Fonction Edge `boussole-editor` non déployée.
+- Aucun rôle réel attribué ; aucun contenu réel ni média réel créé.
+- La lecture de médias par les utilisateurs finaux du lecteur documentaire reste à raccorder à une voie de diffusion signée compatible avec les règles de visibilité du lecteur ; les liens signés actuellement exposés sont réservés à l'interface éditoriale authentifiée.
+- Aucune fusion automatique des PR #170 à #175.
+- Aucun changement de `main`, GitHub Pages Production ou Supabase Production.
+
+## 10. Prochaine séquence de validation — PR #175
+
+1. Contrôle de cohérence final de la migration, de la RPC et de l'Edge Function.
+2. ESLint et suite complète sur le commit exact.
+3. Tests transactionnels DEV avec rôles et identités synthétiques, relations cycliques, révocation, upload MIME valide/invalide, dépassement de taille, suppression Storage et `ROLLBACK`.
+4. Preview et vérification des interfaces FR/AR/EN.
+5. Supabase Advisors et revue des privilèges/RLS/Storage.
+6. Mise à jour de la PR avec les résultats observés ; conserver le brouillon tant que les étapes précédentes ne sont pas toutes validées.
+
+L'application de la migration DEV et le déploiement de la fonction Edge DEV restent des opérations séparées, à exécuter dans l'ordre et après validation explicite. Production et `main` restent hors périmètre.

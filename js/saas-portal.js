@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
 import { syncAccounting, restoreAccountingFromCloud } from "./accounting-sync.js";
-import { bindCompanyStorage, getCompanyStorageStatus } from "./company-storage.js";
+import { bindCompanyStorage, getCompanyStorageStatus, getCompanySessionLock, lockCompanyStorage, unlockCompanyStorage } from "./company-storage.js";
 
 const root = document.querySelector("#portal");
 const toastNode = document.querySelector("#portal-toast");
@@ -175,7 +175,18 @@ async function refresh(){
  if(ids.length){const result=await supabase.from("companies").select("id,legal_name,country_code,base_currency,accounting_standard,timezone").in("id",ids);if(result.error)throw result.error;companies=result.data||[]}
  const byId=new Map(companies.map(c=>[c.id,c]));
  memberships=(rows||[]).filter(m=>byId.has(m.company_id)).map(m=>({company:byId.get(m.company_id),role:m.role,status:m.status}));
- if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
+ const sessionLock=getCompanySessionLock();
+ if(sessionLock){
+  const lockedMembership=memberships.find(m=>m.company.id===sessionLock.companyId&&m.status==="active");
+  if(sessionLock.userId!==session.user.id||!lockedMembership||!unlockCompanyStorage(session.user.id,sessionLock.companyId)){
+   activeCompanyId="";
+   localStorage.removeItem(ACTIVE_COMPANY_KEY);
+   localStorage.removeItem(ACTIVE_USER_KEY);
+   throw new Error("Cette comptabilité locale est verrouillée. Reconnectez-vous avec le compte qui l’utilisait avant la déconnexion et qui possède toujours l’accès à cette entreprise.");
+  }
+  activeCompanyId=sessionLock.companyId;
+ }else if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
+ localStorage.setItem(ACTIVE_USER_KEY,session.user.id);
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
  accountingCloudReady = false;
  if(activeCompanyId){
@@ -281,7 +292,7 @@ root.addEventListener("click",async(e)=>{
   if(action==="show-work"){await loadWorkspace("work");return;}
   if(action==="show-history"){await loadWorkspace("history");return;}
   if(action==="forgot"){const email=root.querySelector("#email")?.value.trim();if(!email)throw new Error("Saisissez d'abord votre adresse e-mail.");const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;toast("E-mail de réinitialisation envoyé si le compte existe.");}
-  if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView();}
+  if(action==="logout"){lockCompanyStorage(session?.user?.id);const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView();}
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
@@ -375,6 +386,8 @@ async function start(){
  if(!SUPABASE_URL.startsWith("https://")||SUPABASE_URL.includes("VOTRE-PROJET")||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY.includes("VOTRE_CLE")){configError();return}
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
  supabase.auth.onAuthStateChange((event,next)=>{
+  const previousUserId=session?.user?.id;
+  if(!next&&previousUserId)lockCompanyStorage(previousUserId);
   session=next;
   if(event==="PASSWORD_RECOVERY" || (recoveryLinkDetected && next)){passwordRecoveryMode=true;recoveryView();return}
   if(!session){passwordRecoveryMode=false;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView()}

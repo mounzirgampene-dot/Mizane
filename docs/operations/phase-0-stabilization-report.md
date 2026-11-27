@@ -3,7 +3,7 @@
 **Date de vérification :** 27 novembre 2026  
 **Dépôt :** `mounzirgampene-dot/Mizane`  
 **Branche de référence :** `feat/stock-integrated-dev`  
-**Commit DEV validé après Phase 0 et correction hors connexion :** `d08ab6d7e5cc967de59e0547f43f641dfbf8a996`  
+**Commit DEV contrôlé avant cette actualisation :** `81a234125c1cda488b5de79c57366e16dfa3b259`  
 **Projet Supabase contrôlé :** MIZANE-DEV (`rudsovhdvinvyrwjamfo`)  
 **Périmètre :** DEV uniquement. Aucune intervention sur Supabase Production.
 
@@ -46,6 +46,9 @@ Le job de déploiement GitHub Pages est conditionné à un déclenchement manuel
 - PR #162 : fusionnée exclusivement vers `feat/stock-integrated-dev`, jamais vers `main`.
 - PR #163 : documentation de référence Boussole et rapport Phase 0 fusionnés vers DEV.
 - PR #164 : précache hors connexion corrigé et fusionné vers DEV.
+- PR #165 : preuves de stabilisation actualisées et fusionnées vers DEV.
+- PR #166 : modèle de données et règles d'accès Boussole fusionnés vers DEV.
+- PR #167 : isolation des coffres documentaires IndexedDB fusionnée vers DEV.
 
 ## 4. Réconciliation de l'historique des migrations
 
@@ -57,7 +60,7 @@ Inventaire observé :
 - Fichiers locaux sans correspondance de nom : **0**.
 - Entrées Supabase sans fichier correspondant dans la branche : **4**.
 
-La correspondance par nom est informative ; elle ne prouve pas à elle seule l'identité du contenu SQL. Les horodatages Git et Supabase divergent sur plusieurs migrations. Il faut donc comparer les contenus et leurs empreintes avant de considérer l'historique comme entièrement réconcilié.
+La comparaison effectuée après normalisation des préfixes de version confirme que les 71 fichiers ont un nom correspondant dans l'historique DEV et que quatre entrées Supabase n'ont aucun fichier correspondant dans la branche. La correspondance par nom ne prouve pas l'identité du contenu SQL : les horodatages divergent et les contenus doivent encore être comparés par empreinte avant toute réconciliation définitive. Aucune migration n'a été réappliquée.
 
 ### 4.1. Entrées présentes dans Supabase DEV sans fichier correspondant
 
@@ -190,12 +193,37 @@ Les constats ci-dessus sont des alertes de conseil, pas la preuve d'une fuite ou
 | P2 | Index des clés étrangères de notifications | Mesurer les requêtes et ajouter les index seulement si justifiés |
 | P2 | Index signalés inutilisés | Ne pas supprimer sans analyse de charge |
 
-## 7. Conclusion
+## 8. Conclusion
 
-La barrière P0 de synchronisation multi-entreprises est intégrée à DEV et les contrôles CI associés sont réussis. La réconciliation des migrations reste documentaire et non destructive. Les alertes Supabase sont consignées sans modification prématurée des politiques, fonctions ou index. La suite doit traiter les coffres IndexedDB, la preuve par empreintes des migrations et la revue ciblée des fonctions privilégiées.
+La barrière P0 de synchronisation multi-entreprises et l'isolation IndexedDB des justificatifs sont intégrées à DEV. Les contrôles CI du commit `81a234125c1cda488b5de79c57366e16dfa3b259` ont réussi. La réconciliation des migrations reste documentaire et non destructive. Les alertes Supabase sont consignées sans modification prématurée des politiques, fonctions ou index.
 
-## 7. Isolation des coffres documentaires locaux — correction proposée
+## 7. Isolation des coffres documentaires locaux — intégrée par PR #167
 
-La PR #167 ajoute une portée IndexedDB distincte pour les justificatifs comptables et fiscaux : un coffre par couple utilisateur/entreprise en mode SaaS et un coffre par utilisateur en mode local. En présence d’une entreprise active, l’accès au coffre local est refusé si l’association utilisateur/entreprise vérifiée par `company-storage.js` est absente ou incohérente.
+La PR #167 a intégré une portée IndexedDB distincte pour les justificatifs comptables et fiscaux : un coffre par couple utilisateur/entreprise en mode SaaS et un coffre par utilisateur en mode local. En présence d’une entreprise active, l’accès au coffre local est refusé si l’association utilisateur/entreprise vérifiée par `company-storage.js` est absente ou incohérente.
 
 Les anciennes bases IndexedDB non cloisonnées (`mizane_accounting_documents_v1` et `mizane_tax_evidence_v1`) ne sont ni supprimées ni automatiquement réattribuées : leur contenu ne peut pas être attribué de manière fiable à une entreprise. Elles restent intactes pour une procédure de récupération explicite ultérieure. Les nouveaux coffres ne lisent pas ces anciennes bases.
+
+## 9. Revue Supabase DEV du 27 novembre 2026
+
+### 9.1. Tables RLS sans politique
+
+Les trois tables `public.accounting_sync_operations`, `public.company_billing` et `public.company_billing_sync_operations` ont RLS et FORCE RLS activés, aucune politique, et aucun privilège SELECT/INSERT/UPDATE/DELETE accordé à `anon` ou `authenticated` selon `has_table_privilege`. L'alerte Advisor `rls_enabled_no_policy` est donc informative dans l'état observé : aucun accès Data API direct n'est accordé à ces rôles. Toute évolution doit préserver cette fermeture et documenter les accès backend nécessaires.
+
+### 9.2. Fonctions SECURITY DEFINER
+
+Les quatre fonctions signalées (`create_accounting_alert`, `create_company`, `manage_accounting_period`, `review_accounting_notification`) sont exécutables par `authenticated`, mais leur définition a été inspectée : elles vérifient toutes `auth.uid()`, ont un `search_path` vide et appliquent des contrôles de rôle/appartenance adaptés à l'opération. L'alerte Advisor est conservée pour revue continue ; aucun changement de privilège n'a été appliqué car ces RPC sont utilisées par l'application.
+
+### 9.3. Autres alertes
+
+- Protection des mots de passe compromis Supabase Auth : désactivée selon Advisor. À évaluer avant activation, car elle peut refuser certains nouveaux mots de passe ; aucun paramètre Auth n'a été modifié.
+- Deux clés étrangères de `accounting_notifications` sans index couvrant : à mesurer avant ajout.
+- 35 index signalés inutilisés : aucune suppression sans analyse de charge.
+- Health Advisor : aucune alerte remontée lors du contrôle.
+
+### 9.4. Changement Supabase Data API
+
+Depuis le 30 octobre 2026, les nouvelles tables publiques ne sont plus automatiquement exposées au Data API. Les futures tables Boussole devront recevoir explicitement les privilèges strictement nécessaires, puis des politiques RLS adaptées ; l'exposition API et les règles de lignes seront testées séparément. Référence : https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically.
+
+## 10. Mise à jour du précache
+
+La PR #168 incrémente le cache du service worker à `mizane-v114` et actualise les quatre assertions de version correspondantes. Le module `js/document-storage-scope.js` est précaché pour permettre l'ouverture hors connexion des coffres cloisonnés.

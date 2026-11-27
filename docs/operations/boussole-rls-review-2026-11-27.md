@@ -25,7 +25,7 @@ La migration sépare les politiques publiques globales des politiques profession
 - Les politiques `anon` portent seulement sur les documents globaux publiés, les versions correspondantes, les synonymes actifs et les relations entre documents globaux publiés.
 - Les politiques `authenticated` appellent le helper privé uniquement pour les documents d'entreprise et les relations contenant des documents d'entreprise.
 - Les préférences sont filtrées par `user_id = auth.uid()`.
-- Les événements de consentement sont insérables et lisibles par leur propriétaire ; aucun privilège UPDATE ou DELETE n'est accordé.
+- Les événements de consentement sont insérables et lisibles par leur propriétaire ; aucun privilège UPDATE ou DELETE n'est accordé. L'insertion est limitée aux colonnes métier : `id` et `created_at` restent générés par PostgreSQL, afin qu'un client ne puisse pas antidater ni dater dans le futur un événement de consentement.
 - RLS et FORCE RLS sont prévus sur les six tables.
 - Les privilèges Data API sont explicites, conformément au changement Supabase effectif sur les projets existants depuis le 30 octobre 2026.
 

@@ -30,6 +30,10 @@ export function unlockCompanyStorage(userId, companyId) {
 }
 
 export function getCompanyStorageStatus() {
+  const lock = getCompanySessionLock();
+  if (lock?.companyId && lock?.userId) {
+    return { ok: false, reason: "session-locked", companyId: lock.companyId, userId: lock.userId, lockedAt: lock.lockedAt || null };
+  }
   const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
   if (!companyId) return { ok: true, mode: "local" };
 

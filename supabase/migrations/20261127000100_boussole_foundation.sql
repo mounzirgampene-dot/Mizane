@@ -201,6 +201,8 @@ revoke all on public.boussole_documents,public.boussole_document_versions,
 grant select on public.boussole_documents,public.boussole_document_versions,
   public.boussole_document_relations,public.boussole_search_synonyms to anon,authenticated;
 grant select,insert,update on public.boussole_user_preferences to authenticated;
-grant select,insert on public.boussole_consent_events to authenticated;
+grant select on public.boussole_consent_events to authenticated;
+grant insert (user_id,consent_type,purpose,policy_version,decision,scope)
+  on public.boussole_consent_events to authenticated;
 
 commit;

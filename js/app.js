@@ -178,11 +178,12 @@ async function start() {
   const roleVerified = await refreshCompanyRole();
   const activeCompanyId = localStorage.getItem("mizane_active_company_v1");
   const storageStatus = getCompanyStorageStatus();
-  if (activeCompanyId && (!roleVerified || !storageStatus.ok)) {
+  if (storageStatus.reason === "session-locked" || (activeCompanyId && (!roleVerified || !storageStatus.ok))) {
     $nav.innerHTML = "";
     document.getElementById("work-sidebar").hidden = true;
     document.getElementById("company-tag").textContent = "Espace professionnel";
-    $app.innerHTML = `<section class="panel"><p class="eyebrow">Protection des données</p><h1>Vérification de l’espace nécessaire</h1><p>Les données locales de cet appareil ne sont pas encore associées de manière vérifiée à l’entreprise sélectionnée, ou votre appartenance n’a pas pu être confirmée. Pour éviter qu’une comptabilité d’une autre entreprise soit affichée ou synchronisée, MIZANE a bloqué temporairement cet espace sur cet appareil.</p><p>Ouvrez l’espace professionnel, puis choisissez <strong>Récupérer les données du cloud sur cet appareil</strong> (une sauvegarde locale sera téléchargée) ou effectuez l’import initial si cet espace cloud n’a encore aucune comptabilité.</p><div class="actions"><a class="button" href="espace.html">Ouvrir l’espace professionnel</a><a class="button secondary" href="index.html">Réessayer</a></div></section>`;
+    const locked = storageStatus.reason === "session-locked";
+    $app.innerHTML = `<section class="panel"><p class="eyebrow">Protection des données</p><h1>${locked ? "Comptabilité locale verrouillée" : "Vérification de l’espace nécessaire"}</h1><p>${locked ? "Vous avez été déconnecté. Les données comptables restent conservées sur cet appareil, mais leur accès est verrouillé jusqu’à une nouvelle connexion avec le compte autorisé et la vérification de l’entreprise associée." : "Les données locales de cet appareil ne sont pas encore associées de manière vérifiée à l’entreprise sélectionnée, ou votre appartenance n’a pas pu être confirmée. Pour éviter qu’une comptabilité d’une autre entreprise soit affichée ou synchronisée, MIZANE a bloqué temporairement cet espace sur cet appareil."}</p><p>Ouvrez l’espace professionnel et reconnectez-vous avec le compte autorisé. Aucune donnée locale ne sera supprimée.</p><div class="actions"><a class="button" href="espace.html">Ouvrir l’espace professionnel</a><a class="button secondary" href="index.html">Réessayer</a></div></section>`;
     return;
   }
   const hash = location.hash.replace("#", "");

@@ -178,8 +178,10 @@ async function refresh(){
  const sessionLock=getCompanySessionLock();
  if(sessionLock){
   const lockedMembership=memberships.find(m=>m.company.id===sessionLock.companyId&&m.status==="active");
-  const canUnlock=sessionLock.userId===session.user.id&&lockedMembership&&["admin","accountant"].includes(lockedMembership.role);
-  if(!canUnlock||!unlockCompanyStorage(session.user.id,sessionLock.companyId)){
+  const canUnlock=!!lockedMembership&&["admin","accountant"].includes(lockedMembership.role);
+  // L'autorisation active sur cette entreprise suffit, même si un autre
+  // administrateur/comptable reprend le compte après la déconnexion.
+  if(!canUnlock||!unlockCompanyStorage(session.user.id,sessionLock.companyId,{authorizedCompanyMember:true})){
    activeCompanyId="";
    localStorage.removeItem(ACTIVE_COMPANY_KEY);
    localStorage.removeItem(ACTIVE_USER_KEY);

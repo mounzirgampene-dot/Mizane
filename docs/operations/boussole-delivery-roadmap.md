@@ -118,11 +118,11 @@ La branche `feat/boussole-editorial-governance-dev` ajoute une première couche 
 - Une nouvelle relecture ne masque pas la dernière version déjà publiée.
 - L'attribution des rôles reste une opération d'administration privilégiée, hors interface utilisateur de cette tranche.
 
-**État de validation :** code ajouté à la branche de travail ; migration non appliquée à Supabase DEV, fonction Edge non déployée, aucun rôle attribué et aucun document créé. Les tests CI doivent encore être exécutés sur le commit final. Cette tranche ne modifie pas Production ni `main`.
+**État de validation :** CI qualité et workflow de vérification Preview réussis sur le commit `a6e7ab1a4371418f641da6c4ff290683a0a35842`. Le scénario transactionnel a exécuté la migration et les transitions sur MIZANE-DEV avec des identités, une entreprise et des rôles synthétiques, puis `ROLLBACK` ; résultat : PASS. Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000`. La migration n'est donc pas appliquée, la fonction Edge n'est pas déployée, aucun rôle réel n'est attribué et aucun document réel n'est créé. Cette tranche ne modifie pas Production ni `main`.
 
 ### Étapes avant activation
-1. Revue SQL et test transactionnel réel sur DEV avec rôles synthétiques, sans persistance des fixtures.
-2. Vérification des droits d'exécution de la RPC, des refus sans rôle, des rôles révoqués et de la séparation auteur/vérificateur/éditeur.
-3. Application de la migration DEV uniquement après validation du SQL et rapprochement exact de l'historique.
-4. Déploiement de `boussole-editor` sur DEV seulement après migration et CI réussies.
+1. Revue SQL et test transactionnel réel sur DEV avec rôles synthétiques, sans persistance des fixtures — **PASS**.
+2. Vérification des droits d'exécution de la RPC, des refus sans rôle, des rôles révoqués et de la séparation auteur/vérificateur/éditeur — **PASS**.
+3. Application de la migration DEV uniquement après revue finale, CI et rapprochement exact de l'historique — en attente.
+4. Déploiement de `boussole-editor` sur DEV seulement après migration et CI réussies — en attente.
 5. Interface d'administration éditoriale et procédure d'attribution explicite des rôles dans un lot distinct.

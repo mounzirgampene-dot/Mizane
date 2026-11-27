@@ -17,12 +17,18 @@
       <small id="company-tag"></small>
       <button id="boussole-toggle" class="secondary small" type="button" aria-controls="boussole-panel" aria-expanded="false">Boussole</button>
       <button id="academy-toggle" class="secondary small" type="button" aria-haspopup="dialog">Académie</button>
+      <button id="boussole-editor-toggle" class="secondary small" type="button" hidden aria-haspopup="dialog">Administration Boussole</button>
       <button id="theme-toggle" class="secondary small" aria-label="Basculer le mode sombre" title="Mode sombre / clair" style="margin-left:auto">🌙</button>
     </div>
     <nav id="main-nav" aria-label="Navigation principale"></nav>
   </header>
 
   <main class="workspace"><aside id="work-sidebar" hidden aria-label="Historique et travaux"></aside><section id="app" aria-live="polite"></section></main>
+
+  <dialog id="boussole-editor-dialog" class="modal boussole-editor-dialog" aria-labelledby="boussole-editor-title">
+    <div class="boussole-editor-dialog-head"><h2 id="boussole-editor-title">Administration éditoriale</h2><button id="boussole-editor-close" class="secondary small" type="button">Fermer</button></div>
+    <div id="boussole-editor-body"></div>
+  </dialog>
 
   <div id="toast" class="toast hidden"></div>
 

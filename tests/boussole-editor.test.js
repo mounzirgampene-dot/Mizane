@@ -20,6 +20,8 @@ assert.match(migration, /Les versions française et arabe doivent être approuv�
 assert.match(migration, /current_published_version is null then 'review' else status/);
 assert.match(migration, /document_archived/);
 assert.match(migration, /document_restored/);
+assert.match(migration, /Un document archivé doit être restauré/);
+assert.match(migration, /reviewed_by=null,reviewed_at=null,approved_by=null,approved_at=null,published_at=null/);
 
 assert.match(edge, /adminClient\.auth\.getUser\(jwt\)/);
 assert.match(edge, /p_actor_id: authData\.user\.id/);

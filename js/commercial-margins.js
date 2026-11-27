@@ -3,6 +3,7 @@ import { store, $app, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock } from "./cloud-sync.js";
 import { buildCommercialMarginReport } from "./commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "./commercial-performance-core.js";
+import { renderBarChart, renderLineChart } from "./charts.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => today().slice(0, 8) + "01";
@@ -49,9 +50,16 @@ export async function viewCommercialMargins() {
         return '<section class="card"><h2>Classement — '+esc(currency)+'</h2>'+rankingTable(ranking.byMargin,"Articles les plus rentables")+rankingTable(ranking.byRevenue,"Articles au chiffre d’affaires le plus élevé")+rankingTable(ranking.byMarginRate,"Meilleurs taux de marge")+'</section>';
       }).join('');
       const trendRows = performance.monthly.length ? '<div class="table-wrap"><table><thead><tr><th>Mois</th><th>Devise</th><th class="num">CA HT</th><th class="num">Coût</th><th class="num">Marge</th><th class="num">Taux</th><th class="num">Qté</th><th class="num">Lignes incomplètes</th></tr></thead><tbody>'+performance.monthly.map(item=>'<tr><td>'+item.month+'</td><td>'+esc(item.currency)+'</td><td class="num">'+format(item.revenue,item.currency)+'</td><td class="num">'+format(item.cost,item.currency)+'</td><td class="num">'+format(item.margin,item.currency)+'</td><td class="num">'+(item.marginRate==null?'—':item.marginRate.toFixed(2)+' %')+'</td><td class="num">'+item.units+'</td><td class="num">'+item.incompleteLines+'</td></tr>').join('')+'</tbody></table></div>' : '<p class="muted">Aucune donnée mensuelle sur la période sélectionnée.</p>';
+      const chartsHtml = currencies.map(currency => {
+        const monthly = performance.monthly.filter(item => item.currency === currency).map(item => ({ label: item.month, revenue: item.revenue, cost: item.cost, margin: item.margin }));
+        return renderLineChart("Évolution commerciale — " + currency, monthly, [{ key: "revenue", label: "Chiffre d’affaires" }, { key: "cost", label: "Coût" }, { key: "margin", label: "Marge" }], value => format(value, currency));
+      }).join("") + currencies.map(currency => {
+        const top = report.rows.filter(row => row.currency === currency).sort((a,b) => b.margin - a.margin).slice(0,8).map(row => ({ label: row.productName, margin: row.margin }));
+        return renderBarChart("Articles par marge brute — " + currency, top, [{ key: "margin", label: "Marge brute" }], value => format(value, currency));
+      }).join("");
       $app.querySelector("#cm-results").innerHTML =
         (totalsByCurrency.length ? '<div class="grid cols-3">'+totalsByCurrency.map(item=>'<section class="card kpi"><div class="value">'+format(item.revenue,item.currency)+'</div><div class="label">Chiffre d’affaires HT — '+item.currency+'</div><div class="muted">Coût : '+format(item.cost,item.currency)+' · Marge : '+format(item.margin,item.currency)+'</div></section>').join('')+'</div>' : '') +
-        '<section class="card"><h2>Évolution mensuelle</h2>'+trendRows+'</section>' + performanceHtml + table + (report.totals.missingCostLines ? '<p class="errors">'+report.totals.missingCostLines+' ligne(s) sans coût de sortie associé : marge incomplète, à contrôler.</p>' : '<p class="ok-msg">Toutes les lignes analysées disposent d’un coût de sortie associé.</p>') +
+        chartsHtml + '<section class="card"><h2>Évolution mensuelle — données détaillées</h2>'+trendRows+'</section>' + performanceHtml + table + (report.totals.missingCostLines ? '<p class="errors">'+report.totals.missingCostLines+' ligne(s) sans coût de sortie associé : marge incomplète, à contrôler.</p>' : '<p class="ok-msg">Toutes les lignes analysées disposent d’un coût de sortie associé.</p>') +
         '<p class="muted">Les montants sont présentés dans la devise comptable de chaque facture convertie. Les devises ne sont jamais additionnées entre elles. Les prestations non liées au stock ne sont pas incluses.</p>';
     };
     $app.innerHTML = '<h1>Coûts d’achat et marges commerciales</h1><section class="card"><div class="row"><div><label for="cm-start">Du</label><input id="cm-start" type="date" value="'+monthStart()+'"></div><div><label for="cm-end">Au</label><input id="cm-end" type="date" value="'+today()+'"></div><div class="nogrow"><button id="cm-refresh">Analyser</button></div></div></section><div id="cm-results"></div>';

@@ -39,7 +39,7 @@ export function viewAnalytical() {
     return '<tr><td>' + esc(entry?.date || "—") + '</td><td>' + esc(line?.account || "—") + '</td><td>' + esc(center?.name || "Centre supprimé") + '</td><td>' + esc(project?.name || "—") + '</td><td>' + (item.costNature==="direct"?"Directe":item.costNature==="indirect"?"Indirecte":(types[String(line?.account)]==="income"?"Produit":"Non qualifiée")) + '</td><td class="num">' + esc(item.percentage) + ' %</td><td><button type="button" class="danger small" data-aa-delete="' + esc(item.id) + '">Retirer</button></td></tr>';
   }).join("");
   const analyticalChartsHtml = renderBarChart("Produits et charges par centre analytique", report.rows.map(row => ({ label: row.name, income: row.income, expenses: row.expenses })), [{ key: "income", label: "Produits" }, { key: "expenses", label: "Charges" }], value => money(value)) +
-    renderBarChart("Résultat par centre analytique", report.rows.map(row => ({ label: row.name, result: Math.max(0, row.result) })), [{ key: "result", label: "Résultat positif" }], value => money(value));
+    renderLineChart("Résultat par centre analytique", report.rows.map(row => ({ label: row.name, result: row.result })), [{ key: "result", label: "Résultat" }], value => money(value));
   $app.innerHTML = `
     <h1>Comptabilité analytique</h1>
     <p class="muted">Exercice : ${esc(start)} → ${esc(end)}. Les affectations analytiques sont distinctes des écritures générales : aucune écriture comptable n'est modifiée.</p>

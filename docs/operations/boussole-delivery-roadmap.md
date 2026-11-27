@@ -126,3 +126,39 @@ La branche `feat/boussole-editorial-governance-dev` ajoute une première couche 
 3. Application de la migration DEV uniquement après revue finale, CI et rapprochement exact de l'historique — en attente.
 4. Déploiement de `boussole-editor` sur DEV seulement après migration et CI réussies — en attente.
 5. Interface d'administration éditoriale et procédure d'attribution explicite des rôles dans un lot distinct.
+
+
+## 8. Administration éditoriale et troisième langue — PR #174 en préparation
+
+La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration éditoriale et le support anglais de bout en bout dans les couches livrées par cette tranche.
+
+### Langues
+- Français (`fr`), arabe (`ar`) et anglais (`en`) sont les trois locales autorisées pour les versions documentaires et les synonymes.
+- Les préférences d'interface et de réponse acceptent également les trois langues.
+- Les 16 articles du guide local disposent maintenant d'un contenu anglais.
+- L'Académie possède une traduction anglaise des 10 parcours, 30 leçons et 20 évaluations ; les corrections et explications sont également traduites.
+- Le lecteur cloud recherche la version publiée dans la langue active.
+- L'arabe conserve RTL ; français et anglais utilisent LTR.
+
+### Administration
+- Interface dédiée avec liste des documents, sélection des éditions et des langues, création de brouillons, édition Markdown, aperçu texte et suivi des statuts.
+- Files d'action distinctes selon les rôles author, reviewer et publisher ; l'interface n'accorde aucun droit.
+- Liste et lecture des brouillons via Edge Function après authentification Auth et vérification serveur du rôle et de l'appartenance active à l'entreprise.
+- Aucun accès direct du navigateur aux tables éditoriales et aucune clé service_role côté client.
+- La publication exige trois versions approuvées (FR, AR et EN) partageant le même numéro d'édition.
+- Les traductions d'une édition partagent un numéro ; les versions suivantes utilisent le numéro suivant après la dernière publication.
+
+### Activation non effectuée
+- La migration `20261127120000_boussole_editorial_governance.sql` reste non appliquée.
+- La migration additive `20261127133000_boussole_english_locale.sql` élargit les contraintes de langue sans modifier les données existantes ; elle reste non appliquée.
+- La fonction Edge `boussole-editor` n'est pas déployée.
+- Aucun rôle éditorial réel n'est attribué ; l'interface reste masquée tant qu'aucun rôle autorisé n'est détecté.
+- Aucun contenu réel n'est créé ou publié par cette PR.
+- Les migrations doivent être testées ensemble dans une transaction sur MIZANE-DEV, avec trois langues et un `ROLLBACK`, puis rapprochées de l'historique avant activation.
+
+### Suite
+1. Vérifier CI, tests et Preview de la PR #174.
+2. Exécuter le test transactionnel trilingue sur MIZANE-DEV sans persistance.
+3. Revoir les droits de lecture de la fonction Edge et les contrôles d'appartenance.
+4. Après livraison ordonnée des PR #170 à #174, appliquer les migrations DEV dans l'ordre, déployer la fonction Edge DEV et effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
+5. Ajouter ensuite la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.

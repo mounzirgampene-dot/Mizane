@@ -79,7 +79,7 @@ export function viewBudget() {
   const incomeChartRows = report.ok ? report.months.map(month => ({ label: month.key, budget: month.budgetIncome, actual: month.actualIncome })) : [];
   const budgetChartsHtml = renderLineChart("Charges — budget et réalisé", monthlyChartRows, [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value)) +
     renderLineChart("Produits — budget et réalisé", incomeChartRows, [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value)) +
-    renderBarChart("Résultat budgété et réalisé", [{ label: "Exercice", budget: total.netBudget, actual: total.netActual }], [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value));
+    renderLineChart("Résultat budgété et réalisé", [{ label: "Exercice", budget: total.netBudget, actual: total.netActual }], [{ key: "budget", label: "Budget" }, { key: "actual", label: "Réalisé" }], value => money(value));
   const options = accounts.map(item => "<option value=\"" + esc(item.code) + "\">" + esc(item.code + " — " + item.label) + " (" + (item.type === "expense" ? "Charge" : "Produit") + ")</option>").join("");
   $app.innerHTML = `
     <h1>Gestion budgétaire</h1>

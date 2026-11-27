@@ -169,3 +169,30 @@ La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration édi
 2. Après livraison ordonnée des PR #170 à #174, appliquer les migrations DEV dans l'ordre et déployer la fonction Edge DEV.
 3. Effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
 4. Ajouter la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.
+
+## 9. Gestion documentaire avancée — nouvelle tranche DEV
+
+Branche de travail : `feat/boussole-document-relations-media-dev`, créée au-dessus de `feat/boussole-editorial-admin-i18n-dev`. Cette tranche ne fusionne aucune PR précédente et ne déclenche aucune migration ni aucun déploiement.
+
+### Socle serveur ajouté dans cette tranche
+
+- Migration additive `20261127150000_boussole_resource_governance.sql`.
+- RPC privilégiée `boussole_editor_manage_resource`, exécutable uniquement par `service_role`, avec identité d'acteur fournie par l'Edge Function après validation Auth.
+- Gestion trilingue des synonymes : création/mise à jour et désactivation, avec audit.
+- Gestion des relations entre documents : prérequis, suite, dépannage, contenus associés et remplacement ; les documents liés doivent appartenir au même espace, être publiés et les relations de type prérequis/suite refusent les cycles.
+- Compatibilité de versions : mise à jour des bornes minimales et maximales au niveau document et version, avec validation du format et journalisation.
+- Ressources médias : métadonnées trilingues de texte alternatif et légende, association à un document et éventuellement une version, liste MIME autorisée et limite de 20 Mio.
+- Bucket Storage privé `boussole-media`. Aucun accès public direct n'est créé ; aucun téléchargement signé ni téléversement depuis l'interface n'est activé dans cette première étape.
+- Table média protégée par RLS/FORCE RLS, sans privilèges directs d'écriture pour `anon` ou `authenticated`. Les métadonnées visibles publiquement sont limitées aux documents et versions publiés.
+- Extension de l'Edge Function `boussole-editor` avec l'action authentifiée `manage_resource`. Les permissions restent vérifiées dans la RPC côté serveur.
+
+### Limites et validations restant à réaliser
+
+- La migration n'est pas appliquée à MIZANE-DEV et la fonction Edge n'est pas déployée.
+- Aucun rôle réel n'est attribué et aucun média réel n'est téléversé.
+- L'interface d'administration des synonymes, relations, compatibilités et médias reste à intégrer.
+- Les procédures sécurisées de téléversement, contrôle du contenu, génération d'URL signées et suppression physique des objets Storage restent à développer avant d'ouvrir la gestion des médias.
+- Ajouter des tests transactionnels PostgreSQL avec identités synthétiques et `ROLLBACK`, tests de cycles, isolation globale/entreprise, droits révoqués, validation des MIME/tailles et tests d'API.
+- Exécuter ESLint, la suite complète, le workflow Preview et les advisors sur le commit exact avant de déclarer la tranche validée.
+
+Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune modification de Supabase Production.

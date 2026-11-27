@@ -290,7 +290,13 @@ function renderNewDocument() {
 async function handleAction(action) {
   const c = copy();
   try {
-    if (action === "reload") { await loadDocuments(); return; }
+    if (action === "reload") {
+      const previous = activeScope;
+      availableScopes = await probeScopes();
+      activeScope = availableScopes.find(scope => scope.type === previous?.type && scope.companyId === previous?.companyId) || availableScopes[0] || null;
+      if (!activeScope) { body.replaceChildren(make("p", "boussole-editor-message", c.access)); return; }
+      await loadDocuments(); return;
+    }
     if (action === "new") { renderNewDocument(); return; }
     if (action === "cancel") { render(); return; }
     if (action === "open") { await loadDocument(eventDocumentId); return; }
@@ -351,8 +357,12 @@ export async function initBoussoleEditor() {
     dialog.querySelector("#boussole-editor-title").textContent = copy().title;
     closeButton.textContent = copy().close;
     dialog.showModal();
-    try { await loadDocuments(); }
-    catch (error) { body.replaceChildren(make("p", "boussole-editor-message", error.message || copy().error)); }
+    try {
+      availableScopes = await probeScopes();
+      if (!availableScopes.length) { body.replaceChildren(make("p", "boussole-editor-message", copy().access)); return; }
+      activeScope = availableScopes[0];
+      await loadDocuments();
+    } catch (error) { body.replaceChildren(make("p", "boussole-editor-message", error.message || copy().error)); }
   });
   body.addEventListener("click", async event => {
     const target = event.target.closest("[data-editor-action]");

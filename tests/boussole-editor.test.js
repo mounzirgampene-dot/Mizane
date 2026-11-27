@@ -72,5 +72,5 @@ assert.ok(resourceMigration.includes("compatibility_updated"));
 assert.ok(edge.includes('"manage_resource"'));
 assert.ok(edge.includes('adminClient.rpc("boussole_editor_manage_resource"'));
 assert.ok(edge.includes("supportedResourceActions"));
-assert.ok(!/p_actor_id:\\s*body\\./.test(edge));
+assert.ok(!edge.includes("p_actor_id: body."));
 console.log("Boussole resources: synonym, relation, media and compatibility governance statically checked.");

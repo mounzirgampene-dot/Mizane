@@ -13,7 +13,7 @@ assert.match(guide,/export function setBoussoleContext/);
 assert.match(guide,/id:"notifications"/);
 assert.match(guide,/id:"periods"/);
 assert.match(guide,/id:"exports"/);
-assert.equal(normalizeBoussoleQuery("إِعدادُ الْمُؤَسَّسَة"),"اعداد المؤسسة");
+assert.equal(normalizeBoussoleQuery("إِعدادُ الْمُؤَسَّسَة"),"اعداد الموسسة");
 assert.equal(matchesBoussoleQuery("Gestion de stock et inventaire","stock inventaire"),true);
 assert.equal(matchesBoussoleQuery("Gestion de stock","facture vente"),false);
 assert.equal(matchesBoussoleQuery("إعداد المؤسسة","اعداد المؤسسة"),true);

@@ -1996,7 +1996,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/Confirmer la commande/);
   assert.match(purchasesUiSource,/origin:"stock_replenishment"/);
   assert.ok(serviceWorkerSource.includes('"js/stock-replenishment.js"'));
-  assert.match(serviceWorkerSource,/mizane-v122/g);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v\\d+"/);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
@@ -2206,7 +2206,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v122/);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v\\d+"/);
 });
 
 

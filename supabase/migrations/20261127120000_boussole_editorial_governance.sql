@@ -108,7 +108,7 @@ begin
     if p_visibility not in ('global','company')
       or (p_visibility='global' and p_company_id is not null)
       or (p_visibility='company' and p_company_id is null)
-      or p_locale not in ('fr','ar')
+      or p_locale not in ('fr','ar','en')
       or p_slug is null or length(btrim(p_slug)) not between 1 and 180
       or p_title is null or length(btrim(p_title)) not between 1 and 240
       or jsonb_typeof(p_structured_content)<>'object'
@@ -211,19 +211,20 @@ begin
     values(p_actor_id,v_company_id,v_document.id,v_version.id,'draft_updated');
     return jsonb_build_object('document_id',v_document.id,'version_id',v_version.id,'status','draft');
   elsif p_action='create_locale_version' then
-    if p_locale not in ('fr','ar') or p_title is null
+    if p_locale not in ('fr','ar','en') or p_title is null
       or length(btrim(p_title)) not between 1 and 240
       or jsonb_typeof(p_structured_content)<>'object'
       or jsonb_typeof(p_source_references)<>'array' then
       raise exception 'Traduction invalide.' using errcode='22023';
     end if;
-    select coalesce(max(v.version_number),0) into v_next_version
-      from public.boussole_document_versions v where v.document_id=v_document.id;
-    if v_next_version=0 then v_next_version:=1;
-    elsif exists (
+    -- Les traductions d'une même édition partagent le même numéro.
+    -- Après publication, le prochain numéro est current_published_version + 1.
+    v_next_version := coalesce(v_document.current_published_version,0) + 1;
+    if exists (
       select 1 from public.boussole_document_versions v
       where v.document_id=v_document.id and v.version_number=v_next_version and v.locale=p_locale
-    ) then v_next_version:=v_next_version+1;
+    ) then
+      raise exception 'Une version existe déjà pour cette langue et cette édition.' using errcode='22023';
     end if;
     insert into public.boussole_document_versions(
       document_id,version_number,locale,title,summary,content_markdown,
@@ -277,15 +278,15 @@ begin
     select count(distinct v.locale) into v_other_locale_count
       from public.boussole_document_versions v
       where v.document_id=v_document.id and v.version_number=v_version.version_number
-        and v.locale in ('fr','ar') and v.status='approved'
+        and v.locale in ('fr','ar','en') and v.status='approved'
         and v.created_by is distinct from p_actor_id
         and v.approved_by is distinct from p_actor_id;
-    if v_other_locale_count<>2 then
-      raise exception 'Les versions française et arabe doivent être approuvées avant publication.' using errcode='42501';
+    if v_other_locale_count<>3 then
+      raise exception 'Les versions française, arabe et anglaise doivent être approuvées avant publication.' using errcode='42501';
     end if;
     update public.boussole_document_versions set status='published',published_at=now()
       where document_id=v_document.id and version_number=v_version.version_number
-        and locale in ('fr','ar') and status='approved';
+        and locale in ('fr','ar','en') and status='approved';
     update public.boussole_documents set
       status='published',current_published_version=v_version.version_number,
       published_at=now(),updated_by=p_actor_id,updated_at=now()

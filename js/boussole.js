@@ -43,13 +43,13 @@ function showArticle(id){
 function showCloudArticle(document){
  if(!document)return;selected=null;selectedCloud=document.id;cloudRequestId++;
  results.hidden=true;if(cloudResults)cloudResults.hidden=true;detail.hidden=false;detail.replaceChildren();
- const back=el("button","secondary small",ar()?"العودة إلى النتائج":"Retour aux résultats");back.type="button";
+ const back=el("button","secondary small",ar()?"العودة إلى النتائج":english()?"Back to results":"Retour aux résultats");back.type="button";
  back.addEventListener("click",()=>{selectedCloud=null;renderResults();});
  detail.append(back,el("h3","boussole-article-title",document.title),el("p","muted",document.summary));
  detail.append(el("pre","boussole-cloud-content",document.content_markdown||""));
  if(document.source_references.length){
   const sources=el("section","boussole-cloud-sources");
-  sources.append(el("h4","",ar()?"المراجع":"Références"));
+  sources.append(el("h4","",ar()?"المراجع":english()?"References":"Références"));
   const list=el("ul","");
   document.source_references.forEach(source=>{
    const label=typeof source==="string"?source:(source?.title||source?.label||source?.reference||source?.url||JSON.stringify(source));
@@ -71,7 +71,7 @@ function renderCloudResults(q){
   try{
    const response=await searchCloudBoussoleDocuments(q,{locale:lang(),limit:8});
    if(request!==cloudRequestId||norm(query)!==q||selected||selectedCloud)return;
-   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"));
+   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":english()?"Published MIZANE documents":"Documents publiés en ligne"));
    if(!response.available){cloudResults.append(el("p","muted",ar()?"السحابة غير متاحة؛ تبقى نتائج الدليل المحلي متوفرة.":english()?"Cloud unavailable; local guide results remain available.":"Cloud indisponible ; les résultats du guide local restent accessibles."));return;}
    if(!response.results.length){cloudResults.append(el("p","muted",ar()?"لا توجد وثائق منشورة تطابق البحث.":english()?"No published documents match this search.":"Aucun document publié ne correspond à cette recherche."));return;}
    response.results.forEach(document=>{
@@ -81,7 +81,7 @@ function renderCloudResults(q){
    });
   }catch(error){
    if(request!==cloudRequestId||norm(query)!==q)return;
-   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":"Documents publiés en ligne"),
+   cloudResults.replaceChildren(el("h3","boussole-cloud-heading",ar()?"وثائق ميزان المنشورة":english()?"Published MIZANE documents":"Documents publiés en ligne"),
     el("p","muted",ar()?"تعذر الاتصال بالوثائق المنشورة؛ يمكنك متابعة البحث المحلي.":english()?"Could not connect to published documents; local search is still available.":"Connexion aux documents publiés impossible ; la recherche locale reste disponible."));
    console.warn("Recherche documentaire Boussole indisponible :",error?.message||error);
   }
@@ -94,7 +94,7 @@ function renderResults(){
  const found=ARTICLES.map(a=>({a,c:articleContent(a),context:a.routes.includes(route)}))
   .filter(x=>q?matchesBoussoleQuery([x.c[0],x.c[1],...x.c[2],x.a.keys].join(" "),q):x.context)
   .sort((a,b)=>Number(b.context)-Number(a.context));
- const items=found.length?found:(q?[]:ARTICLES.slice(0,5).map(a=>({a,c:a[ar()?"ar":"fr"],context:false})));
+ const items=found.length?found:(q?[]:ARTICLES.slice(0,5).map(a=>({a,c:articleContent(a),context:false})));
  if(!items.length)results.append(el("p","muted",ar()?"لا توجد نتائج محلية.":english()?"No local guide results.":"Aucun résultat dans le guide local."));
  items.slice(0,12).forEach(x=>{const b=el("button","boussole-result");b.type="button";b.dataset.articleId=x.a.id;b.append(el("strong","",x.c[0]),el("span","",x.c[1]));results.append(b);});
  renderCloudResults(q);

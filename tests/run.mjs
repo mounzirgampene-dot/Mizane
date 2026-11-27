@@ -1,4 +1,5 @@
 import "./boussole-ui.test.js";
+import "./boussole-editor.test.js";
 import "./tax-compliance.test.js";
 import "./tax-documents.test.js";
 import "./document-storage-scope.test.js";

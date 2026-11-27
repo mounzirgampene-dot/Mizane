@@ -1,19 +1,30 @@
-# Boussole MIZANE — première interface du guide local
+# Boussole MIZANE — guide local et recherche documentaire cloud
 
 ## Périmètre livré
 
-Un panneau latéral accessible depuis la barre supérieure fournit une recherche locale, des articles d'aide en français et en arabe, ainsi qu'une sélection contextuelle selon la rubrique MIZANE ouverte. Il peut être agrandi en plein écran puis réduit sans perdre la recherche ou l'article consulté ; les commandes sont localisées et la touche Échap réduit d'abord le panneau avant de le fermer.
+Le panneau accessible depuis la barre supérieure fournit une recherche locale, des articles d'aide en français et en arabe, une aide contextuelle selon la rubrique ouverte et un mode plein écran. Les contenus embarqués restent disponibles hors connexion après mise en cache.
 
-Le contenu est embarqué dans le module JavaScript, ajouté au précache du service worker et consultable hors connexion après un premier chargement réussi.
+Lorsque la connexion est disponible, une recherche de deux caractères ou plus interroge également les documents publiés dans MIZANE Cloud. Les résultats distants sont filtrés par langue et par espace actif ; les politiques RLS Supabase restent l'autorité pour les documents globaux et ceux de l'entreprise. Les versions et synonymes publiés sont lus en lecture seule.
 
-## Sécurité et limites
+## Fonctionnement et sécurité
 
-- Le guide ne lit aucune écriture, aucun solde, aucune facture et aucune donnée d'entreprise.
-- Il n'appelle aucun fournisseur IA et n'envoie aucun texte à un service externe.
-- Il n'exécute aucune opération métier.
-- La recherche est locale et porte uniquement sur les articles intégrés.
-- Il s'agit d'une première base d'aide, pas encore du guide exhaustif, des médias, des démonstrations interactives ni de l'Académie prévus.
+- La recherche locale fonctionne sans réseau et reste affichée si le cloud est indisponible.
+- La recherche cloud utilise uniquement la clé publishable destinée au navigateur ; aucune clé secrète ou service_role n'est exposée.
+- Le texte de recherche et l'identifiant de l'espace actif sont transmis au projet Supabase MIZANE pour filtrer les documents publiés.
+- Le client n'effectue aucune insertion, modification, suppression ou RPC sur les tables documentaires.
+- Aucune écriture, facture, balance, donnée comptable ou fiscale n'est lue.
+- Aucun appel IA n'est effectué.
+- Le contenu Markdown distant est affiché comme texte, jamais interprété comme HTML.
+- Les documents d'entreprise restent filtrés par RLS et par l'espace actif sélectionné.
+- En cas d'absence de connexion, d'erreur ou d'absence de document publié dans la langue demandée, le guide local reste utilisable.
 
-## Couverture initiale\n\nLe guide couvre désormais la prise en main, les paramètres, la saisie, les états, les tiers, la facturation et les achats, les stocks, la fiscalité, les périodes, les outils, les notifications, les travaux, la synchronisation, les exports et la confidentialité. La recherche accepte plusieurs termes et normalise les variantes courantes du français et de l’arabe.\n\n## Vérifications
+## Limites restantes
 
-Le test `tests/boussole-ui.test.js` vérifie l'intégration du panneau, la présence des contenus FR/AR et le précache du module. Les tests complets et le déploiement Cloudflare Preview restent requis.
+Cette tranche fournit la lecture documentaire. Elle ne fournit pas encore l'éditeur, les workflows de relecture/approbation/publication, les médias, les démonstrations interactives, la synchronisation cloud de l'Académie ou l'assistant IA. Ces fonctions nécessitent des contrôles serveur et des lots séparés.
+
+## Vérifications
+
+- Tests de normalisation et d'expansion des synonymes FR/AR.
+- Tests statiques vérifiant la lecture des seules tables Boussole et l'absence d'écritures/RPC dans le client.
+- Vérification du précache du module cloud et de la configuration publique.
+- Exécution de la suite complète et validation Cloudflare Preview requises sur le commit final.

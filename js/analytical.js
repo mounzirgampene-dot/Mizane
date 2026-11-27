@@ -3,7 +3,7 @@ import { saveStore } from "./db.js";
 import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildAnalyticalReport, validateAnalyticalCenter, validateAnalyticalAllocation } from "./analytical-core.js";
 import { validateAllocationKey, applyAllocationKey, calculateBreakEven, buildProjectAnalyticalReport, buildProjectComparison, buildAnalyticalDecisionReport } from "./analytical-advanced-core.js";
-import { renderBarChart, renderLineChart } from "./charts.js";
+import { chartModeControls, bindChartMode, renderBarChart, renderLineChart } from "./charts.js";
 
 const accountTypes = () => Object.fromEntries([...planAccounts, ...(store.settings.customAccounts || [])].map(item => [String(item.code), item.type]));
 const ensureData = () => {
@@ -43,7 +43,9 @@ export function viewAnalytical() {
   $app.innerHTML = `
     <h1>Comptabilité analytique</h1>
     <p class="muted">Exercice : ${esc(start)} → ${esc(end)}. Les affectations analytiques sont distinctes des écritures générales : aucune écriture comptable n'est modifiée.</p>
-    ${analyticalChartsHtml}
+    ${chartModeControls("analytical")}
+    <div id="analytical-chart-view" hidden>${analyticalChartsHtml}</div>
+    <div id="analytical-table-view">
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Produits affectés</div><div class="value">${money(report.totals.income)}</div></section>
       <section class="card kpi"><div class="label">Charges affectées</div><div class="value">${money(report.totals.expenses)}</div></section>
@@ -101,7 +103,9 @@ ${(store.settings.analyticalAllocationKeys||[]).map(k=>'<div class="row"><strong
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte</th><th>Nature</th><th class="num">Montant</th><th class="num">Part restante</th></tr></thead><tbody>${unallocatedRows || '<tr><td colspan="5" class="muted">Toutes les lignes admissibles sont affectées.</td></tr>'}</tbody></table></div>
     </section>
     ${issueRows ? '<section class="card"><h2>Anomalies d’affectation</h2><ul>' + issueRows + '</ul></section>' : ""}
+    </div>
   `;
+  bindChartMode("analytical");
   $app.querySelector("#aa-decision-csv")?.addEventListener("click",()=>{const rows=[["Type","Libellé","Devise","Produits","Charges directes","Charges indirectes","Charges non qualifiées","Contribution","Résultat","Marge %","Affectations"]];for(const r of decisionReport.currencies)rows.push(["Synthèse", "Toutes catégories",r.currency,r.income,r.directCosts,r.indirectCosts,r.unclassifiedCosts,r.contribution,r.result,r.marginRate??"",r.allocations]);for(const r of decisionReport.byDepartment)rows.push(["Département",r.name,r.currency,r.income,r.directCosts,r.indirectCosts,r.unclassifiedCosts,r.contribution,r.result,r.marginRate??"",r.allocations]);for(const r of decisionReport.byCenter)rows.push(["Centre",r.name,r.currency,r.income,r.directCosts,r.indirectCosts,r.unclassifiedCosts,r.contribution,r.result,r.marginRate??"",r.allocations]);const csv="\\uFEFF"+rows.map(row=>row.map(value=>'"'+String(value??"").replaceAll('"','""')+'"').join(";")).join("\\r\
 ");const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="mizane-rapport-analytique-decisionnel.csv";a.click();URL.revokeObjectURL(url);});
   $app.querySelector("#aa-decision-print")?.addEventListener("click",()=>{const section=$app.querySelector("#aa-decision-dashboard");if(!section)return;const w=window.open("","_blank");if(!w)return toast("Autorisez la fenêtre d'impression pour exporter le rapport.");w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>Rapport analytique MIZANE</title><style>body{font:12px Arial,sans-serif;padding:24px;color:#111}table{width:100%;border-collapse:collapse;margin:12px 0 24px}th,td{border:1px solid #bbb;padding:6px;text-align:left}th{background:#eee}.num{text-align:right}.muted{color:#555}button{display:none}</style></head><body>"+section.innerHTML+"</body></html>");w.document.close();w.focus();w.print();});

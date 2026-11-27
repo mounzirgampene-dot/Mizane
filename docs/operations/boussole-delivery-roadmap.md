@@ -141,7 +141,7 @@ La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration édi
 - L'arabe conserve RTL ; français et anglais utilisent LTR.
 
 ### Administration
-- Interface dédiée avec liste des documents, sélection des éditions et des langues, création de brouillons, édition Markdown, aperçu texte et suivi des statuts.
+- Interface dédiée avec liste des documents, création de brouillons, création d'une nouvelle édition à partir de la dernière version publiée, sélection des langues, édition Markdown, aperçu texte et suivi des statuts.
 - Les auteurs voient leurs propres brouillons et les documents publiés ; les relecteurs et éditeurs autorisés peuvent consulter les éléments de leur périmètre.
 - Files d'action distinctes selon les rôles author, reviewer et publisher ; l'interface n'accorde aucun droit.
 - Liste et lecture des brouillons via Edge Function après authentification Auth et vérification serveur du rôle et de l'appartenance active à l'entreprise.
@@ -150,7 +150,7 @@ La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration édi
 - Les traductions d'une édition partagent un numéro ; les versions suivantes utilisent le numéro suivant après la dernière publication.
 
 ### Validation PR #174
-- Commit final : `6091edad5825d2d20d5a23fb36f929bc03f4a5a7`.
+- Commit code validé : `334da0daf0ffee4b6718715ccbf6acea1c7c8a2b`.
 - ESLint réussi ; suite principale : 169 tests réussis, 0 échec.
 - Suites Académie et fiscales réussies.
 - Workflow de vérification Preview réussi.

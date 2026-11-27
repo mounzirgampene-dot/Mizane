@@ -23,6 +23,9 @@ create unique index boussole_editor_roles_active_uidx
 create index boussole_editor_roles_scope_idx
   on public.boussole_editor_roles(scope_type,company_id,role)
   where revoked_at is null;
+create index boussole_editor_roles_user_fk_idx on public.boussole_editor_roles(user_id);
+create index boussole_editor_roles_company_fk_idx on public.boussole_editor_roles(company_id) where company_id is not null;
+create index boussole_editor_roles_grantor_fk_idx on public.boussole_editor_roles(granted_by);
 
 create table public.boussole_editor_audit (
   id uuid primary key default gen_random_uuid(),
@@ -42,6 +45,8 @@ create index boussole_editor_audit_document_idx
   on public.boussole_editor_audit(document_id,created_at desc);
 create index boussole_editor_audit_company_idx
   on public.boussole_editor_audit(company_id,created_at desc);
+create index boussole_editor_audit_actor_fk_idx on public.boussole_editor_audit(actor_user_id) where actor_user_id is not null;
+create index boussole_editor_audit_version_fk_idx on public.boussole_editor_audit(version_id) where version_id is not null;
 
 alter table public.boussole_editor_roles enable row level security;
 alter table public.boussole_editor_roles force row level security;
@@ -156,6 +161,9 @@ begin
   v_scope_type := case when v_document.visibility='global' then 'global' else 'company' end;
   v_scope_company := v_document.company_id;
   v_company_id := v_document.company_id;
+  if v_document.status='archived' and p_action<>'restore' then
+    raise exception 'Un document archivé doit être restauré avant toute autre transition.' using errcode='22023';
+  end if;
 
   if v_document.company_id is not null and not exists (
     select 1 from public.company_memberships m
@@ -195,7 +203,8 @@ begin
       title=btrim(p_title),summary=coalesce(p_summary,''),content_markdown=coalesce(p_content_markdown,''),
       structured_content=coalesce(p_structured_content,'{}'::jsonb),
       source_references=coalesce(p_source_references,'[]'::jsonb),
-      learning_level=p_learning_level,estimated_minutes=p_estimated_minutes
+      learning_level=p_learning_level,estimated_minutes=p_estimated_minutes,
+      reviewed_by=null,reviewed_at=null,approved_by=null,approved_at=null,published_at=null
     where id=v_version.id;
     update public.boussole_documents set updated_by=p_actor_id,updated_at=now() where id=v_document.id;
     insert into public.boussole_editor_audit(actor_user_id,company_id,document_id,version_id,action)
@@ -229,7 +238,7 @@ begin
     return jsonb_build_object('document_id',v_document.id,'version_id',v_version.id,'version_number',v_next_version,'status','draft');
   elsif p_action='submit_review' then
     if p_version_id is null then raise exception 'Version requise.' using errcode='22023'; end if;
-    update public.boussole_document_versions set status='review'
+    update public.boussole_document_versions set status='review',reviewed_by=null,reviewed_at=null,approved_by=null,approved_at=null,published_at=null
       where id=p_version_id and document_id=v_document.id and status='draft' and created_by=p_actor_id
       returning * into v_version;
     if not found then raise exception 'Brouillon non modifiable ou non attribué à cet auteur.' using errcode='42501'; end if;

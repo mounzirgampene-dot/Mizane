@@ -150,7 +150,7 @@ La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration édi
 - Les traductions d'une édition partagent un numéro ; les versions suivantes utilisent le numéro suivant après la dernière publication.
 
 ### Validation PR #174
-- Commit code validé : `334da0daf0ffee4b6718715ccbf6acea1c7c8a2b`.
+- Commit validé : `1279186ffa49af8115367cdbd42862b9aaa7f930`.
 - ESLint réussi ; suite principale : 169 tests réussis, 0 échec.
 - Suites Académie et fiscales réussies.
 - Workflow de vérification Preview réussi.

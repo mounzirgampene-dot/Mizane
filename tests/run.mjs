@@ -691,6 +691,13 @@ test("chat Gemini : modèle retiré -> nouvelle tentative avec le modèle actuel
   } finally { globalThis.fetch = orig; }
 });
 
+test("service worker : les dépendances locales directes de l'application sont précachées", () => {
+  const modules = [...appSource.matchAll(/from\s+["']\.\/([^"']+)["']/g)].map(match => match[1]);
+  const missing = modules.filter(path => !serviceWorkerSource.includes('"js/' + path + '"'));
+  assert.deepEqual(missing, [], "tous les modules importés directement par app.js doivent être précachés");
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v113"/);
+});
+
 console.log("— Internationalisation —");
 test("i18n : t() traduit, repli sur français, langue inconnue rejetée", async () => {
   const { t, setLang, lang, LANGS } = await import("../js/i18n.js");
@@ -1985,7 +1992,7 @@ test("achats : validation fournisseur exige les imputations et prépare la compt
   assert.match(purchasesUiSource,/Confirmer la commande/);
   assert.match(purchasesUiSource,/origin:"stock_replenishment"/);
   assert.ok(serviceWorkerSource.includes('"js/stock-replenishment.js"'));
-  assert.match(serviceWorkerSource,/mizane-v112/g);
+  assert.match(serviceWorkerSource,/mizane-v113/g);
   assert.ok(serviceWorkerSource.includes('js/plans/migration-audit.js'));
   assert.match(serviceWorkerSource,/"js\/purchase-tax\.js"/);
   assert.match(serviceWorkerSource,/"js\/purchase-accounting\.js"/);
@@ -2195,7 +2202,7 @@ test("stock intermittent : valorisation serveur exhaustive et intégration dans 
   assert.match(opsUiSource,/closingProposal\(store,s\.exerciceStart,s\.exerciceEnd,newStart\)/);
   assert.match(billingUiSource,/suggestStockAccounts/);
   assert.match(billingUiSource,/stockVariation/);
-  assert.match(serviceWorkerSource,/mizane-v112/);
+  assert.match(serviceWorkerSource,/mizane-v113/);
 });
 
 
@@ -2776,7 +2783,7 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v112"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v113"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

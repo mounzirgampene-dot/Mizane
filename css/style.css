@@ -500,3 +500,21 @@ main.workspace.has-work-sidebar {
   .notification-status { align-self: flex-start; }
   .notification-heading { align-items: flex-start; }
 }
+
+
+/* Boussole — aide locale et contextuelle. */
+.boussole-panel{position:fixed;z-index:95;top:82px;right:14px;bottom:14px;width:min(430px,calc(100vw - 28px));overflow-y:auto;padding:16px;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text);box-shadow:0 16px 48px rgba(0,0,0,.24)}
+.boussole-panel[hidden]{display:none}
+.boussole-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.boussole-head h2{margin:0 0 5px}.boussole-head p{margin:0 0 12px}.boussole-head-actions{display:flex;gap:6px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end}.boussole-head-actions button{flex:0 0 auto}
+.boussole-panel.is-expanded{inset:12px;width:auto;max-width:none;border-radius:12px}
+.boussole-panel.is-expanded .boussole-results{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.boussole-panel.is-expanded .boussole-article{max-width:1100px}
+.boussole-context{margin:12px 0 8px;color:var(--teal-dark);font-size:.84rem;font-weight:700}
+.boussole-results{display:grid;gap:8px;margin:10px 0}
+.boussole-result{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;padding:11px 12px;border:1px solid var(--border);background:var(--bg);color:var(--text);text-align:start}
+.boussole-result strong{color:var(--teal-dark)}.boussole-result span{color:var(--muted);font-size:.82rem;font-weight:400;white-space:normal}
+.boussole-article{margin-top:12px}.boussole-article-title{margin:14px 0 6px}.boussole-steps{padding-inline-start:22px;line-height:1.6}.boussole-steps li{margin:9px 0}
+.boussole-local-note{margin-top:16px;padding-top:10px;border-top:1px solid var(--border);color:var(--muted);font-size:.76rem;line-height:1.5}
+:root[data-theme="dark"] .boussole-result{background:#0b1220}
+@media(max-width:640px){.boussole-panel{top:8px;right:8px;bottom:8px;width:calc(100vw - 16px);border-radius:12px}.boussole-panel.is-expanded{inset:4px;width:auto;border-radius:8px}.boussole-head-actions{gap:4px}.boussole-head-actions button{padding:5px 8px;font-size:.76rem}}

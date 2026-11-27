@@ -20,6 +20,8 @@ import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork 
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
 import { getCompanyStorageStatus } from "./company-storage.js";
 import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
+import { initBoussole, setBoussoleContext } from "./boussole.js";
+import { initAcademy } from "./academy.js";
 
 let currentCompanyRole = null;
 
@@ -97,6 +99,7 @@ function renderNav() {
 function render() {
   renderWorkSidebar();
   setLang(store.settings.language);
+  setBoussoleContext(currentRoute);
   document.getElementById("company-tag").textContent =
     `${store.settings.companyName} · ${store.settings.country} · ${store.settings.currency}`;
   (VIEWS[currentRoute] || viewDashboard)();
@@ -187,6 +190,8 @@ async function start() {
   initStore(loadStore(allAccounts("syscohada")));
   renderNav();
   render();
+  initBoussole();
+  initAcademy();
   const historyAccess = await initWorkHistory();
   await initNotifications();
   if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);

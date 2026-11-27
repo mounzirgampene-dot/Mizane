@@ -146,7 +146,7 @@ export function searchAcademyCourses(query) {
   return COURSES.filter(course => {
     const searchable = [
       ...course.title, ...course.description, ...course.lessons.flat(),
-      ...course.quiz.flatMap(question => [question[0], question[1], ...question[2].flat(), ...question[4]]), ...Object.values(ACADEMY_EN[course.id]).flat(3)
+      ...course.quiz.flatMap(question => [question[0], question[1], ...question[2].flat(), ...question[4]]), JSON.stringify(ACADEMY_EN[course.id])
     ].join(" ");
     return matchesBoussoleQuery(searchable, value);
   });
@@ -267,14 +267,14 @@ export function initAcademy() {
     if(view==="catalog"){
       body.innerHTML=tabs+'<p>'+escapeHtml(l.intro)+'</p><input class="academy-search" type="search" aria-label="'+escapeHtml(l.search)+'" placeholder="'+escapeHtml(l.search)+'" value="'+escapeHtml(catalogQuery)+'" autocomplete="off" style="box-sizing:border-box;width:100%;max-width:560px;padding:11px;margin:8px 0 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit"><p class="academy-no-results" hidden>'+escapeHtml(l.noResults)+'</p><div class="academy-grid">'+COURSES.map(course=>{
         const item=entry(course),done=isAcademyCourseCompleted(course,item),percent=Math.round((item.completedLessons.length/course.lessons.length)*100);
-        const searchable=[...course.title,...course.description,...course.lessons.flat(),...course.quiz.flatMap(question=>[question[0],question[1],...question[2].flat(),...question[4]]),...Object.values(ACADEMY_EN[course.id]).flat(3)].join(" ");
+        const searchable=[...course.title,...course.description,...course.lessons.flat(),...course.quiz.flatMap(question=>[question[0],question[1],...question[2].flat(),...question[4]]),JSON.stringify(ACADEMY_EN[course.id])].join(" ");
         return '<article class="academy-card" data-academy-search="'+escapeHtml(normalizeBoussoleQuery(searchable))+'"><h3>'+escapeHtml(courseText(course,"title"))+'</h3><p>'+escapeHtml(courseText(course,"description"))+'</p><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+(done?' · '+escapeHtml(l.completed):'')+'</div><div class="academy-progress"><span style="width:'+percent+'%"></span></div><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
       }).join("")+'</div>';
       return;
     }
     if(view==="course"&&activeCourse){
       const course=activeCourse,item=entry(course);
-      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="catalog">'+escapeHtml(l.back)+'</button><button type="button" data-academy-quiz>'+escapeHtml(l.quiz)+'</button></div><h2>'+escapeHtml(text(course.title))+'</h2><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+'</div>'+course.lessons.map((lesson,index)=>{
+      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="catalog">'+escapeHtml(l.back)+'</button><button type="button" data-academy-quiz>'+escapeHtml(l.quiz)+'</button></div><h2>'+escapeHtml(courseText(course,"title"))+'</h2><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+'</div>'+course.lessons.map((lesson,index)=>{
         const done=item.completedLessons.includes(String(index));
         return '<article class="academy-lesson"><h3>'+(index+1)+'. '+escapeHtml(courseText(course,"lessonTitle",index))+'</h3><p>'+escapeHtml(courseText(course,"lessonContent",index))+'</p><button type="button" class="'+(done?'secondary small':'')+'" data-academy-lesson="'+index+'">'+escapeHtml(done?l.completed:l.done)+'</button></article>';
       }).join("");
@@ -283,14 +283,14 @@ export function initAcademy() {
     if(view==="quiz"&&activeCourse){
       const course=activeCourse;
       const corrections=lastResult?'<div class="academy-result" role="status">'+escapeHtml(l.score)+': '+lastResult.score+'/'+course.quiz.length+' — '+escapeHtml(lastResult.passed?l.passed:l.notPassed)+'</div>'+lastResult.answers.map(answer=>'<article class="academy-lesson"><strong>'+escapeHtml(answer.correct?l.right:l.wrong)+'</strong><p>'+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[answer.index].explanation:text(answer.explanation)))+'</p></article>').join(""):'' ;
-      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="course">'+escapeHtml(l.back)+'</button></div><h2>'+escapeHtml(text(course.title))+' — '+escapeHtml(l.quiz)+'</h2><form id="academy-quiz-form">'+course.quiz.map((q,index)=>'<fieldset class="academy-quiz-question"><legend>'+escapeHtml(l.question)+' '+(index+1)+' — '+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].question:text([q[0],q[1]])))+'</legend>'+q[2].map((option,optionIndex)=>'<label class="academy-quiz-option"><input type="radio" name="q'+index+'" value="'+optionIndex+'" required><span>'+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].options[optionIndex]:text(option)))+'</span></label>').join("")+'</fieldset>').join("")+'<button type="submit">'+escapeHtml(lastResult?l.retry:l.validate)+'</button></form>'+corrections;
+      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="course">'+escapeHtml(l.back)+'</button></div><h2>'+escapeHtml(courseText(course,"title"))+' — '+escapeHtml(l.quiz)+'</h2><form id="academy-quiz-form">'+course.quiz.map((q,index)=>'<fieldset class="academy-quiz-question"><legend>'+escapeHtml(l.question)+' '+(index+1)+' — '+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].question:text([q[0],q[1]])))+'</legend>'+q[2].map((option,optionIndex)=>'<label class="academy-quiz-option"><input type="radio" name="q'+index+'" value="'+optionIndex+'" required><span>'+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].options[optionIndex]:text(option)))+'</span></label>').join("")+'</fieldset>').join("")+'<button type="submit">'+escapeHtml(lastResult?l.retry:l.validate)+'</button></form>'+corrections;
       return;
     }
     if(view==="progress"){
       const percent=Math.round((stats.lessons/Math.max(1,stats.totalLessons))*100);
       body.innerHTML=tabs+'<div class="academy-card"><h3>'+stats.completed+'/'+COURSES.length+' — '+escapeHtml(l.total)+'</h3><p>'+stats.lessons+'/'+stats.totalLessons+' '+escapeHtml(l.lessonTotal)+'</p><div class="academy-progress"><span style="width:'+percent+'%"></span></div></div><div class="academy-grid">'+COURSES.map(course=>{
         const item=entry(course),done=isAcademyCourseCompleted(course,item);
-        return '<article class="academy-card"><h3>'+escapeHtml(text(course.title))+'</h3><p>'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+' · '+(done?escapeHtml(l.completed):escapeHtml(l.notPassed))+'</p><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
+        return '<article class="academy-card"><h3>'+escapeHtml(courseText(course,"title"))+'</h3><p>'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+' · '+(done?escapeHtml(l.completed):escapeHtml(l.notPassed))+'</p><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
       }).join("")+'</div><div class="academy-actions" style="margin-top:16px"><button type="button" class="danger small" data-academy-reset>'+escapeHtml(l.reset)+'</button></div>';
       return;
     }

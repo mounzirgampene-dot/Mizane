@@ -110,16 +110,26 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// Seuls les fichiers statiques explicitement listés peuvent entrer dans le cache.
+// Les routes inconnues et réponses applicatives/API restent toujours réseau uniquement.
+const CACHEABLE_URLS = new Set(ASSETS.map((asset) => new URL(asset, self.registration.scope).pathname));
+const APP_SHELL_URLS = new Set([
+  new URL("./", self.registration.scope).pathname,
+  new URL("index.html", self.registration.scope).pathname,
+]);
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  // Les navigations HTML passent d'abord par le réseau pour éviter
-  // qu'un ancien cache ne bloque le retour depuis l'espace professionnel.
+  if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  // Le portail et les autres navigations ne sont jamais enregistrés en cache.
+  // Seule l'application principale bénéficie du mode réseau d'abord / cache hors ligne.
   if (e.request.mode === "navigate") {
+    if (!APP_SHELL_URLS.has(url.pathname)) return;
     e.respondWith((async () => {
       try {
         const response = await fetch(e.request);
-        if (response.ok) {
+        if (response.ok && !/private|no-store/i.test(response.headers.get("Cache-Control") || "")) {
           const cache = await caches.open(CACHE);
           await cache.put(e.request, response.clone());
         }
@@ -127,10 +137,26 @@ self.addEventListener("fetch", (e) => {
       } catch (_error) {
         const cached = await caches.match(e.request);
         if (cached) return cached;
-        return new Response("MIZANE est momentanément hors ligne.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+        return new Response("MIZANE est momentanément hors ligne.", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+        });
       }
     })());
     return;
   }
-  e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
+
+  // Toute ressource non répertoriée est servie par le réseau sans mise en cache.
+  if (!CACHEABLE_URLS.has(url.pathname)) return;
+
+  e.respondWith((async () => {
+    const cached = await caches.match(e.request);
+    if (cached) return cached;
+    const response = await fetch(e.request);
+    if (response.ok && !/private|no-store/i.test(response.headers.get("Cache-Control") || "")) {
+      const cache = await caches.open(CACHE);
+      await cache.put(e.request, response.clone());
+    }
+    return response;
+  })());
 });

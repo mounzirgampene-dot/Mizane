@@ -62,7 +62,7 @@ Ces éléments ne sont pas créés par la migration Boussole, qui n'a pas été 
 
 ## Validation transactionnelle réelle sur MIZANE-DEV — 27 novembre 2026
 
-La migration `20261127000100_boussole_foundation.sql` a d'abord été exécutée dans une transaction de validation avec des données synthétiques, puis intégralement annulée. Les tests ont utilisé les rôles PostgreSQL réels `anon` et `authenticated`, des claims JWT simulés et trois identités Auth synthétiques. Aucun compte utilisateur réel n'a été utilisé et toutes les écritures de test ont été annulées.
+La migration `20261127105326_boussole_foundation.sql` a d'abord été exécutée dans une transaction de validation avec des données synthétiques, puis intégralement annulée. Les tests ont utilisé les rôles PostgreSQL réels `anon` et `authenticated`, des claims JWT simulés et trois identités Auth synthétiques. Aucun compte utilisateur réel n'a été utilisé et toutes les écritures de test ont été annulées.
 
 Résultats contrôlés :
 

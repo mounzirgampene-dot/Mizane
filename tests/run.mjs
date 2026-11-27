@@ -2789,5 +2789,16 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v122"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
+test("restauration cloud : association vérifiée de l'appareil avant retour à la comptabilité", () => {
+  const portalSource = readFileSync(new URL("../js/saas-portal.js", import.meta.url), "utf8");
+  const restoreStart = portalSource.indexOf("async function restoreCloudToThisDevice(button)");
+  const restoreEnd = portalSource.indexOf("\nasync function refresh()", restoreStart);
+  assert.ok(restoreStart >= 0 && restoreEnd > restoreStart);
+  const restoreSource = portalSource.slice(restoreStart, restoreEnd);
+  assert.ok(restoreSource.indexOf("await restoreAccountingFromCloud(supabase,activeCompanyId)") >= 0);
+  assert.ok(restoreSource.indexOf("bindCompanyStorage(activeCompanyId,session.user.id)") > restoreSource.indexOf("await restoreAccountingFromCloud(supabase,activeCompanyId)"));
+  assert.ok(restoreSource.indexOf('window.location.assign("/index.html")') > restoreSource.indexOf("bindCompanyStorage(activeCompanyId,session.user.id)"));
+});
+
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

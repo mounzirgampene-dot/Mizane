@@ -84,140 +84,59 @@ Une fonction cloud ne peut être déclarée livrée qu'après :
 Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune migration Supabase Production ne font partie de cette feuille de livraison.
 
 
-## 5. État d'exploitation au 27 novembre 2026
+## 5. État d'exploitation au 27 novembre 2026 — DEV
 
-- Migration Boussole appliquée uniquement sur Supabase DEV (`20261127105326`).
-- Les six tables sont vides ; aucun contenu éditorial n'a été injecté.
-- Le smoke test RLS transactionnel passe et annule toutes ses fixtures.
-- Les Advisors ne signalent aucune nouvelle alerte liée aux tables Boussole ; les alertes antérieures des modules comptables et Auth restent documentées dans la revue RLS.
-- PR #170 et PR #171 restent indépendantes et en brouillon. Le guide/Académie de PR #171 continue de fonctionner localement sans dépendre des tables cloud.
-- Prochaine tranche : lecteur documentaire cloud en lecture seule, avec fallback local et filtrage par langue/version ; l'administration éditoriale restera un lot séparé, protégé côté serveur.
+- Les PR #170 à #175 sont fusionnées dans `feat/stock-integrated-dev`, commit d'intégration `817cd1268113f549f9cead343157a3fc67bcda05`.
+- Preview de la branche d'intégration : https://feat-stock-integrated-dev.mizane-test-preview.pages.dev
+- Projet Supabase cible : MIZANE-DEV (`rudsovhdvinvyrwjamfo`, région eu-west-2), état ACTIVE_HEALTHY.
+- Migrations présentes dans l'historique DEV :
+  - `20261127105326_boussole_foundation`
+  - `20261127123614_boussole_editorial_governance`
+  - `20261127123619_boussole_english_locale`
+  - `20261127123622_boussole_resource_governance`
+- Les noms des fichiers de migration du dépôt sont alignés sur les versions réellement enregistrées dans Supabase.
+- Les neuf tables Boussole sont présentes et vides : documents, versions, relations, synonymes, préférences, consentements, rôles éditoriaux, audit et médias.
+- Le bucket `boussole-media` est privé, limité à 20 Mio, avec une liste MIME explicite.
+- Les RPC `boussole_editor_transition` et `boussole_editor_manage_resource` sont SECURITY DEFINER, avec `search_path` vide ; EXECUTE est refusé à `anon` et `authenticated`, et accordé uniquement à `service_role`.
+- Aucun rôle éditorial réel, document, version, synonyme, événement de consentement ou média n'a été créé.
 - `main`, GitHub Pages Production et Supabase Production restent hors périmètre.
 
+## 6. Livraison des PR #170 à #175 — terminée
 
-## 6. Dépendances de livraison — 27 novembre 2026
+1. PR #170 : fondations documentaires et RLS.
+2. PR #171 : guide local et Académie trilingue.
+3. PR #172 : lecteur documentaire cloud en lecture seule.
+4. PR #173 : rôles et gouvernance éditoriale serveur.
+5. PR #174 : administration éditoriale et anglais comme troisième langue officielle.
+6. PR #175 : synonymes, relations, compatibilité des versions et gestion des médias.
 
-1. PR #170 : fondations et migration DEV, validées par tests RLS transactionnels.
-2. PR #171 : guide local et Académie locale.
-3. PR #172 : lecteur cloud en lecture seule, construit au-dessus du guide et dépendant du schéma de PR #170.
+Les six PR sont fusionnées dans la branche DEV d'intégration. ESLint et la suite complète ont réussi sur les commits finaux ; le dernier contrôle de la tranche #175 indique 169 tests réussis, 0 échec, et les Previews Cloudflare sont réussies.
 
-Les trois PR restent en brouillon et aucune n'est fusionnée automatiquement. La migration DEV déjà appliquée ne vaut pas autorisation de migration Production. L'éditeur, le workflow éditorial, la progression cloud, les médias et l'assistant IA restent des lots distincts.
+## 7. Sécurité de l'administration éditoriale
 
+- Les droits sont vérifiés côté serveur à partir du JWT validé par Supabase Auth.
+- Aucun rôle n'est préattribué ; les tables de rôles et d'audit sont vides.
+- Les transitions éditoriales et la gestion des ressources passent par des RPC réservées à `service_role`.
+- Les versions française, arabe et anglaise d'une édition partagent le même numéro ; la publication exige l'approbation des trois langues.
+- Les médias sont stockés dans un bucket privé ; le téléversement est signé et les signatures binaires sont contrôlées.
+- La fonction Edge `boussole-editor` n'est pas encore déployée : son activation attend le correctif de sécurité PR #176 et ses validations.
 
-## 7. Gouvernance éditoriale — PR #173 en préparation
+## 8. Correctif de sécurité — PR #176
 
-La branche `feat/boussole-editorial-governance-dev` ajoute une première couche serveur de gouvernance, sans ouvrir l'édition directe depuis le navigateur.
+Branche : `fix/boussole-editor-read-scope-dev`, base `feat/stock-integrated-dev`.
 
-- Registre des rôles `author`, `reviewer`, `publisher` et `admin`, avec portée globale ou par entreprise.
-- Aucun rôle n'est préattribué ; aucune identité réelle n'est choisie automatiquement.
-- Tables de rôles et d'audit protégées par RLS/FORCE RLS, sans privilège direct pour `anon` ou `authenticated`.
-- Fonction transactionnelle serveur pour créer/modifier un brouillon, créer une version linguistique, soumettre en relecture, demander des corrections, approuver, publier, archiver et restaurer.
-- Fonction Edge authentifiant le JWT avec Auth puis appelant uniquement la RPC protégée ; l'identité d'acteur vient du jeton vérifié, jamais du corps envoyé par le navigateur.
-- Séparation des tâches : un auteur ne peut pas approuver sa propre version ; un auteur ou approbateur ne peut pas publier sa propre version.
-- Publication bilingue : les versions française et arabe d'un même numéro doivent toutes deux être approuvées avant publication.
-- Une nouvelle relecture ne masque pas la dernière version déjà publiée.
-- L'attribution des rôles reste une opération d'administration privilégiée, hors interface utilisateur de cette tranche.
+- Les auteurs ne reçoivent que les versions publiées et leurs propres brouillons ; les brouillons des autres auteurs sont filtrés.
+- Les médias signés sont filtrés selon les versions visibles par l'auteur ; les médias associés à des versions cachées ne sont pas signés.
+- Avant toute lecture privilégiée d'un objet Storage, l'Edge Function appelle la RPC `media_upload_authorize` pour vérifier le rôle, le périmètre, le document, la version, le type et la taille.
+- Des assertions statiques couvrent l'isolation des versions et l'ordre du contrôle d'autorisation média.
+- CI et Preview sont à revalider sur le commit final après alignement des fichiers de migration.
 
-**État de validation PR #173 :** CI qualité et workflow de vérification Preview réussis sur le commit `d79603e`. Le scénario transactionnel final a exécuté la migration et les transitions sur MIZANE-DEV avec des identités, une entreprise et des rôles synthétiques, puis `ROLLBACK` ; résultat : PASS. Il couvre aussi les rôles révoqués, les refus d'auto-approbation et d'auto-publication, le refus de modification d'un document archivé et l'absence de privilèges directs côté client. Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000`. La migration n'est donc pas appliquée, la fonction Edge n'est pas déployée, aucun rôle réel n'est attribué et aucun document réel n'est créé. Cette tranche ne modifie pas Production ni `main`.
+## 9. Activation DEV — séquence restante
 
-### Étapes avant activation
-1. Revue SQL et test transactionnel réel sur DEV avec rôles synthétiques, sans persistance des fixtures — **PASS**.
-2. Vérification des droits d'exécution de la RPC, des refus sans rôle, des rôles révoqués et de la séparation auteur/vérificateur/éditeur — **PASS**.
-3. Application de la migration DEV uniquement après revue finale, CI et rapprochement exact de l'historique — en attente.
-4. Déploiement de `boussole-editor` sur DEV seulement après migration et CI réussies — en attente.
-5. Interface d'administration éditoriale et procédure d'attribution explicite des rôles dans un lot distinct.
+1. Finaliser et fusionner la PR #176 après réussite des contrôles du commit exact.
+2. Déployer `boussole-editor` sur MIZANE-DEV uniquement, avec validation JWT effectuée dans le code de la fonction.
+3. Vérifier les réponses sans JWT, avec un utilisateur sans rôle, et avec un rôle synthétique si nécessaire ; ne pas attribuer de rôle réel.
+4. Vérifier les journaux Edge, les advisors Supabase et les privilèges après déploiement.
+5. Raccorder ultérieurement la diffusion des médias au lecteur documentaire utilisateur, avec des URL signées conformes aux règles de visibilité.
 
-
-## 8. Administration éditoriale et troisième langue — PR #174
-
-La branche `feat/boussole-editorial-admin-i18n-dev` ajoute l'administration éditoriale et le support anglais de bout en bout dans les couches livrées par cette tranche.
-
-### Langues
-- Français (`fr`), arabe (`ar`) et anglais (`en`) sont les trois locales autorisées pour les versions documentaires et les synonymes.
-- Les préférences d'interface et de réponse acceptent également les trois langues.
-- Les 16 articles du guide local disposent d'un contenu anglais.
-- L'Académie possède une traduction anglaise des 10 parcours, 30 leçons et 20 évaluations, avec options et explications.
-- La recherche Académie et le lecteur cloud prennent en charge la langue anglaise.
-- L'arabe conserve RTL ; français et anglais utilisent LTR.
-
-### Administration
-- Interface dédiée avec liste des documents, création de brouillons, création d'une nouvelle édition à partir de la dernière version publiée, sélection des langues, édition Markdown, aperçu texte et suivi des statuts.
-- Les auteurs voient leurs propres brouillons et les documents publiés ; les relecteurs et éditeurs autorisés peuvent consulter les éléments de leur périmètre.
-- Files d'action distinctes selon les rôles author, reviewer et publisher ; l'interface n'accorde aucun droit.
-- Liste et lecture des brouillons via Edge Function après authentification Auth et vérification serveur du rôle et de l'appartenance active à l'entreprise.
-- Aucun accès direct du navigateur aux tables éditoriales et aucune clé service_role côté client.
-- La publication exige trois versions approuvées (FR, AR et EN) partageant le même numéro d'édition.
-- Les traductions d'une édition partagent un numéro ; les versions suivantes utilisent le numéro suivant après la dernière publication.
-
-### Validation PR #174
-- Commit validé : `598e99ab04a1480e394b5a741ea568ea8bad47da`.
-- ESLint réussi ; suite principale : 169 tests réussis, 0 échec.
-- Suites Académie et fiscales réussies.
-- Workflow de vérification Preview réussi.
-- Test transactionnel trilingue sur MIZANE-DEV : migration de gouvernance et migration anglaise exécutées avec fixtures synthétiques, création FR/AR/EN au même numéro, approbation par un relecteur distinct, publication des trois langues, création du numéro suivant, puis `ROLLBACK`.
-- Vérification post-test : zéro table éditoriale persistante et zéro entrée de migration `20261127120000` ou `20261127133000`.
-
-### Activation non effectuée
-- Aucune migration appliquée à MIZANE-DEV ; les contraintes existantes restent FR/AR.
-- La fonction Edge `boussole-editor` n'est pas déployée.
-- Aucun rôle éditorial réel n'est attribué ; l'interface reste masquée tant qu'aucun rôle autorisé n'est détecté.
-- Aucun contenu réel n'est créé ou publié par cette PR.
-- Les migrations devront être appliquées dans l'ordre après revue et livraison des PR précédentes, puis la fonction Edge déployée sur DEV uniquement.
-
-### Suite
-1. Terminer la revue de la PR #174 ; ne pas fusionner automatiquement les PR en brouillon.
-2. Après livraison ordonnée des PR #170 à #174, appliquer les migrations DEV dans l'ordre et déployer la fonction Edge DEV.
-3. Effectuer une vérification Auth réelle avec un rôle éditorial explicitement attribué.
-4. Ajouter la gestion éditoriale des synonymes, relations, compatibilité de versions et pièces média, puis l'administration des rôles via un canal privilégié séparé.
-
-## 9. Gestion documentaire avancée — PR #175
-
-Branche : `feat/boussole-document-relations-media-dev`, empilée sur `feat/boussole-editorial-admin-i18n-dev` (base #174, commit `598e99ab04a1480e394b5a741ea568ea8bad47da`). La PR reste en brouillon et n'active aucune migration ni fonction Edge.
-
-### 9.1 Administration trilingue intégrée à l'interface
-
-- Synonymes FR/AR/EN : consultation, ajout/mise à jour par clé normalisée et désactivation ; accès réservé au rôle global publisher/admin.
-- Relations : prérequis, étape suivante, dépannage, contenu associé et remplacement ; sélection des documents publiés du même espace ; suppression contrôlée.
-- Compatibilité : édition des versions minimale et maximale au niveau document ou version.
-- Médias : formulaire trilingue pour textes alternatifs et légendes, association à une version, liste des ressources, lien signé temporaire et archivage.
-- Les contrôles d'interface ne constituent jamais une autorisation ; chaque écriture repasse par l'Edge Function et la RPC privilégiée.
-- Arabe RTL ; français et anglais LTR, selon les paramètres de l'interface déjà établis dans PR #174.
-
-### 9.2 Sécurité serveur et Storage
-
-- RPC `boussole_editor_manage_resource` limitée à `service_role`, avec identité d'acteur issue du JWT vérifié par Auth.
-- Autorisation d'envoi média vérifiée dans la RPC : rôle publisher/admin dans le périmètre, appartenance active à l'entreprise, document et version associés.
-- Bucket `boussole-media` privé, limite de 20 Mio et liste MIME explicite ; la migration réapplique la configuration privée si le bucket existe déjà.
-- Téléversement par URL signée à usage contrôlé ; le navigateur ne reçoit jamais la clé `service_role`.
-- Avant enregistrement, l'Edge Function vérifie l'existence, la taille, le type déclaré et la signature binaire du fichier (JPEG, PNG, WebP, AVIF, MP4, WebM ou PDF).
-- Si l'enregistrement échoue, l'objet téléversé est supprimé ; lors de l'archivage, les métadonnées sont désactivées puis l'objet Storage est supprimé. Un échec de nettoyage est signalé comme `cleanup_pending`.
-- Les liens de lecture des médias sont signés pour 15 minutes et délivrés seulement après contrôle d'accès éditorial au document.
-- Table média protégée par RLS/FORCE RLS ; aucun privilège direct d'écriture accordé à `anon` ou `authenticated`.
-- La clé étrangère composite met uniquement `version_id` à NULL lors de la suppression d'une version, sans tenter de mettre `document_id` à NULL.
-
-### 9.3 Tests ajoutés et vérifications requises
-
-- Tests statiques sur la migration, la portée des rôles, la séparation de l'identité Auth, les synonymes, les relations, la compatibilité, les URL signées, les signatures MIME et le nettoyage Storage.
-- Le test Boussole éditorial est inclus dans `tests/run.mjs`.
-- À confirmer sur le commit final : ESLint, suite complète, CI GitHub, Preview, revue SQL, tests transactionnels PostgreSQL DEV avec identités synthétiques et `ROLLBACK`, et Supabase Advisors.
-- Les tests statiques ne remplacent pas les tests d'exécution Postgres/Storage. Aucune réussite de CI, Preview ou Advisors n'est revendiquée avant lecture des résultats du commit exact.
-
-### 9.4 Activation et limites
-
-- Migration `20261127150000_boussole_resource_governance.sql` non appliquée.
-- Fonction Edge `boussole-editor` non déployée.
-- Aucun rôle réel attribué ; aucun contenu réel ni média réel créé.
-- La lecture de médias par les utilisateurs finaux du lecteur documentaire reste à raccorder à une voie de diffusion signée compatible avec les règles de visibilité du lecteur ; les liens signés actuellement exposés sont réservés à l'interface éditoriale authentifiée.
-- Aucune fusion automatique des PR #170 à #175.
-- Aucun changement de `main`, GitHub Pages Production ou Supabase Production.
-
-## 10. Prochaine séquence de validation — PR #175
-
-1. Contrôle de cohérence final de la migration, de la RPC et de l'Edge Function.
-2. ESLint et suite complète sur le commit exact.
-3. Tests transactionnels DEV avec rôles et identités synthétiques, relations cycliques, révocation, upload MIME valide/invalide, dépassement de taille, suppression Storage et `ROLLBACK`.
-4. Preview et vérification des interfaces FR/AR/EN.
-5. Supabase Advisors et revue des privilèges/RLS/Storage.
-6. Mise à jour de la PR avec les résultats observés ; conserver le brouillon tant que les étapes précédentes ne sont pas toutes validées.
-
-L'application de la migration DEV et le déploiement de la fonction Edge DEV restent des opérations séparées, à exécuter dans l'ordre et après validation explicite. Production et `main` restent hors périmètre.
+Aucune migration supplémentaire n'est requise pour la tranche #170 à #175. Aucun déploiement vers `main`, GitHub Pages Production ou Supabase Production n'est autorisé par cette feuille de livraison.

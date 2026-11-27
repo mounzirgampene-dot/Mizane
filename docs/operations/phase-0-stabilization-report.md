@@ -193,3 +193,9 @@ Les constats ci-dessus sont des alertes de conseil, pas la preuve d'une fuite ou
 ## 7. Conclusion
 
 La barrière P0 de synchronisation multi-entreprises est intégrée à DEV et les contrôles CI associés sont réussis. La réconciliation des migrations reste documentaire et non destructive. Les alertes Supabase sont consignées sans modification prématurée des politiques, fonctions ou index. La suite doit traiter les coffres IndexedDB, la preuve par empreintes des migrations et la revue ciblée des fonctions privilégiées.
+
+## 7. Isolation des coffres documentaires locaux — correction proposée
+
+La PR #167 ajoute une portée IndexedDB distincte pour les justificatifs comptables et fiscaux : un coffre par couple utilisateur/entreprise en mode SaaS et un coffre par utilisateur en mode local. En présence d’une entreprise active, l’accès au coffre local est refusé si l’association utilisateur/entreprise vérifiée par `company-storage.js` est absente ou incohérente.
+
+Les anciennes bases IndexedDB non cloisonnées (`mizane_accounting_documents_v1` et `mizane_tax_evidence_v1`) ne sont ni supprimées ni automatiquement réattribuées : leur contenu ne peut pas être attribué de manière fiable à une entreprise. Elles restent intactes pour une procédure de récupération explicite ultérieure. Les nouveaux coffres ne lisent pas ces anciennes bases.

@@ -37,7 +37,7 @@ create table public.boussole_media_assets (
   updated_at timestamptz not null default now(),
   constraint boussole_media_version_document_fk
     foreign key (version_id,document_id)
-    references public.boussole_document_versions(id,document_id)
+    references public.boussole_document_versions(id,document_id) on delete set null (version_id)
     deferrable initially immediate
 );
 create index boussole_media_assets_document_idx
@@ -82,7 +82,10 @@ values (
   'boussole-media','boussole-media',false,20971520,
   array['image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf']
 )
-on conflict (id) do nothing;
+on conflict (id) do update set
+  public=false,
+  file_size_limit=excluded.file_size_limit,
+  allowed_mime_types=excluded.allowed_mime_types;
 
 create or replace function public.boussole_editor_manage_resource(
   p_actor_id uuid,
@@ -124,7 +127,7 @@ begin
   end if;
   if p_action is null or p_action not in (
     'synonym_upsert','synonym_deactivate','relation_upsert','relation_delete',
-    'media_register','media_archive','compatibility_update'
+    'media_register','media_archive','media_upload_authorize','compatibility_update'
   ) then
     raise exception 'Action de ressource inconnue.' using errcode='22023';
   end if;
@@ -225,8 +228,15 @@ begin
     return jsonb_build_object('resource_id',v_id,'status','saved');
   end if;
 
-  if p_action in ('media_register','media_archive') then
-    if p_action='media_register' then
+  if p_action in ('media_register','media_archive','media_upload_authorize') then
+    if p_action='media_upload_authorize' then
+      if p_storage_path is null or p_storage_path not like p_document_id::text || '/%'
+        or p_content_type is null or p_content_type not in ('image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf')
+        or p_byte_size is null or p_byte_size not between 1 and 20971520 then
+        raise exception 'Téléversement média invalide.' using errcode='22023';
+      end if;
+      return jsonb_build_object('status','authorized','document_id',p_document_id,'storage_path',p_storage_path);
+    elsif p_action='media_register' then
       if p_storage_path is null or p_storage_path not like p_document_id::text || '/%'
         or p_file_name is null or length(btrim(p_file_name)) not between 1 and 240
         or p_content_type is null or p_content_type not in ('image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf')

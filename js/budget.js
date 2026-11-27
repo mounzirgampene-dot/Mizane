@@ -89,6 +89,7 @@ export function viewBudget() {
       <section class="card kpi"><div class="label">Produits — budget / réel</div><div class="value">${money(total.budgetIncome)}</div><div class="muted">Réel : ${money(total.actualIncome)}</div></section>
       <section class="card kpi"><div class="label">Résultat budgété / réalisé</div><div class="value">${money(total.netActual)}</div><div class="muted">Budget : ${money(total.netBudget)} · Écart : ${money(total.netVariance)}</div></section>
     </div>
+    ${budgetChartsHtml}
     <section class="card">
       <h2>Projection de fin d’exercice</h2>
       <p class="muted">${outlook.ok ? esc(outlook.method) : "Projection indisponible : " + esc(outlook.errors[0] || "données insuffisantes.")}</p>

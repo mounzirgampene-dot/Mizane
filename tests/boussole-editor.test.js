@@ -55,3 +55,6 @@ console.log("Boussole editorial: tri-language governance and scoped administrati
 assert.ok(edge.includes("const canReviewAll = scopeRoles.some"));
 assert.ok(edge.includes('query.or("status.eq.published,created_by.eq." + authData.user.id)'));
 assert.ok(edge.includes("document.created_by !== authData.user.id"));
+
+assert.ok(editorUi.includes('action === "new-edition"'));
+assert.ok(editorUi.includes('newEdition:"New edition"'));

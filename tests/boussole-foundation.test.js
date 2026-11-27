@@ -12,7 +12,11 @@ for (const table of ["boussole_documents","boussole_document_versions","boussole
 assert.match(migration, /private\.is_active_company_member\(company_id\)/);
 assert.match(migration, /private\.is_active_company_member\(d\.company_id\)/);
 assert.match(migration, /user_id=auth\.uid\(\)/);
-assert.match(migration, /grant select,insert on public\.boussole_consent_events to authenticated/i);
+assert.match(migration, /grant insert \(user_id,consent_type,purpose,policy_version,decision,scope\)\s+on public\.boussole_consent_events to authenticated/i);
+assert.doesNotMatch(migration, /grant select,insert on public\.boussole_consent_events to authenticated/i);
+const consentInsertGrant = migration.match(/grant insert \(([^)]*)\)\s+on public\.boussole_consent_events to authenticated/i);
+assert.ok(consentInsertGrant);
+assert.doesNotMatch(consentInsertGrant[1], /\b(created_at|id)\b/i, "les identifiants et horodatages sont générés par la base");
 assert.doesNotMatch(migration, /grant\s+.*\b(update|delete|all)\b.*boussole_consent_events\s+to\s+authenticated/i);
 assert.match(migration, /consent_type in \('ai_processing','business_data_access','usage_analytics'\)/);
 assert.match(migration, /locale in \('fr','ar'\)/);

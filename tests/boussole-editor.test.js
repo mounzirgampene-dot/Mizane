@@ -1,9 +1,9 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-const migration = readFileSync(new URL("../supabase/migrations/20261127120000_boussole_editorial_governance.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/20261127123614_boussole_editorial_governance.sql", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/boussole-editor/index.ts", import.meta.url), "utf8");
-const englishMigration = readFileSync(new URL("../supabase/migrations/20261127133000_boussole_english_locale.sql", import.meta.url), "utf8");
+const englishMigration = readFileSync(new URL("../supabase/migrations/20261127123619_boussole_english_locale.sql", import.meta.url), "utf8");
 const editorUi = readFileSync(new URL("../js/boussole-editor.js", import.meta.url), "utf8");
 
 assert.match(migration, /create table public\.boussole_editor_roles/);
@@ -59,7 +59,7 @@ assert.ok(edge.includes("document.created_by !== authData.user.id"));
 assert.ok(editorUi.includes('action === "new-edition"'));
 assert.ok(editorUi.includes('newEdition:"New edition"'));
 
-const resourceMigration = readFileSync(new URL("../supabase/migrations/20261127150000_boussole_resource_governance.sql", import.meta.url), "utf8");
+const resourceMigration = readFileSync(new URL("../supabase/migrations/20261127123622_boussole_resource_governance.sql", import.meta.url), "utf8");
 assert.ok(resourceMigration.includes("create table public.boussole_media_assets"));
 assert.ok(resourceMigration.includes("enable row level security"));
 assert.ok(resourceMigration.includes("force row level security"));
@@ -93,3 +93,18 @@ assert.ok(editorUi.includes("uploadToSignedUrl"));
 assert.ok(editorUi.includes("altEn"));
 assert.ok(editorUi.includes("compatibility_update"));
 console.log("Boussole resources: trilingual administration, signed uploads, MIME signature checks and storage cleanup statically checked.");
+
+
+// Les auteurs ne doivent jamais recevoir les brouillons d'autres auteurs ni leurs médias signés.
+assert.match(edge, /const visibleVersions = canReviewAll/);
+assert.match(edge, /version\.status === "published" \|\| version\.created_by === authData\.user\.id/);
+assert.match(edge, /const visibleVersionIds = new Set\(visibleVersions\.map/);
+assert.match(edge, /asset\.version_id !== null && visibleVersionIds\.has\(asset\.version_id\)/);
+assert.match(edge, /versions: visibleVersions/);
+
+// Le droit de publication est vérifié avant toute lecture privilégiée d'un fichier Storage.
+const mediaRegisterStart = edge.indexOf('if (resourceAction === "media_register")');
+const mediaAuthorizeIndex = edge.indexOf('p_action: "media_upload_authorize"', mediaRegisterStart);
+const mediaInfoIndex = edge.indexOf('.info(body.storage_path)', mediaRegisterStart);
+assert.ok(mediaRegisterStart >= 0 && mediaAuthorizeIndex > mediaRegisterStart && mediaInfoIndex > mediaAuthorizeIndex);
+console.log("Boussole resources: author version isolation and pre-read media authorization verified.");

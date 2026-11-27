@@ -3,7 +3,7 @@
 **Date de vérification :** 27 novembre 2026  
 **Dépôt :** `mounzirgampene-dot/Mizane`  
 **Branche de référence :** `feat/stock-integrated-dev`  
-**Commit DEV après intégration de la correction P0 :** `84d71fc274631e97034578ccffd546a403f767bd`  
+**Commit DEV validé après Phase 0 et correction hors connexion :** `d08ab6d7e5cc967de59e0547f43f641dfbf8a996`  
 **Projet Supabase contrôlé :** MIZANE-DEV (`rudsovhdvinvyrwjamfo`)  
 **Périmètre :** DEV uniquement. Aucune intervention sur Supabase Production.
 
@@ -33,6 +33,9 @@ Le risque de mélange de la comptabilité locale entre deux entreprises a été 
 | Contrôle Cloudflare Preview | Réussi — run [45958613978](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45958613978) |
 | Contrôle GitHub Pages sur PR | Tests réussis, déploiement ignoré — run [45958619395](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45958619395) |
 | Contrôle de résilience sur PR après intégration | Réussi — run [45958619435](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45958619435) |
+| Test de régression hors connexion sur PR #164 | Réussi — run [45959461582](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45959461582) |
+| Tests après intégration hors connexion | Réussis — run [45959525904](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45959525904) |
+| Contrôle Cloudflare Preview après intégration hors connexion | Réussi — run [45959525902](https://github.com/mounzirgampene-dot/Mizane/actions/runs/45959525902) |
 
 Le job de déploiement GitHub Pages est conditionné à un déclenchement manuel sur `main`. Il a été ignoré. Aucun déploiement Production n'a été effectué.
 
@@ -41,6 +44,8 @@ Le job de déploiement GitHub Pages est conditionné à un déclenchement manuel
 - PR #60 : toujours ouverte et en brouillon.
 - PR #68 : toujours ouverte et en brouillon. Sa branche source `feat/stock-integrated-dev` contient maintenant la correction P0 intégrée.
 - PR #162 : fusionnée exclusivement vers `feat/stock-integrated-dev`, jamais vers `main`.
+- PR #163 : documentation de référence Boussole et rapport Phase 0 fusionnés vers DEV.
+- PR #164 : précache hors connexion corrigé et fusionné vers DEV.
 
 ## 4. Réconciliation de l'historique des migrations
 
@@ -180,7 +185,7 @@ Les constats ci-dessus sont des alertes de conseil, pas la preuve d'une fuite ou
 | P1 | Vérification des transitions de session, retrait de membre et changement d'utilisateur | Ajouter des tests multi-onglets et multi-comptes |
 | P1 | Revue des quatre fonctions `SECURITY DEFINER` | Vérifier chaque fonction et ses grants avant modification |
 | P1 | Rapprochement des migrations par empreintes SQL | Produire un registre vérifiable ; aucune réapplication |
-| P2 | Précache du service worker | Comparer les imports statiques et les ressources précachées ; `js/stock.js` et `js/work-history.js` doivent être vérifiés pour le premier accès hors ligne |
+| P2 | Précache du service worker | **Résolu par PR #164** : ajout de `js/stock.js` et `js/work-history.js`, cache `mizane-v113`, test automatique des imports directs de `app.js` |
 | P2 | Reproductibilité des dépendances | Le dépôt ne contient pas de `package-lock.json` à la racine ; évaluer la génération et la validation d'un lockfile avant de remplacer les installations de secours |
 | P2 | Index des clés étrangères de notifications | Mesurer les requêtes et ajouter les index seulement si justifiés |
 | P2 | Index signalés inutilisés | Ne pas supprimer sans analyse de charge |

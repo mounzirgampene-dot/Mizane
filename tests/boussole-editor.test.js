@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 
 const migration = readFileSync(new URL("../supabase/migrations/20261127120000_boussole_editorial_governance.sql", import.meta.url), "utf8");
 const edge = readFileSync(new URL("../supabase/functions/boussole-editor/index.ts", import.meta.url), "utf8");
+const englishMigration = readFileSync(new URL("../supabase/migrations/20261127133000_boussole_english_locale.sql", import.meta.url), "utf8");
+const editorUi = readFileSync(new URL("../js/boussole-editor.js", import.meta.url), "utf8");
 
 assert.match(migration, /create table public\.boussole_editor_roles/);
 assert.match(migration, /create table public\.boussole_editor_audit/);
@@ -34,3 +36,17 @@ assert.match(edge, /SUPABASE_SERVICE_ROLE_KEY/);
 assert.doesNotMatch(edge, /serviceKey.*localStorage|localStorage.*serviceKey/);
 assert.match(edge, /1_000_000/);
 console.log("Boussole éditoriale : rôles serveur, séparation des tâches et transitions contrôlées vérifiés.");
+
+
+assert.match(migration, /Les versions française, arabe et anglaise doivent être approuvées avant publication/);
+assert.match(migration, /v_other_locale_count<>3/);
+assert.match(migration, /v_next_version := coalesce\\(v_document.current_published_version,0\\) \\+ 1/);
+assert.match(migration, /locale in \\('fr','ar','en'\\)/);
+assert.match(englishMigration, /locale in \\('fr','ar','en'\\)/);
+assert.match(englishMigration, /interface_locale in \\('fr','ar','en'\\)/);
+assert.match(englishMigration, /response_locale in \\('fr','ar','en'\\)/);
+assert.match(edge, /action === "list" \\|\\| action === "get"/);
+assert.match(edge, /scopeRoles\\.length/);
+assert.match(edge, /body\\.locale !== "en"/);
+assert.match(editorUi, /functions\\.invoke\\("boussole-editor"/);
+assert.doesNotMatch(editorUi, /\\.from\\("boussole_documents"\\)/);

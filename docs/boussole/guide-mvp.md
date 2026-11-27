@@ -2,7 +2,7 @@
 
 ## Périmètre livré
 
-Un panneau latéral accessible depuis la barre supérieure fournit une recherche locale, des articles d'aide en français et en arabe, ainsi qu'une sélection contextuelle selon la rubrique MIZANE ouverte.
+Un panneau latéral accessible depuis la barre supérieure fournit une recherche locale, des articles d'aide en français et en arabe, ainsi qu'une sélection contextuelle selon la rubrique MIZANE ouverte. Il peut être agrandi en plein écran puis réduit sans perdre la recherche ou l'article consulté ; les commandes sont localisées et la touche Échap réduit d'abord le panneau avant de le fermer.
 
 Le contenu est embarqué dans le module JavaScript, ajouté au précache du service worker et consultable hors connexion après un premier chargement réussi.
 

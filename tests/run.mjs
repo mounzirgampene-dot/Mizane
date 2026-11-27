@@ -1,3 +1,4 @@
+import "./boussole-foundation.test.js";
 import "./tax-compliance.test.js";
 import "./tax-documents.test.js";
 import "./document-storage-scope.test.js";

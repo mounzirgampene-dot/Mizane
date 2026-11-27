@@ -1,0 +1,17 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+const app=readFileSync(new URL("../js/app.js",import.meta.url),"utf8");
+const guide=readFileSync(new URL("../js/boussole.js",import.meta.url),"utf8");
+const html=readFileSync(new URL("../index.html",import.meta.url),"utf8");
+const worker=readFileSync(new URL("../sw.js",import.meta.url),"utf8");
+assert.match(app,/initBoussole/);
+assert.match(app,/setBoussoleContext\(currentRoute\)/);
+assert.match(html,/id="boussole-toggle"/);
+assert.match(guide,/export function initBoussole/);
+assert.match(guide,/export function setBoussoleContext/);
+assert.match(guide,/Rechercher dans le guide MIZANE/);
+assert.match(guide,/لا تُقرأ البيانات المحاسبية/);
+assert.match(worker,/mizane-v116/);
+assert.match(worker,/"js\/boussole\.js"/);
+assert.doesNotMatch(guide,/fetch\(|supabase|company-ai|localStorage/);
+console.log("Boussole UI : panneau contextuel, guide FR/AR et disponibilité hors ligne vérifiés.");

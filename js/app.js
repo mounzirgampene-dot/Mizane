@@ -19,7 +19,7 @@ import { viewTax } from "./tax.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
 import { getCompanyStorageStatus } from "./company-storage.js";
-import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
+import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";\nimport { initBoussole, setBoussoleContext } from "./boussole.js";
 
 let currentCompanyRole = null;
 
@@ -96,7 +96,7 @@ function renderNav() {
 
 function render() {
   renderWorkSidebar();
-  setLang(store.settings.language);
+  setLang(store.settings.language);\n  setBoussoleContext(currentRoute);
   document.getElementById("company-tag").textContent =
     `${store.settings.companyName} · ${store.settings.country} · ${store.settings.currency}`;
   (VIEWS[currentRoute] || viewDashboard)();

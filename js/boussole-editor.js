@@ -328,6 +328,8 @@ export async function initBoussoleEditor() {
   closeButton.addEventListener("click", () => dialog.close());
   button.addEventListener("click", async () => {
     button.textContent = copy().button;
+    dialog.querySelector("#boussole-editor-title").textContent = copy().title;
+    closeButton.textContent = copy().close;
     dialog.showModal();
     try { await loadDocuments(); }
     catch (error) { body.replaceChildren(make("p", "boussole-editor-message", error.message || copy().error)); }

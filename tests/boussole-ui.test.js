@@ -42,7 +42,7 @@ assert.deepEqual(expandBoussoleCloudSearchVariants("الجرد",[{normalized_ter
 assert.deepEqual(expandBoussoleCloudSearchVariants("   "),[]);
 assert.match(guide,/Rechercher dans le guide MIZANE/);
 assert.match(guide,/لا تُقرأ البيانات المحاسبية/);
-assert.match(worker,/mizane-v119/);
+assert.match(worker,/mizane-v120/);
 assert.match(worker,/"js\/academy\.js"/);
 assert.match(worker,/"js\/boussole\.js"/);
 assert.match(worker,/"js\/boussole-cloud\.js"/);

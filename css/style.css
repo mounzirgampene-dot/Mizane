@@ -544,3 +544,16 @@ main.workspace.has-work-sidebar {
 .boussole-editor-new{max-width:900px}
 .boussole-editor-new .boussole-editor-actions{margin-top:14px}
 @media(max-width:760px){.boussole-editor-dialog{width:98vw;max-height:96vh;padding:12px}.boussole-editor-layout{grid-template-columns:1fr}.boussole-editor-list{max-height:240px;overflow:auto}.boussole-editor-language-status{grid-template-columns:1fr}}
+
+
+/* Tableaux de bord graphiques — SVG adaptatifs, lisibles sur mobile et en thème sombre. */
+:root { --chart-0:#0f766e; --chart-1:#3b82f6; --chart-2:#d97706; --chart-3:#8b5cf6; }
+:root[data-theme="dark"] { --chart-0:#2dd4bf; --chart-1:#60a5fa; --chart-2:#fbbf24; --chart-3:#a78bfa; }
+.chart-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.chart-heading h3{margin:0 0 4px}
+.chart-svg-wrap{width:100%;overflow-x:auto;margin-top:12px}
+.chart-svg-wrap svg{display:block;width:100%;min-width:520px;height:auto;overflow:visible}
+.chart-gridline{stroke:var(--border);stroke-width:1;stroke-dasharray:3 5}
+.chart-axis-label{fill:var(--muted);font-size:11px}
+.financial-chart{overflow:hidden}
+@media(max-width:640px){.chart-heading{display:block}.chart-svg-wrap svg{min-width:560px}}

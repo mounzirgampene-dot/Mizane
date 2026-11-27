@@ -3,7 +3,7 @@ import { store, $app, esc, toast } from "./state.js";
 import { hasActiveStockCompany, readCloudStock } from "./cloud-sync.js";
 import { buildCommercialMarginReport } from "./commercial-margin-core.js";
 import { buildCommercialPerformanceReport } from "./commercial-performance-core.js";
-import { renderBarChart, renderLineChart } from "./charts.js";
+import { chartModeControls, bindChartMode, renderBarChart, renderLineChart } from "./charts.js";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const monthStart = () => today().slice(0, 8) + "01";
@@ -57,10 +57,14 @@ export async function viewCommercialMargins() {
         const top = report.rows.filter(row => row.currency === currency).sort((a,b) => b.margin - a.margin).slice(0,8).map(row => ({ label: row.productName, margin: row.margin }));
         return renderBarChart("Articles par marge brute — " + currency, top, [{ key: "margin", label: "Marge brute" }], value => format(value, currency));
       }).join("");
+      const totalsHtml = totalsByCurrency.length ? '<div class="grid cols-3">'+totalsByCurrency.map(item=>'<section class="card kpi"><div class="value">'+format(item.revenue,item.currency)+'</div><div class="label">Chiffre d’affaires HT — '+item.currency+'</div><div class="muted">Coût : '+format(item.cost,item.currency)+' · Marge : '+format(item.margin,item.currency)+'</div></section>').join('')+'</div>' : '';
       $app.querySelector("#cm-results").innerHTML =
-        (totalsByCurrency.length ? '<div class="grid cols-3">'+totalsByCurrency.map(item=>'<section class="card kpi"><div class="value">'+format(item.revenue,item.currency)+'</div><div class="label">Chiffre d’affaires HT — '+item.currency+'</div><div class="muted">Coût : '+format(item.cost,item.currency)+' · Marge : '+format(item.margin,item.currency)+'</div></section>').join('')+'</div>' : '') +
-        chartsHtml + '<section class="card"><h2>Évolution mensuelle — données détaillées</h2>'+trendRows+'</section>' + performanceHtml + table + (report.totals.missingCostLines ? '<p class="errors">'+report.totals.missingCostLines+' ligne(s) sans coût de sortie associé : marge incomplète, à contrôler.</p>' : '<p class="ok-msg">Toutes les lignes analysées disposent d’un coût de sortie associé.</p>') +
-        '<p class="muted">Les montants sont présentés dans la devise comptable de chaque facture convertie. Les devises ne sont jamais additionnées entre elles. Les prestations non liées au stock ne sont pas incluses.</p>';
+        chartModeControls("margins") +
+        '<div id="margins-table-view">'+totalsHtml+'<section class="card"><h2>Évolution mensuelle — données détaillées</h2>'+trendRows+'</section>'+performanceHtml+table+
+        (report.totals.missingCostLines ? '<p class="errors">'+report.totals.missingCostLines+' ligne(s) sans coût de sortie associé : marge incomplète, à contrôler.</p>' : '<p class="ok-msg">Toutes les lignes analysées disposent d’un coût de sortie associé.</p>') +
+        '<p class="muted">Les montants sont présentés dans la devise comptable de chaque facture convertie. Les devises ne sont jamais additionnées entre elles. Les prestations non liées au stock ne sont pas incluses.</p></div>' +
+        '<div id="margins-chart-view" hidden>'+totalsHtml+chartsHtml+'</div>';
+      bindChartMode("margins");
     };
     $app.innerHTML = '<h1>Coûts d’achat et marges commerciales</h1><section class="card"><div class="row"><div><label for="cm-start">Du</label><input id="cm-start" type="date" value="'+monthStart()+'"></div><div><label for="cm-end">Au</label><input id="cm-end" type="date" value="'+today()+'"></div><div class="nogrow"><button id="cm-refresh">Analyser</button></div></div></section><div id="cm-results"></div>';
     const run = () => {

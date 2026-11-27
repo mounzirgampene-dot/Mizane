@@ -20,7 +20,7 @@ assert.match(migration, /r\.role in \('author','admin'\)/);
 assert.match(migration, /r\.role in \(v_required_role,'admin'\)/);
 assert.match(migration, /created_by is distinct from p_actor_id/);
 assert.match(migration, /approved_by is distinct from p_actor_id/);
-assert.match(migration, /Les versions française et arabe doivent être approuvées avant publication/);
+assert.match(migration, /Les versions française, arabe et anglaise doivent être approuvées avant publication/);
 assert.match(migration, /current_published_version is null then 'review' else status/);
 assert.match(migration, /document_archived/);
 assert.match(migration, /document_restored/);

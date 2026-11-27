@@ -79,6 +79,8 @@ assert.ok(resourceMigration.includes("on delete set null (version_id)"));
 assert.ok(resourceMigration.includes("'media_upload_authorize'"));
 assert.ok(resourceMigration.includes("public=false"));
 assert.ok(edge.includes("createSignedUploadUrl"));
+assert.ok(edge.includes("unregistered media cleanup pending"));
+assert.ok(resourceMigration.includes("where v.id=p_version_id and v.document_id=p_document_id"));
 assert.ok(edge.includes("uploadToSignedUrl") === false);
 assert.ok(edge.includes("validMediaSignature"));
 assert.ok(edge.includes(".storage.from(\"boussole-media\").download"));

@@ -16,6 +16,20 @@ const isUuid = (value: unknown): value is string => typeof value === "string" &&
 const optionalText = (value: unknown, max: number) =>
   typeof value === "string" && value.length <= max ? value : null;
 
+
+function validMediaSignature(contentType: string, bytes: Uint8Array): boolean {
+  const starts = (...values: number[]) => values.every((value, index) => bytes[index] === value);
+  const ascii = (start: number, length: number) => new TextDecoder().decode(bytes.slice(start, start + length));
+  if (contentType === "image/jpeg") return starts(0xff, 0xd8, 0xff);
+  if (contentType === "image/png") return starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a);
+  if (contentType === "image/webp") return ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP";
+  if (contentType === "image/avif") return ascii(4, 4) === "ftyp" && ["avif", "avis"].includes(ascii(8, 4));
+  if (contentType === "application/pdf") return ascii(0, 5) === "%PDF-";
+  if (contentType === "video/mp4") return ascii(4, 4) === "ftyp";
+  if (contentType === "video/webm") return starts(0x1a, 0x45, 0xdf, 0xa3);
+  return false;
+}
+
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
   const originAllowed = (value: string) =>
@@ -133,7 +147,7 @@ Deno.serve(async (request) => {
     if (!isUuid(body.document_id)) return json(400, { error: "Identifiant documentaire invalide." });
     const { data: document, error: documentError } = await adminClient
       .from("boussole_documents")
-      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
+      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,min_app_version,max_app_version,created_by,updated_at,published_at")
       .eq("id", body.document_id)
       .maybeSingle();
     if (documentError || !document) return json(404, { error: "Document introuvable." });

@@ -4,7 +4,7 @@ import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildBudgetReport, validateBudgetLines } from "./budget-core.js";
 import { buildBudgetOutlook } from "./budget-outlook-core.js";
 import { buildAnalyticalBudgetReport, validateAnalyticalBudgets } from "./analytical-budget-core.js";
-import { renderLineChart, renderBarChart } from "./charts.js";
+import { renderLineChart } from "./charts.js";
 
 const fiscalStart = () => store.settings.exerciceStart || new Date().getFullYear() + "-01-01";
 const fiscalEnd = () => store.settings.exerciceEnd || new Date().getFullYear() + "-12-31";

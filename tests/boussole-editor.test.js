@@ -58,3 +58,20 @@ assert.ok(edge.includes("document.created_by !== authData.user.id"));
 
 assert.ok(editorUi.includes('action === "new-edition"'));
 assert.ok(editorUi.includes('newEdition:"New edition"'));
+
+const resourceMigration = readFileSync(new URL("../supabase/migrations/20261127150000_boussole_resource_governance.sql", import.meta.url), "utf8");
+assert.match(resourceMigration, /create table public\\.boussole_media_assets/);
+assert.match(resourceMigration, /enable row level security[\\s\\S]*force row level security/);
+assert.match(resourceMigration, /revoke all on public\\.boussole_media_assets from public,anon,authenticated/);
+assert.match(resourceMigration, /values \\(\s*'boussole-media','boussole-media',false,20971520/);
+assert.match(resourceMigration, /boussole_editor_manage_resource/);
+assert.match(resourceMigration, /grant execute on function public\\.boussole_editor_manage_resource[\\s\\S]*to service_role/);
+assert.match(resourceMigration, /r\\.role in \\('publisher','admin'\\)/);
+assert.match(resourceMigration, /Cette relation créerait un cycle/);
+assert.match(resourceMigration, /storage_path not like p_document_id::text \\|\\| '\\/%'/);
+assert.match(resourceMigration, /compatibility_updated/);
+assert.match(edge, /"manage_resource"/);
+assert.match(edge, /adminClient\\.rpc\\("boussole_editor_manage_resource"/);
+assert.match(edge, /supportedResourceActions/);
+assert.doesNotMatch(edge, /p_actor_id:\\s*body\\./);
+console.log("Boussole resources: synonym, relation, media and compatibility governance statically checked.");

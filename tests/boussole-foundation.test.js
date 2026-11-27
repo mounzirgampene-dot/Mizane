@@ -1,0 +1,19 @@
+import { strict as assert } from "node:assert";
+import { readFileSync } from "node:fs";
+
+const migration = readFileSync(new URL("../supabase/migrations/20261127000100_boussole_foundation.sql", import.meta.url), "utf8");
+
+assert.match(migration, /begin;[\s\S]*commit;/i);
+for (const table of ["boussole_documents","boussole_document_versions","boussole_document_relations","boussole_search_synonyms","boussole_user_preferences","boussole_consent_events"]) {
+  assert.match(migration, new RegExp("create table public\\." + table + "\\b", "i"), table + " doit être créée");
+  assert.match(migration, new RegExp("alter table public\\." + table + " enable row level security", "i"), table + " doit activer RLS");
+  assert.match(migration, new RegExp("alter table public\\." + table + " force row level security", "i"), table + " doit forcer RLS");
+}
+assert.match(migration, /private\.is_active_company_member\(company_id\)/);
+assert.match(migration, /private\.is_active_company_member\(d\.company_id\)/);
+assert.match(migration, /user_id=auth\.uid\(\)/);
+assert.match(migration, /grant select,insert on public\.boussole_consent_events to authenticated/i);
+assert.doesNotMatch(migration, /grant\s+.*\b(update|delete|all)\b.*boussole_consent_events\s+to\s+authenticated/i);
+assert.match(migration, /consent_type in \('ai_processing','business_data_access','usage_analytics'\)/);
+assert.match(migration, /locale in \('fr','ar'\)/);
+console.log("Boussole foundation: contrôles statiques réussis.");

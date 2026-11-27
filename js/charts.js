@@ -44,3 +44,28 @@ export function renderHorizontalBars(title, rows, series, formatValue = value =>
     </div>`).join("")}</div>
   </section>`;
 }
+
+
+const chartNumber = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+const chartPalette = ["var(--chart-0)","var(--chart-1)","var(--chart-2)","var(--chart-3)"];
+
+export function renderBarChart(title, rows, series, formatValue = value => Number(value).toLocaleString("fr-FR")) {
+  const data=(rows||[]).map(row=>({label:String(row.label??""),values:series.map(item=>Math.max(0,chartNumber(row[item.key])))})).filter(row=>row.values.some(value=>value>0)).slice(0,12);
+  if(!data.length)return '<section class="card financial-chart"><h3>'+escapeHTML(title)+'</h3><p class="muted">Aucune donnée à représenter pour cette période.</p></section>';
+  const max=Math.max(1,...data.flatMap(row=>row.values)),left=190,top=24,plotW=520,rowH=34,barH=Math.min(11,Math.max(7,(rowH-6)/series.length)),height=top+data.length*rowH+18;
+  const ticks=Array.from({length:5},(_,i)=>max*i/4);
+  const grid=ticks.map(v=>{const x=left+plotW*v/max;return '<line x1="'+x+'" y1="'+top+'" x2="'+x+'" y2="'+(height-12)+'" class="chart-gridline"/><text x="'+x+'" y="'+(height-1)+'" text-anchor="middle" class="chart-axis-label">'+escapeHTML(formatValue(v))+'</text>';}).join("");
+  const bars=data.map((row,i)=>'<text x="'+(left-12)+'" y="'+(top+i*rowH+rowH/2+4)+'" text-anchor="end" class="chart-axis-label">'+escapeHTML(row.label.length>27?row.label.slice(0,26)+"…":row.label)+'</text>'+row.values.map((v,j)=>'<rect x="'+left+'" y="'+(top+i*rowH+j*(barH+3)+3)+'" width="'+Math.max(v?2:0,plotW*v/max)+'" height="'+barH+'" rx="5" fill="'+chartPalette[j%4]+'"><title>'+escapeHTML(series[j].label+": "+formatValue(v))+'</title></rect>').join("")).join("");
+  return '<section class="card financial-chart"><div class="chart-heading"><div><h3>'+escapeHTML(title)+'</h3><p class="muted">Comparaison des valeurs — données limitées aux 12 premières catégories</p></div><div class="chart-legend">'+series.map((item,i)=>'<span><i class="chart-swatch" style="background:'+chartPalette[i%4]+'"></i>'+escapeHTML(item.label)+'</span>').join("")+'</div></div><div class="chart-svg-wrap"><svg viewBox="0 0 760 '+height+'" role="img" aria-label="'+escapeHTML(title)+'">'+grid+bars+'</svg></div></section>';
+}
+
+export function renderLineChart(title, rows, series, formatValue = value => Number(value).toLocaleString("fr-FR")) {
+  const data=(rows||[]).map(row=>({label:String(row.label??""),values:series.map(item=>chartNumber(row[item.key]))})).filter(row=>row.values.some(value=>value!==0));
+  if(!data.length)return '<section class="card financial-chart"><h3>'+escapeHTML(title)+'</h3><p class="muted">Aucune donnée à représenter pour cette période.</p></section>';
+  const values=data.flatMap(row=>row.values),min=Math.min(0,...values),max=Math.max(1,...values),range=max-min||1,left=54,right=18,top=20,bottom=48,w=760,h=280,pw=w-left-right,ph=h-top-bottom;
+  const x=i=>left+(data.length===1?pw/2:i*pw/(data.length-1)),y=v=>top+(max-v)*ph/range;
+  const grid=Array.from({length:5},(_,i)=>{const v=min+range*i/4,yy=y(v);return '<line x1="'+left+'" y1="'+yy+'" x2="'+(w-right)+'" y2="'+yy+'" class="chart-gridline"/><text x="'+(left-8)+'" y="'+(yy+4)+'" text-anchor="end" class="chart-axis-label">'+escapeHTML(formatValue(v))+'</text>';}).join("");
+  const paths=series.map((item,j)=>{const points=data.map((row,i)=>x(i)+","+y(row.values[j])).join(" ");return '<polyline points="'+points+'" fill="none" stroke="'+chartPalette[j%4]+'" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>'+data.map((row,i)=>'<circle cx="'+x(i)+'" cy="'+y(row.values[j])+'" r="4.5" fill="'+chartPalette[j%4]+'"><title>'+escapeHTML(row.label+" · "+item.label+": "+formatValue(row.values[j]))+'</title></circle>').join("");}).join("");
+  const labels=data.map((row,i)=>'<text x="'+x(i)+'" y="'+(h-18)+'" text-anchor="middle" class="chart-axis-label">'+escapeHTML(row.label)+'</text>').join("");
+  return '<section class="card financial-chart"><div class="chart-heading"><div><h3>'+escapeHTML(title)+'</h3><p class="muted">Évolution chronologique</p></div><div class="chart-legend">'+series.map((item,i)=>'<span><i class="chart-swatch" style="background:'+chartPalette[i%4]+'"></i>'+escapeHTML(item.label)+'</span>').join("")+'</div></div><div class="chart-svg-wrap"><svg viewBox="0 0 '+w+' '+h+'" role="img" aria-label="'+escapeHTML(title)+'">'+grid+paths+labels+'</svg></div></section>';
+}

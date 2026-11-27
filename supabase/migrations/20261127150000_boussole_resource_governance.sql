@@ -82,10 +82,7 @@ values (
   'boussole-media','boussole-media',false,20971520,
   array['image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf']
 )
-on conflict (id) do update set
-  public=false,
-  file_size_limit=excluded.file_size_limit,
-  allowed_mime_types=excluded.allowed_mime_types;
+on conflict (id) do nothing;
 
 create or replace function public.boussole_editor_manage_resource(
   p_actor_id uuid,

@@ -518,3 +518,29 @@ main.workspace.has-work-sidebar {
 .boussole-local-note{margin-top:16px;padding-top:10px;border-top:1px solid var(--border);color:var(--muted);font-size:.76rem;line-height:1.5}
 :root[data-theme="dark"] .boussole-result{background:#0b1220}
 @media(max-width:640px){.boussole-panel{top:8px;right:8px;bottom:8px;width:calc(100vw - 16px);border-radius:12px}.boussole-panel.is-expanded{inset:4px;width:auto;border-radius:8px}.boussole-head-actions{gap:4px}.boussole-head-actions button{padding:5px 8px;font-size:.76rem}}
+
+
+/* Boussole — administration éditoriale trilingue. */
+.boussole-editor-dialog{width:min(1180px,96vw);max-width:1180px;max-height:92vh;padding:18px 20px;overflow:auto}
+.boussole-editor-dialog::backdrop{background:rgba(15,23,42,.68)}
+.boussole-editor-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:14px}
+.boussole-editor-dialog-head h2{margin:0;color:var(--teal-dark)}
+.boussole-editor-toolbar,.boussole-editor-actions{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:10px 0}
+.boussole-editor-intro,.boussole-editor-message{color:var(--muted);line-height:1.5}
+.boussole-editor-message[data-error="true"]{color:var(--danger)}
+.boussole-editor-layout{display:grid;grid-template-columns:minmax(210px,290px) minmax(0,1fr);gap:16px;align-items:start}
+.boussole-editor-list,.boussole-editor-workspace{min-width:0;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--bg)}
+.boussole-editor-list h3,.boussole-editor-workspace h3{margin-top:0}
+.boussole-editor-document{display:flex;flex-direction:column;align-items:flex-start;gap:4px;width:100%;padding:10px;margin:6px 0;border:1px solid var(--border);background:var(--card);color:var(--text);text-align:start}
+.boussole-editor-document span{font-size:.78rem;color:var(--muted)}
+.boussole-editor-field{display:flex;flex-direction:column;gap:5px;min-width:0;margin:8px 0;font-size:.86rem;font-weight:600}
+.boussole-editor-field input,.boussole-editor-field select,.boussole-editor-field textarea{width:100%;min-width:0;padding:9px;border:1px solid var(--border);border-radius:8px;background:var(--card);color:var(--text);font:inherit;font-weight:400}
+.boussole-editor-field textarea{resize:vertical;line-height:1.55}
+.boussole-editor-language-status{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0 16px}
+.boussole-editor-language-status span{padding:8px;border-radius:8px;background:var(--card);border:1px solid var(--border);font-size:.8rem}
+.boussole-editor-language-status .is-present{border-color:var(--ok)}
+.boussole-editor-language-status .is-missing{border-color:var(--danger);color:var(--danger)}
+.boussole-editor-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--card);font:inherit;line-height:1.55}
+.boussole-editor-new{max-width:900px}
+.boussole-editor-new .boussole-editor-actions{margin-top:14px}
+@media(max-width:760px){.boussole-editor-dialog{width:98vw;max-height:96vh;padding:12px}.boussole-editor-layout{grid-template-columns:1fr}.boussole-editor-list{max-height:240px;overflow:auto}.boussole-editor-language-status{grid-template-columns:1fr}}

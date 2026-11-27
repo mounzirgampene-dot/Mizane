@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { normalizeBoussoleQuery, matchesBoussoleQuery } from "../js/boussole-search.js";
 import { expandBoussoleCloudSearchVariants } from "../js/boussole-cloud.js";
+import { searchAcademyCourses } from "../js/academy.js";
 import { readFileSync } from "node:fs";
 const app=readFileSync(new URL("../js/app.js",import.meta.url),"utf8");
 const guide=readFileSync(new URL("../js/boussole.js",import.meta.url),"utf8");
@@ -42,10 +43,29 @@ assert.deepEqual(expandBoussoleCloudSearchVariants("الجرد",[{normalized_ter
 assert.deepEqual(expandBoussoleCloudSearchVariants("   "),[]);
 assert.match(guide,/Rechercher dans le guide MIZANE/);
 assert.match(guide,/لا تُقرأ البيانات المحاسبية/);
-assert.match(worker,/mizane-v120/);
+assert.match(worker,/mizane-v122/);
 assert.match(worker,/"js\/academy\.js"/);
 assert.match(worker,/"js\/boussole\.js"/);
 assert.match(worker,/"js\/boussole-cloud\.js"/);
-assert.match(worker,/mizane-v120/);
+assert.match(worker,/mizane-v122/);
 assert.doesNotMatch(guide,/fetch\(|supabase|company-ai|localStorage/);
 console.log("Boussole UI : panneau contextuel, guide FR/AR et disponibilité hors ligne vérifiés.");
+
+
+const academyEnglish = readFileSync(new URL("../js/academy-en.js", import.meta.url), "utf8");
+const editorUi = readFileSync(new URL("../js/boussole-editor.js", import.meta.url), "utf8");
+assert.ok(guide.includes('en:["Getting started with MIZANE"'));
+assert.ok(guide.includes("ROUTES_EN"));
+assert.ok(cloud.includes('["fr", "ar", "en"].includes(locale)'));
+assert.ok(academy.includes('document.documentElement.lang === "en"'));
+assert.ok(academy.includes("ACADEMY_EN[course.id].quiz"));
+assert.ok(academyEnglish.includes("English Academy curriculum"));
+assert.ok(editorUi.includes('functions.invoke("boussole-editor"'));
+assert.ok(editorUi.includes("create_draft"));
+assert.ok(html.includes('id="boussole-editor-dialog"'));
+assert.ok(worker.includes("js/boussole-editor.js"));
+assert.ok(worker.includes("js/academy-en.js"));
+console.log("Boussole UI: French, Arabic and English guide, Academy and editorial administration checks passed.");
+
+assert.ok(searchAcademyCourses("cash flow forecast").some(course => course.id === "treasury"));
+assert.ok(searchAcademyCourses("serial number").some(course => course.id === "stock"));

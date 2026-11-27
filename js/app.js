@@ -22,6 +22,7 @@ import { getCompanyStorageStatus } from "./company-storage.js";
 import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
 import { initBoussole, setBoussoleContext } from "./boussole.js";
 import { initAcademy } from "./academy.js";
+import { initBoussoleEditor } from "./boussole-editor.js";
 
 let currentCompanyRole = null;
 
@@ -192,6 +193,7 @@ async function start() {
   render();
   initBoussole();
   initAcademy();
+  void initBoussoleEditor();
   const historyAccess = await initWorkHistory();
   await initNotifications();
   if (historyAccess && ["history", "my-work"].includes(hash)) setRoute(hash);

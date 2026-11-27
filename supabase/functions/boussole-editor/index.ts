@@ -8,7 +8,7 @@ const allowedOrigins = new Set([
   "http://localhost:8000",
 ]);
 const actions = new Set([
-  "create_draft", "update_draft", "create_locale_version", "submit_review",
+  "list", "get", "create_draft", "update_draft", "create_locale_version", "submit_review",
   "request_changes", "approve", "publish", "archive", "restore",
 ]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,7 +20,7 @@ Deno.serve(async (request) => {
   const origin = request.headers.get("Origin");
   const originAllowed = (value: string) =>
     allowedOrigins.has(value) ||
-    /^https:\/\/[a-z0-9-]+\.mizane-preview\.pages\.dev$/i.test(value) ||
+    /^https:\/\/[a-z0-9-]+\.mizane-test-preview\.pages\.dev$/i.test(value) ||
     value === "https://mizane-test-preview.pages.dev";
   const corsHeaders = {
     ...(origin && originAllowed(origin) ? { "Access-Control-Allow-Origin": origin } : {}),
@@ -79,9 +79,80 @@ Deno.serve(async (request) => {
   if (body.visibility !== undefined && body.visibility !== "global" && body.visibility !== "company") {
     return json(400, { error: "Portée documentaire invalide." });
   }
-  if (body.locale !== undefined && body.locale !== "fr" && body.locale !== "ar") {
+  if (body.locale !== undefined && body.locale !== "fr" && body.locale !== "ar" && body.locale !== "en") {
     return json(400, { error: "Langue documentaire invalide." });
   }
+  if (action === "list" || action === "get") {
+    const scope = body.scope === "global" ? "global" : "company";
+    const companyId = body.company_id ?? null;
+    if (scope === "company" && !isUuid(companyId)) {
+      return json(400, { error: "Entreprise active requise pour cet espace éditorial." });
+    }
+    const { data: roleRows, error: roleError } = await adminClient
+      .from("boussole_editor_roles")
+      .select("scope_type,company_id,role")
+      .eq("user_id", authData.user.id)
+      .is("revoked_at", null);
+    if (roleError) {
+      console.error("boussole_editor_roles lookup failed:", roleError.code ?? "unknown");
+      return json(500, { error: "Vérification des droits éditoriaux impossible." });
+    }
+    const roles = roleRows ?? [];
+    let scopeRoles = roles.filter((role) =>
+      scope === "global"
+        ? role.scope_type === "global" && role.company_id === null
+        : role.scope_type === "company" && role.company_id === companyId
+    );
+    if (scope === "company") {
+      const { data: membership, error: membershipError } = await adminClient
+        .from("company_memberships")
+        .select("status")
+        .eq("company_id", companyId)
+        .eq("user_id", authData.user.id)
+        .maybeSingle();
+      if (membershipError || membership?.status !== "active") {
+        return json(403, { error: "Appartenance active à cette entreprise requise." });
+      }
+    }
+    if (!scopeRoles.length) return json(403, { error: "Aucun rôle éditorial actif dans cet espace." });
+
+    if (action === "list") {
+      let query = adminClient.from("boussole_documents")
+        .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
+        .eq("visibility", scope)
+        .order("updated_at", { ascending: false })
+        .limit(100);
+      if (scope === "company") query = query.eq("company_id", companyId);
+      const canReviewAll = scopeRoles.some((role) => ["reviewer", "publisher", "admin"].includes(role.role));
+      if (!canReviewAll) query = query.or("status.eq.published,created_by.eq." + authData.user.id);
+      const { data: documents, error: documentsError } = await query;
+      if (documentsError) return json(500, { error: "Chargement des documents éditoriaux impossible." });
+      return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role), documents: documents ?? [] });
+    }
+
+    if (!isUuid(body.document_id)) return json(400, { error: "Identifiant documentaire invalide." });
+    const { data: document, error: documentError } = await adminClient
+      .from("boussole_documents")
+      .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
+      .eq("id", body.document_id)
+      .maybeSingle();
+    if (documentError || !document) return json(404, { error: "Document introuvable." });
+    if (scope === "global" && document.visibility !== "global") return json(403, { error: "Document hors de cet espace éditorial." });
+    if (scope === "company" && (document.visibility !== "company" || document.company_id !== companyId)) return json(403, { error: "Document hors de cet espace éditorial." });
+    const canReviewAll = scopeRoles.some((role) => ["reviewer", "publisher", "admin"].includes(role.role));
+    if (!canReviewAll && document.status !== "published" && document.created_by !== authData.user.id) {
+      return json(403, { error: "Un auteur ne peut consulter que ses propres brouillons et les documents publiés." });
+    }
+    const { data: versions, error: versionsError } = await adminClient
+      .from("boussole_document_versions")
+      .select("id,document_id,version_number,locale,title,summary,content_markdown,structured_content,source_references,learning_level,estimated_minutes,status,created_by,reviewed_by,approved_by,created_at,reviewed_at,approved_at,published_at")
+      .eq("document_id", document.id)
+      .order("version_number", { ascending: false })
+      .order("locale", { ascending: true });
+    if (versionsError) return json(500, { error: "Chargement des versions éditoriales impossible." });
+    return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role), document, versions: versions ?? [] });
+  }
+
   if (body.structured_content !== undefined &&
       (!body.structured_content || typeof body.structured_content !== "object" || Array.isArray(body.structured_content))) {
     return json(400, { error: "Contenu structuré invalide." });

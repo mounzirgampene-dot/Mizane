@@ -1,5 +1,6 @@
 // MIZANE — Académie locale bilingue, utilisable hors connexion.
 import { matchesBoussoleQuery, normalizeBoussoleQuery } from "./boussole-search.js";
+import { ACADEMY_EN } from "./academy-en.js";
 const COURSES = [
   {
     id:"start", title:["Initiation à MIZANE","التعريف بميزان"], description:["Comprendre l'environnement, la navigation et les principes de travail.","فهم بيئة العمل والتنقل ومبادئ الاستخدام."],
@@ -131,6 +132,7 @@ const COURSES = [
 ];
 
 const LABELS = {
+  en:{button:"Academy",heading:"MIZANE Academy",intro:"Ten learning paths to use MIZANE and understand its main workflows.",search:"Search a learning path, lesson or topic…",noResults:"No learning path matches this search.",catalog:"Learning paths",progress:"My progress",lessons:"Lessons",start:"Open",done:"Lesson completed",completed:"Completed",quiz:"Assessment",validate:"Check my answers",back:"Back to learning paths",close:"Close",local:"Progress is stored on this device for this user and company. It is not yet synchronized to the cloud.",score:"Score",passed:"Learning path completed",notPassed:"Complete the lessons and try again.",reset:"Reset my progress",confirm:"Reset all Academy progress on this device?",total:"Completed learning paths",lessonTotal:"Completed lessons",empty:"No progress recorded yet.",question:"Question",right:"Correct answer",wrong:"Incorrect answer",retry:"Retry assessment",storage:"Local storage is unavailable. Progress cannot be saved.",direction:"ltr"},
   fr:{button:"Académie",heading:"Académie MIZANE",intro:"Dix parcours pour apprendre à utiliser MIZANE et comprendre les principaux processus.",search:"Rechercher un parcours, une leçon ou un thème…",noResults:"Aucun parcours ne correspond à cette recherche.",catalog:"Parcours",progress:"Ma progression",lessons:"Leçons",start:"Ouvrir",done:"Leçon terminée",completed:"Terminé",quiz:"Évaluation",validate:"Corriger mes réponses",back:"Retour aux parcours",close:"Fermer",local:"Progression enregistrée sur cet appareil, pour cet utilisateur et cette entreprise. Elle n'est pas encore synchronisée dans le cloud.",score:"Résultat",passed:"Parcours validé",notPassed:"Continuez les leçons et réessayez.",reset:"Réinitialiser ma progression",confirm:"Réinitialiser toute la progression de l'Académie sur cet appareil ?",total:"Parcours validés",lessonTotal:"Leçons terminées",empty:"Aucune progression pour le moment.",question:"Question",right:"Bonne réponse",wrong:"Réponse incorrecte",retry:"Recommencer l'évaluation",storage:"Le stockage local est indisponible. La progression ne peut pas être enregistrée.",direction:"ltr"},
   ar:{button:"الأكاديمية",heading:"أكاديمية ميزان",intro:"عشرة مسارات للتعلم واستيعاب أهم وظائف ميزان.",search:"ابحث عن مسار أو درس أو موضوع…",noResults:"لا يوجد مسار يطابق هذا البحث.",catalog:"المسارات",progress:"تقدمي",lessons:"الدروس",start:"فتح",done:"إتمام الدرس",completed:"مكتمل",quiz:"التقييم",validate:"تصحيح الإجابات",back:"العودة إلى المسارات",close:"إغلاق",local:"يتم حفظ التقدم على هذا الجهاز لهذا المستخدم وهذه المؤسسة. لم تتم مزامنته مع السحابة بعد.",score:"النتيجة",passed:"تم اجتياز المسار",notPassed:"أكمل الدروس ثم أعد المحاولة.",reset:"إعادة ضبط التقدم",confirm:"هل تريد إعادة ضبط تقدم الأكاديمية كله على هذا الجهاز؟",total:"المسارات المجتازة",lessonTotal:"الدروس المكتملة",empty:"لا يوجد تقدم مسجل بعد.",question:"سؤال",right:"إجابة صحيحة",wrong:"إجابة غير صحيحة",retry:"إعادة التقييم",storage:"التخزين المحلي غير متاح. لا يمكن حفظ التقدم.",direction:"rtl"}
 };
@@ -144,7 +146,7 @@ export function searchAcademyCourses(query) {
   return COURSES.filter(course => {
     const searchable = [
       ...course.title, ...course.description, ...course.lessons.flat(),
-      ...course.quiz.flatMap(question => [question[0], question[1], ...question[2].flat(), ...question[4]])
+      ...course.quiz.flatMap(question => [question[0], question[1], ...question[2].flat(), ...question[4]]), JSON.stringify(ACADEMY_EN[course.id])
     ].join(" ");
     return matchesBoussoleQuery(searchable, value);
   });
@@ -236,9 +238,10 @@ export function initAcademy() {
   let catalogQuery = "";
   let progress = createEmptyAcademyProgress();
   let storageKey = "";
-  const locale = () => document.documentElement.lang === "ar" ? "ar" : "fr";
+  const locale = () => document.documentElement.lang === "ar" ? "ar" : document.documentElement.lang === "en" ? "en" : "fr";
   const safeGet = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
   const text = (pair) => Array.isArray(pair) ? pair[locale()==="ar"?1:0] : String(pair ?? "");
+  const courseText = (course, part, index) => locale()==="en" ? (part==="lessonTitle" ? ACADEMY_EN[course.id].lessons[index][0] : part==="lessonContent" ? ACADEMY_EN[course.id].lessons[index][1] : ACADEMY_EN[course.id][part]) : part==="lessonTitle" ? text([course.lessons[index][0],course.lessons[index][1]]) : part==="lessonContent" ? text([course.lessons[index][2],course.lessons[index][3]]) : text(course[part]);
   const labels = () => LABELS[locale()];
   const entry = (course) => progress.courses[course.id] || {completedLessons:[],quizScore:null,completedAt:null};
   const save = () => { if (!writeProgress(storageKey,progress)) localNote.textContent=labels().storage; };
@@ -264,30 +267,30 @@ export function initAcademy() {
     if(view==="catalog"){
       body.innerHTML=tabs+'<p>'+escapeHtml(l.intro)+'</p><input class="academy-search" type="search" aria-label="'+escapeHtml(l.search)+'" placeholder="'+escapeHtml(l.search)+'" value="'+escapeHtml(catalogQuery)+'" autocomplete="off" style="box-sizing:border-box;width:100%;max-width:560px;padding:11px;margin:8px 0 16px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit"><p class="academy-no-results" hidden>'+escapeHtml(l.noResults)+'</p><div class="academy-grid">'+COURSES.map(course=>{
         const item=entry(course),done=isAcademyCourseCompleted(course,item),percent=Math.round((item.completedLessons.length/course.lessons.length)*100);
-        const searchable=[...course.title,...course.description,...course.lessons.flat(),...course.quiz.flatMap(question=>[question[0],question[1],...question[2].flat(),...question[4]])].join(" ");
-        return '<article class="academy-card" data-academy-search="'+escapeHtml(normalizeBoussoleQuery(searchable))+'"><h3>'+escapeHtml(text(course.title))+'</h3><p>'+escapeHtml(text(course.description))+'</p><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+(done?' · '+escapeHtml(l.completed):'')+'</div><div class="academy-progress"><span style="width:'+percent+'%"></span></div><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
+        const searchable=[...course.title,...course.description,...course.lessons.flat(),...course.quiz.flatMap(question=>[question[0],question[1],...question[2].flat(),...question[4]]),JSON.stringify(ACADEMY_EN[course.id])].join(" ");
+        return '<article class="academy-card" data-academy-search="'+escapeHtml(normalizeBoussoleQuery(searchable))+'"><h3>'+escapeHtml(courseText(course,"title"))+'</h3><p>'+escapeHtml(courseText(course,"description"))+'</p><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+(done?' · '+escapeHtml(l.completed):'')+'</div><div class="academy-progress"><span style="width:'+percent+'%"></span></div><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
       }).join("")+'</div>';
       return;
     }
     if(view==="course"&&activeCourse){
       const course=activeCourse,item=entry(course);
-      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="catalog">'+escapeHtml(l.back)+'</button><button type="button" data-academy-quiz>'+escapeHtml(l.quiz)+'</button></div><h2>'+escapeHtml(text(course.title))+'</h2><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+'</div>'+course.lessons.map((lesson,index)=>{
+      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="catalog">'+escapeHtml(l.back)+'</button><button type="button" data-academy-quiz>'+escapeHtml(l.quiz)+'</button></div><h2>'+escapeHtml(courseText(course,"title"))+'</h2><div class="academy-meta">'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+'</div>'+course.lessons.map((lesson,index)=>{
         const done=item.completedLessons.includes(String(index));
-        return '<article class="academy-lesson"><h3>'+(index+1)+'. '+escapeHtml(text([lesson[0],lesson[1]]))+'</h3><p>'+escapeHtml(text([lesson[2],lesson[3]]))+'</p><button type="button" class="'+(done?'secondary small':'')+'" data-academy-lesson="'+index+'">'+escapeHtml(done?l.completed:l.done)+'</button></article>';
+        return '<article class="academy-lesson"><h3>'+(index+1)+'. '+escapeHtml(courseText(course,"lessonTitle",index))+'</h3><p>'+escapeHtml(courseText(course,"lessonContent",index))+'</p><button type="button" class="'+(done?'secondary small':'')+'" data-academy-lesson="'+index+'">'+escapeHtml(done?l.completed:l.done)+'</button></article>';
       }).join("");
       return;
     }
     if(view==="quiz"&&activeCourse){
       const course=activeCourse;
-      const corrections=lastResult?'<div class="academy-result" role="status">'+escapeHtml(l.score)+': '+lastResult.score+'/'+course.quiz.length+' — '+escapeHtml(lastResult.passed?l.passed:l.notPassed)+'</div>'+lastResult.answers.map(answer=>'<article class="academy-lesson"><strong>'+escapeHtml(answer.correct?l.right:l.wrong)+'</strong><p>'+escapeHtml(text(answer.explanation))+'</p></article>').join(""):'' ;
-      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="course">'+escapeHtml(l.back)+'</button></div><h2>'+escapeHtml(text(course.title))+' — '+escapeHtml(l.quiz)+'</h2><form id="academy-quiz-form">'+course.quiz.map((q,index)=>'<fieldset class="academy-quiz-question"><legend>'+escapeHtml(l.question)+' '+(index+1)+' — '+escapeHtml(text([q[0],q[1]]))+'</legend>'+q[2].map((option,optionIndex)=>'<label class="academy-quiz-option"><input type="radio" name="q'+index+'" value="'+optionIndex+'" required><span>'+escapeHtml(text(option))+'</span></label>').join("")+'</fieldset>').join("")+'<button type="submit">'+escapeHtml(lastResult?l.retry:l.validate)+'</button></form>'+corrections;
+      const corrections=lastResult?'<div class="academy-result" role="status">'+escapeHtml(l.score)+': '+lastResult.score+'/'+course.quiz.length+' — '+escapeHtml(lastResult.passed?l.passed:l.notPassed)+'</div>'+lastResult.answers.map(answer=>'<article class="academy-lesson"><strong>'+escapeHtml(answer.correct?l.right:l.wrong)+'</strong><p>'+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[answer.index].explanation:text(answer.explanation)))+'</p></article>').join(""):'' ;
+      body.innerHTML=tabs+'<div class="academy-actions"><button type="button" class="secondary small" data-academy-view="course">'+escapeHtml(l.back)+'</button></div><h2>'+escapeHtml(courseText(course,"title"))+' — '+escapeHtml(l.quiz)+'</h2><form id="academy-quiz-form">'+course.quiz.map((q,index)=>'<fieldset class="academy-quiz-question"><legend>'+escapeHtml(l.question)+' '+(index+1)+' — '+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].question:text([q[0],q[1]])))+'</legend>'+q[2].map((option,optionIndex)=>'<label class="academy-quiz-option"><input type="radio" name="q'+index+'" value="'+optionIndex+'" required><span>'+escapeHtml((locale()==="en"?ACADEMY_EN[course.id].quiz[index].options[optionIndex]:text(option)))+'</span></label>').join("")+'</fieldset>').join("")+'<button type="submit">'+escapeHtml(lastResult?l.retry:l.validate)+'</button></form>'+corrections;
       return;
     }
     if(view==="progress"){
       const percent=Math.round((stats.lessons/Math.max(1,stats.totalLessons))*100);
       body.innerHTML=tabs+'<div class="academy-card"><h3>'+stats.completed+'/'+COURSES.length+' — '+escapeHtml(l.total)+'</h3><p>'+stats.lessons+'/'+stats.totalLessons+' '+escapeHtml(l.lessonTotal)+'</p><div class="academy-progress"><span style="width:'+percent+'%"></span></div></div><div class="academy-grid">'+COURSES.map(course=>{
         const item=entry(course),done=isAcademyCourseCompleted(course,item);
-        return '<article class="academy-card"><h3>'+escapeHtml(text(course.title))+'</h3><p>'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+' · '+(done?escapeHtml(l.completed):escapeHtml(l.notPassed))+'</p><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
+        return '<article class="academy-card"><h3>'+escapeHtml(courseText(course,"title"))+'</h3><p>'+item.completedLessons.length+'/'+course.lessons.length+' '+escapeHtml(l.lessons)+' · '+(done?escapeHtml(l.completed):escapeHtml(l.notPassed))+'</p><button type="button" data-academy-course="'+course.id+'">'+escapeHtml(l.start)+'</button></article>';
       }).join("")+'</div><div class="academy-actions" style="margin-top:16px"><button type="button" class="danger small" data-academy-reset>'+escapeHtml(l.reset)+'</button></div>';
       return;
     }
@@ -326,7 +329,7 @@ export function initAcademy() {
     event.preventDefault();
     const form=new FormData(event.target);
     let score=0;
-    const answers=activeCourse.quiz.map((question,index)=>{const correct=Number(form.get("q"+index))===question[3];if(correct)score++;return {correct,explanation:question[4]};});
+    const answers=activeCourse.quiz.map((question,index)=>{const correct=Number(form.get("q"+index))===question[3];if(correct)score++;return {correct,index,explanation:question[4]};});
     const item=entry(activeCourse);item.quizScore=score;
     const passed=item.completedLessons.length===activeCourse.lessons.length&&score>=Math.ceil(activeCourse.quiz.length*.7);
     item.completedAt=passed?new Date().toISOString():null;

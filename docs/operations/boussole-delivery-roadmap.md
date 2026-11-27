@@ -11,6 +11,7 @@ Date de référence : 27 novembre 2026. Périmètre : branche DEV `feat/stock-in
 | Académie locale | Réalisé dans PR #171 | 10 parcours, 30 leçons, 20 questions, corrections bilingues, progression locale par utilisateur et entreprise. |
 | Fonctionnement hors connexion | Réalisé pour les contenus embarqués | Précache du guide et de l'Académie ; aucun service distant nécessaire pour ces contenus. |
 | Fondations documentaires | Appliquées sur MIZANE-DEV via PR #170 | Six tables, RLS/FORCE RLS, privilèges explicites, versions FR/AR, relations, synonymes, préférences et événements de consentement. |
+| Lecteur documentaire cloud | En cours dans PR #172 | Recherche en lecture seule des documents publiés, versions FR/AR et synonymes, filtrage par espace actif, fallback local hors connexion. |
 | Revue du helper d'appartenance | Réalisée | Vérification de `private.is_active_company_member(uuid)` et de ses droits. |
 | Validation RLS transactionnelle | Réussie le 27 novembre 2026 | Tests avec les rôles PostgreSQL réels `anon` et `authenticated`, trois identités Auth synthétiques, deux entreprises, fixtures annulées par `ROLLBACK`. |
 
@@ -38,11 +39,8 @@ Les contrôles ont couvert les dix cas listés ci-dessus, notamment les droits d
 ## 3. Lots fonctionnels restant à développer après validation RLS
 
 ### 3.1 Moteur documentaire cloud
-- Chargement paginé des documents et versions publiés.
-- Recherche combinant texte, synonymes et métadonnées de rubrique.
-- Filtrage par langue, version MIZANE, statut de publication et périmètre d'entreprise.
-- Fallback local complet lorsque le réseau ou le cloud est indisponible.
-- Liens entre prérequis, parcours suivants, dépannage et contenus associés.
+- **En cours dans PR #172 :** lecture des documents et versions publiés, recherche texte avec synonymes FR/AR, filtrage RLS par espace actif, affichage texte sécurisé et fallback local hors connexion.
+- À compléter : pagination au-delà du premier lot, filtre de compatibilité par version de l'application, métadonnées de rubrique plus avancées et navigation des relations (prérequis, parcours suivants, dépannage, contenus associés).
 
 ### 3.2 Administration éditoriale
 - Éditeur de contenu FR/AR et aperçu RTL.
@@ -95,3 +93,12 @@ Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune 
 - PR #170 et PR #171 restent indépendantes et en brouillon. Le guide/Académie de PR #171 continue de fonctionner localement sans dépendre des tables cloud.
 - Prochaine tranche : lecteur documentaire cloud en lecture seule, avec fallback local et filtrage par langue/version ; l'administration éditoriale restera un lot séparé, protégé côté serveur.
 - `main`, GitHub Pages Production et Supabase Production restent hors périmètre.
+
+
+## 6. Dépendances de livraison — 27 novembre 2026
+
+1. PR #170 : fondations et migration DEV, validées par tests RLS transactionnels.
+2. PR #171 : guide local et Académie locale.
+3. PR #172 : lecteur cloud en lecture seule, construit au-dessus du guide et dépendant du schéma de PR #170.
+
+Les trois PR restent en brouillon et aucune n'est fusionnée automatiquement. La migration DEV déjà appliquée ne vaut pas autorisation de migration Production. L'éditeur, le workflow éditorial, la progression cloud, les médias et l'assistant IA restent des lots distincts.

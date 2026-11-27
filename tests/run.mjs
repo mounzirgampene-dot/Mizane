@@ -2787,7 +2787,7 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v122"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v123"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
 test("restauration cloud : association vérifiée de l'appareil avant retour à la comptabilité", () => {
   const portalSource = readFileSync(new URL("../js/saas-portal.js", import.meta.url), "utf8");

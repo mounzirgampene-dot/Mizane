@@ -7,6 +7,8 @@ on:
       - feat/stock-integrated-dev
       - feat/boussole-editorial-governance-dev
       - feat/boussole-editorial-admin-i18n-dev
+      - feat/boussole-editorial-admin-i18n-dev
+      - feat/boussole-document-relations-media-dev
       - feat/boussole-cloud-reader-dev
       - fix/lot2-billing-integrity
       - feat/lot3-stock-operations-accounting

@@ -16,7 +16,6 @@ const ARTICLES = [
 const ROUTES={dashboard:["Tableau de bord","لوحة التحكم"],entry:["Saisie","الإدخال"],entries:["Écritures","القيود"],ledger:["Grand livre","دفتر الأستاذ"],balance:["Balance","ميزان المراجعة"],income:["Résultat","النتيجة"],sheet:["Bilan","الميزانية"],thirds:["Tiers","الأطراف"],financial:["Pilotage","القيادة"],billing:["Facturation","الفوترة"],purchases:["Achats","المشتريات"],stock:["Gestion de stock","إدارة المخزون"],tax:["Fiscalité","الضرائب"],settings:["Paramètres","الإعدادات"],assistant:["Assistant IA","المساعد الذكي"],budget:["Budget","الميزانية"],analytical:["Analytique","التحليلية"]};
 let initialized=false, route="dashboard", query="", panel, results, detail, context, search, toggle, selected=null;
 const ar=()=>lang()==="ar";
-const text=(a)=>a[ar()?1:0];
 const norm=s=>String(s||"").toLocaleLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
 const el=(tag,cls,value)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(value!=null)n.textContent=value;return n;};
 function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");}

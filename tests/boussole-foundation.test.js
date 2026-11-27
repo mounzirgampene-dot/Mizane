@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
 const migration = readFileSync(new URL("../supabase/migrations/20261127105326_boussole_foundation.sql", import.meta.url), "utf8");
+const rlsSmoke = readFileSync(new URL("../supabase/tests/boussole_rls_smoke.sql", import.meta.url), "utf8");
 
 assert.match(migration, /begin;[\s\S]*commit;/i);
 for (const table of ["boussole_documents","boussole_document_versions","boussole_document_relations","boussole_search_synonyms","boussole_user_preferences","boussole_consent_events"]) {
@@ -32,4 +33,10 @@ for (const policy of anonPolicies) {
 assert.match(migration, /boussole_documents_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
 assert.match(migration, /boussole_versions_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
 assert.match(migration, /boussole_relations_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
-console.log("Boussole foundation: contrôles statiques et séparation anon/authenticated réussis.");
+assert.match(rlsSmoke, /set local role anon/i);
+assert.match(rlsSmoke, /set local role authenticated/i);
+assert.match(rlsSmoke, /user_revoked/);
+assert.match(rlsSmoke, /company_b/);
+assert.match(rlsSmoke, /boussole_consent_events/);
+assert.match(rlsSmoke, /rollback;/i, "les fixtures RLS doivent être annulées");
+console.log("Boussole foundation: contrôles statiques, séparation anon/authenticated et smoke test transactionnel vérifiés.");

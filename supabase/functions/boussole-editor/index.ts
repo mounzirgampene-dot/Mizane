@@ -9,7 +9,7 @@ const allowedOrigins = new Set([
 ]);
 const actions = new Set([
   "list", "get", "create_draft", "update_draft", "create_locale_version", "submit_review",
-  "request_changes", "approve", "publish", "archive", "restore",
+  "request_changes", "approve", "publish", "archive", "restore", "manage_resource",
 ]);
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value: unknown): value is string => typeof value === "string" && uuidPattern.test(value);
@@ -151,6 +151,73 @@ Deno.serve(async (request) => {
       .order("locale", { ascending: true });
     if (versionsError) return json(500, { error: "Chargement des versions éditoriales impossible." });
     return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role), document, versions: versions ?? [] });
+  }
+
+  if (action === "manage_resource") {
+    const resourceAction = body.resource_action;
+    const supportedResourceActions = new Set([
+      "synonym_upsert", "synonym_deactivate", "relation_upsert", "relation_delete",
+      "media_register", "media_archive", "compatibility_update",
+    ]);
+    if (typeof resourceAction !== "string" || !supportedResourceActions.has(resourceAction)) {
+      return json(400, { error: "Action de ressource invalide." });
+    }
+    if (body.document_id !== undefined && body.document_id !== null && !isUuid(body.document_id)) {
+      return json(400, { error: "Identifiant documentaire invalide." });
+    }
+    if (body.target_document_id !== undefined && body.target_document_id !== null && !isUuid(body.target_document_id)) {
+      return json(400, { error: "Identifiant du document lié invalide." });
+    }
+    if (body.resource_id !== undefined && body.resource_id !== null && !isUuid(body.resource_id)) {
+      return json(400, { error: "Identifiant de ressource invalide." });
+    }
+    if (body.version_id !== undefined && body.version_id !== null && !isUuid(body.version_id)) {
+      return json(400, { error: "Identifiant de version invalide." });
+    }
+    if (body.synonyms !== undefined &&
+        (!Array.isArray(body.synonyms) || body.synonyms.length > 30 ||
+         body.synonyms.some((item) => typeof item !== "string" || item.length > 180))) {
+      return json(400, { error: "Liste de synonymes invalide." });
+    }
+    if (body.alt_text !== undefined &&
+        (!body.alt_text || typeof body.alt_text !== "object" || Array.isArray(body.alt_text))) {
+      return json(400, { error: "Textes alternatifs invalides." });
+    }
+    if (body.caption !== undefined &&
+        (!body.caption || typeof body.caption !== "object" || Array.isArray(body.caption))) {
+      return json(400, { error: "Légendes invalides." });
+    }
+    const resourceArgs = {
+      p_actor_id: authData.user.id,
+      p_action: resourceAction,
+      p_document_id: body.document_id ?? null,
+      p_target_document_id: body.target_document_id ?? null,
+      p_resource_id: body.resource_id ?? null,
+      p_version_id: body.version_id ?? null,
+      p_locale: body.locale ?? null,
+      p_term: optionalText(body.term, 180),
+      p_normalized_term: optionalText(body.normalized_term, 180),
+      p_synonyms: body.synonyms ?? [],
+      p_relation_type: body.relation_type ?? null,
+      p_sort_order: Number.isInteger(body.sort_order) ? body.sort_order : 0,
+      p_storage_path: optionalText(body.storage_path, 500),
+      p_file_name: optionalText(body.file_name, 240),
+      p_content_type: body.content_type ?? null,
+      p_byte_size: body.byte_size ?? null,
+      p_alt_text: body.alt_text ?? {},
+      p_caption: body.caption ?? {},
+      p_min_app_version: optionalText(body.min_app_version, 80),
+      p_max_app_version: optionalText(body.max_app_version, 80),
+    };
+    const { data, error } = await adminClient.rpc("boussole_editor_manage_resource", resourceArgs);
+    if (error) {
+      if (error.code === "42501") return json(403, { error: "Droit éditorial insuffisant ou opération refusée." });
+      if (error.code === "P0002") return json(404, { error: "Ressource ou document introuvable." });
+      if (error.code === "22023") return json(400, { error: "Les paramètres de la ressource sont invalides." });
+      console.error("boussole_editor_manage_resource failed:", error.code ?? "unknown");
+      return json(500, { error: "La gestion de la ressource n’a pas pu être exécutée." });
+    }
+    return json(200, { result: data });
   }
 
   if (body.structured_content !== undefined &&

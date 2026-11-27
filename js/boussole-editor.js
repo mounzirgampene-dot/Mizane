@@ -21,7 +21,7 @@ const COPY = {
     saved:"Opération enregistrée.", confirmArchive:"Archiver ce document ?", reviewNote:"Note de relecture (facultatif)",
     minutes:"Durée estimée (minutes)", level:"Niveau pédagogique", beginner:"Débutant", intermediate:"Intermédiaire", advanced:"Avancé",
     draft:"Brouillon", review:"En relecture", approved:"Approuvé", published:"Publié", archived:"Archivé", withdrawn:"Retiré",
-    fr:"Français", ar:"العربية", en:"English", error:"Une erreur est survenue."
+    fr:"Français", ar:"العربية", en:"English", error:"Une erreur est survenue.",
     resources:"Ressources documentaires", synonyms:"Synonymes", term:"Terme", normalized:"Terme normalisé", synonymsList:"Synonymes séparés par des virgules", saveSynonym:"Enregistrer le synonyme", deactivate:"Désactiver", relation:"Relation", target:"Document cible", prerequisite:"Prérequis", next:"Étape suivante", troubleshooting:"Dépannage", related:"Contenu associé", replaces:"Remplace", addRelation:"Ajouter la relation", compatibility:"Compatibilité de l’application", minVersion:"Version minimale", maxVersion:"Version maximale", saveCompatibility:"Enregistrer la compatibilité", media:"Médias et pièces jointes", file:"Fichier (20 Mio maximum)", upload:"Téléverser", altFr:"Texte alternatif français", altAr:"Texte alternatif arabe", altEn:"Texte alternatif anglais", captionFr:"Légende française", captionAr:"Légende arabe", captionEn:"Légende anglaise", archiveMedia:"Archiver le média", noResources:"Aucune ressource enregistrée.", uploadError:"Téléversement impossible."
   },
   en: {
@@ -40,7 +40,7 @@ const COPY = {
     saved:"Operation saved.", confirmArchive:"Archive this document?", reviewNote:"Review note (optional)",
     minutes:"Estimated duration (minutes)", level:"Learning level", beginner:"Beginner", intermediate:"Intermediate", advanced:"Advanced",
     draft:"Draft", review:"In review", approved:"Approved", published:"Published", archived:"Archived", withdrawn:"Withdrawn",
-    fr:"French", ar:"Arabic", en:"English", error:"An error occurred."
+    fr:"French", ar:"Arabic", en:"English", error:"An error occurred.",
     resources:"Document resources", synonyms:"Synonyms", term:"Term", normalized:"Normalized term", synonymsList:"Comma-separated synonyms", saveSynonym:"Save synonym", deactivate:"Deactivate", relation:"Relation", target:"Target document", prerequisite:"Prerequisite", next:"Next step", troubleshooting:"Troubleshooting", related:"Related content", replaces:"Replaces", addRelation:"Add relation", compatibility:"Application compatibility", minVersion:"Minimum version", maxVersion:"Maximum version", saveCompatibility:"Save compatibility", media:"Media and attachments", file:"File (20 MiB maximum)", upload:"Upload", altFr:"French alternative text", altAr:"Arabic alternative text", altEn:"English alternative text", captionFr:"French caption", captionAr:"Arabic caption", captionEn:"English caption", archiveMedia:"Archive media", noResources:"No resources registered.", uploadError:"Upload failed."
   },
   ar: {
@@ -59,7 +59,7 @@ const COPY = {
     saved:"تم حفظ العملية.", confirmArchive:"هل تريد أرشفة هذه الوثيقة؟", reviewNote:"ملاحظة المراجعة (اختياري)",
     minutes:"المدة التقديرية (بالدقائق)", level:"المستوى التعليمي", beginner:"مبتدئ", intermediate:"متوسط", advanced:"متقدم",
     draft:"مسودة", review:"قيد المراجعة", approved:"معتمد", published:"منشور", archived:"مؤرشف", withdrawn:"مسحوب",
-    fr:"Français", ar:"العربية", en:"English", error:"حدث خطأ."
+    fr:"Français", ar:"العربية", en:"English", error:"حدث خطأ.",
     resources:"موارد الوثيقة", synonyms:"المرادفات", term:"المصطلح", normalized:"المصطلح الموحّد", synonymsList:"مرادفات مفصولة بفواصل", saveSynonym:"حفظ المرادف", deactivate:"تعطيل", relation:"العلاقة", target:"الوثيقة المستهدفة", prerequisite:"متطلب سابق", next:"الخطوة التالية", troubleshooting:"حل المشكلات", related:"محتوى مرتبط", replaces:"يحل محل", addRelation:"إضافة العلاقة", compatibility:"توافق التطبيق", minVersion:"أدنى إصدار", maxVersion:"أقصى إصدار", saveCompatibility:"حفظ التوافق", media:"الوسائط والمرفقات", file:"الملف (20 ميغابايت كحد أقصى)", upload:"رفع", altFr:"النص البديل بالفرنسية", altAr:"النص البديل بالعربية", altEn:"النص البديل بالإنجليزية", captionFr:"التعليق بالفرنسية", captionAr:"التعليق بالعربية", captionEn:"التعليق بالإنجليزية", archiveMedia:"أرشفة الوسيط", noResources:"لا توجد موارد مسجلة.", uploadError:"تعذر رفع الملف."
   }
 };

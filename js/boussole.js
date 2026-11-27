@@ -21,11 +21,12 @@ const ARTICLES = [
  {id:"exports",routes:["tools","settings"],keys:"export pdf excel csv impression téléchargement استخراج تصدير طباعة",fr:["Exports, impressions et documents","Préparer un export fiable et maîtriser sa diffusion.",["Choisissez la période, l’entreprise, la devise et le format avant l’export.","Vérifiez les totaux et le nombre de lignes dans le fichier produit.","Les exports peuvent contenir des données confidentielles : utilisez un emplacement autorisé et limitez les destinataires.","Un export est un instantané ; il peut devenir différent des données après de nouvelles opérations."]],ar:["التصدير والطباعة والمستندات","إعداد تصدير موثوق والتحكم في نشره.",["حدد الفترة والمؤسسة والعملة والصيغة قبل التصدير.","تحقق من المجاميع وعدد السطور في الملف الناتج.","قد تحتوي الملفات المصدرة على بيانات سرية؛ استخدم مكاناً مصرحاً وحدد المستلمين.","ملف التصدير يمثل لقطة زمنية وقد يختلف عن البيانات بعد عمليات جديدة."]]}
 ];
 const ROUTES={dashboard:["Tableau de bord","لوحة التحكم"],entry:["Saisie","الإدخال"],entries:["Écritures","القيود"],ledger:["Grand livre","دفتر الأستاذ"],balance:["Balance","ميزان المراجعة"],income:["Résultat","النتيجة"],sheet:["Bilan","الميزانية"],thirds:["Tiers","الأطراف"],financial:["Pilotage","القيادة"],billing:["Facturation","الفوترة"],purchases:["Achats","المشتريات"],stock:["Gestion de stock","إدارة المخزون"],tax:["Fiscalité","الضرائب"],settings:["Paramètres","الإعدادات"],assistant:["Assistant IA","المساعد الذكي"],budget:["Budget","الميزانية"],analytical:["Analytique","التحليلية"],tools:["Outils","الأدوات"],calculator:["Calculatrice","الآلة الحاسبة"],notifications:["Notifications","الإشعارات"],history:["Historique","السجل"],"my-work":["Mes travaux","أعمالي"]};
-let initialized=false, route="dashboard", query="", panel, results, detail, context, search, toggle, selected=null;
+let initialized=false, route="dashboard", query="", panel, results, detail, context, search, toggle, expandButton, expanded=false, selected=null;
 const ar=()=>lang()==="ar";
 const norm=normalizeBoussoleQuery;
 const el=(tag,cls,value)=>{const n=document.createElement(tag);if(cls)n.className=cls;if(value!=null)n.textContent=value;return n;};
-function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");}
+function setExpanded(value){expanded=Boolean(value);panel.classList.toggle("is-expanded",expanded);if(expandButton){expandButton.setAttribute("aria-pressed",String(expanded));expandButton.textContent=ar()?(expanded?"تصغير":"ملء الشاشة"):(expanded?"Réduire":"Plein écran");expandButton.setAttribute("aria-label",ar()?(expanded?"تصغير لوحة البوصلة":"توسيع لوحة البوصلة إلى كامل الشاشة"):(expanded?"Réduire la Boussole":"Agrandir la Boussole en plein écran"));}}
+function closePanel(){panel.hidden=true;toggle.setAttribute("aria-expanded","false");setExpanded(false);toggle.focus();}
 function showArticle(id){
  const a=ARTICLES.find(x=>x.id===id);if(!a)return;selected=id;const c=a[ar()?"ar":"fr"];
  results.hidden=true;detail.hidden=false;detail.replaceChildren();
@@ -56,19 +57,21 @@ function refresh(){
  context.textContent=arabic?"مساعدة مرتبطة بـ: "+routeLabel[1]:"Aide liée à : "+routeLabel[0];
  panel.querySelector(".boussole-local-note").textContent=arabic?"بحث محلي فقط — لا تُقرأ البيانات المحاسبية ولا تُرسل إلى خدمة خارجية.":"Recherche locale uniquement — aucune donnée comptable n’est lue ni transmise.";
  panel.querySelector("[data-boussole-close]").textContent=arabic?"إغلاق":"Fermer";
+ setExpanded(expanded);
  if(selected)showArticle(selected);else renderResults();
 }
 export function setBoussoleContext(nextRoute){route=nextRoute||"dashboard";if(initialized)refresh();}
 export function initBoussole(){
  if(initialized)return;toggle=document.getElementById("boussole-toggle");if(!toggle)return;
  panel=el("aside","boussole-panel");panel.id="boussole-panel";panel.hidden=true;panel.setAttribute("aria-label","Boussole MIZANE");
- panel.innerHTML='<div class="boussole-head"><div><h2 class="boussole-title"></h2><p class="boussole-intro"></p></div><button type="button" class="secondary small" data-boussole-close></button></div><label for="boussole-search">Recherche</label><input id="boussole-search" type="search" autocomplete="off"><p class="boussole-context" id="boussole-context"></p><div class="boussole-results" id="boussole-results"></div><div class="boussole-article" id="boussole-article" hidden></div><p class="boussole-local-note"></p>';
- document.body.append(panel);results=panel.querySelector("#boussole-results");detail=panel.querySelector("#boussole-article");context=panel.querySelector("#boussole-context");search=panel.querySelector("#boussole-search");
+ panel.innerHTML='<div class="boussole-head"><div><h2 class="boussole-title"></h2><p class="boussole-intro"></p></div><div class="boussole-head-actions"><button type="button" class="secondary small" data-boussole-expand aria-pressed="false"></button><button type="button" class="secondary small" data-boussole-close></button></div></div><label for="boussole-search">Recherche</label><input id="boussole-search" type="search" autocomplete="off"><p class="boussole-context" id="boussole-context"></p><div class="boussole-results" id="boussole-results"></div><div class="boussole-article" id="boussole-article" hidden></div><p class="boussole-local-note"></p>';
+ document.body.append(panel);results=panel.querySelector("#boussole-results");detail=panel.querySelector("#boussole-article");context=panel.querySelector("#boussole-context");search=panel.querySelector("#boussole-search");expandButton=panel.querySelector("[data-boussole-expand]");
  toggle.setAttribute("aria-controls","boussole-panel");toggle.setAttribute("aria-expanded","false");
  toggle.addEventListener("click",()=>{panel.hidden=!panel.hidden;toggle.setAttribute("aria-expanded",String(!panel.hidden));if(!panel.hidden)search.focus();});
  panel.querySelector("[data-boussole-close]").addEventListener("click",closePanel);
+ expandButton.addEventListener("click",()=>setExpanded(!expanded));
  search.addEventListener("input",()=>{query=search.value;selected=null;renderResults();});
  results.addEventListener("click",event=>{const b=event.target.closest("[data-article-id]");if(b)showArticle(b.dataset.articleId);});
- document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!panel.hidden)closePanel();});
+ document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!panel.hidden){event.preventDefault();if(expanded)setExpanded(false);else closePanel();}});
  initialized=true;refresh();
 }

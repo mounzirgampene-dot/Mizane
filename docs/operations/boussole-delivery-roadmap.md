@@ -86,22 +86,23 @@ Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune 
 
 ## 5. État d'exploitation au 27 novembre 2026 — DEV
 
-- Les PR #170 à #175 sont fusionnées dans `feat/stock-integrated-dev`, commit d'intégration `817cd1268113f549f9cead343157a3fc67bcda05`.
-- Preview de la branche d'intégration : https://feat-stock-integrated-dev.mizane-test-preview.pages.dev
+- Les PR #170 à #176 sont fusionnées dans `feat/stock-integrated-dev`.
+- Dernier commit d'intégration avant cette mise à jour documentaire : `48d5b3010998c424bd16c120bd5a53c1133490a7`.
+- Preview de la branche : https://feat-stock-integrated-dev.mizane-test-preview.pages.dev
 - Projet Supabase cible : MIZANE-DEV (`rudsovhdvinvyrwjamfo`, région eu-west-2), état ACTIVE_HEALTHY.
-- Migrations présentes dans l'historique DEV :
+- Migrations enregistrées et appliquées sur DEV :
   - `20261127105326_boussole_foundation`
   - `20261127123614_boussole_editorial_governance`
   - `20261127123619_boussole_english_locale`
   - `20261127123622_boussole_resource_governance`
-- Les noms des fichiers de migration du dépôt sont alignés sur les versions réellement enregistrées dans Supabase.
+- Les noms des fichiers dans `supabase/migrations` correspondent exactement aux versions présentes dans l'historique Supabase.
 - Les neuf tables Boussole sont présentes et vides : documents, versions, relations, synonymes, préférences, consentements, rôles éditoriaux, audit et médias.
-- Le bucket `boussole-media` est privé, limité à 20 Mio, avec une liste MIME explicite.
-- Les RPC `boussole_editor_transition` et `boussole_editor_manage_resource` sont SECURITY DEFINER, avec `search_path` vide ; EXECUTE est refusé à `anon` et `authenticated`, et accordé uniquement à `service_role`.
+- Le bucket `boussole-media` est privé, limité à 20 Mio, avec liste MIME explicite.
+- Les RPC `boussole_editor_transition` et `boussole_editor_manage_resource` sont SECURITY DEFINER avec `search_path` vide ; EXECUTE est refusé à `anon` et `authenticated`, et accordé uniquement à `service_role`.
 - Aucun rôle éditorial réel, document, version, synonyme, événement de consentement ou média n'a été créé.
 - `main`, GitHub Pages Production et Supabase Production restent hors périmètre.
 
-## 6. Livraison des PR #170 à #175 — terminée
+## 6. Livraison des PR #170 à #176 — terminée
 
 1. PR #170 : fondations documentaires et RLS.
 2. PR #171 : guide local et Académie trilingue.
@@ -109,34 +110,46 @@ Aucune fusion dans `main`, aucun déploiement GitHub Pages Production et aucune 
 4. PR #173 : rôles et gouvernance éditoriale serveur.
 5. PR #174 : administration éditoriale et anglais comme troisième langue officielle.
 6. PR #175 : synonymes, relations, compatibilité des versions et gestion des médias.
+7. PR #176 : isolation des versions par auteur et autorisation préalable avant lecture privilégiée d'un média.
 
-Les six PR sont fusionnées dans la branche DEV d'intégration. ESLint et la suite complète ont réussi sur les commits finaux ; le dernier contrôle de la tranche #175 indique 169 tests réussis, 0 échec, et les Previews Cloudflare sont réussies.
+Les contrôles du commit final de PR #176 et de son commit de fusion sont réussis : ESLint, suite complète (169 tests, 0 échec), workflow Preview et déploiement Cloudflare de la branche DEV.
 
-## 7. Sécurité de l'administration éditoriale
+## 7. État de la fonction Edge
 
-- Les droits sont vérifiés côté serveur à partir du JWT validé par Supabase Auth.
-- Aucun rôle n'est préattribué ; les tables de rôles et d'audit sont vides.
-- Les transitions éditoriales et la gestion des ressources passent par des RPC réservées à `service_role`.
-- Les versions française, arabe et anglaise d'une édition partagent le même numéro ; la publication exige l'approbation des trois langues.
-- Les médias sont stockés dans un bucket privé ; le téléversement est signé et les signatures binaires sont contrôlées.
-- La fonction Edge `boussole-editor` n'est pas encore déployée : son activation attend le correctif de sécurité PR #176 et ses validations.
+- Fonction `boussole-editor` déployée sur MIZANE-DEV.
+- État Supabase : ACTIVE, version 1.
+- `verify_jwt=false` au niveau de la passerelle, car la fonction vérifie elle-même le jeton avec `adminClient.auth.getUser(jwt)` avant toute action.
+- Les actions de lecture et d'écriture contrôlent le rôle éditorial et l'appartenance active au périmètre demandé.
+- Les auteurs ne reçoivent que les versions publiées et leurs propres brouillons ; les médias liés à des versions invisibles ne sont pas signés.
+- Pour enregistrer un média, la RPC `media_upload_authorize` vérifie les droits avant toute lecture privilégiée de l'objet Storage.
+- Aucun secret `service_role` n'est exposé au navigateur.
+- Aucun rôle réel n'est attribué : les appels d'administration doivent donc être refusés tant qu'un rôle n'est pas explicitement créé par une procédure privilégiée.
 
-## 8. Correctif de sécurité — PR #176
+## 8. Vérifications Supabase et points de suivi
 
-Branche : `fix/boussole-editor-read-scope-dev`, base `feat/stock-integrated-dev`.
+### Sécurité
+- Les RPC Boussole ne sont pas signalées comme exécutables par `authenticated` dans les Security Advisors.
+- Les alertes `rls_enabled_no_policy` sur `boussole_editor_roles` et `boussole_editor_audit` correspondent au choix de refus par défaut : RLS/FORCE RLS est activé et aucun accès direct client n'est accordé.
+- Les alertes préexistantes sur quatre RPC comptables SECURITY DEFINER et sur la protection des mots de passe compromis restent hors de cette tranche.
 
-- Les auteurs ne reçoivent que les versions publiées et leurs propres brouillons ; les brouillons des autres auteurs sont filtrés.
-- Les médias signés sont filtrés selon les versions visibles par l'auteur ; les médias associés à des versions cachées ne sont pas signés.
-- Avant toute lecture privilégiée d'un objet Storage, l'Edge Function appelle la RPC `media_upload_authorize` pour vérifier le rôle, le périmètre, le document, la version, le type et la taille.
-- Des assertions statiques couvrent l'isolation des versions et l'ordre du contrôle d'autorisation média.
-- CI et Preview sont à revalider sur le commit final après alignement des fichiers de migration.
+### Performance
+- Les Advisors signalent des index de clés étrangères manquants sur plusieurs tables Boussole, notamment les relations, versions, documents et médias.
+- Des avertissements de politiques permissives multiples concernent la lecture globale/entreprise ; les politiques restent limitées aux documents publiés.
+- Les politiques de préférences et de consentement peuvent être optimisées avec `(select auth.uid())`.
+- Ces points sont des optimisations de suivi, pas des échecs de sécurité bloquant l'activation DEV. Ils devront être traités dans une migration dédiée et testée.
 
-## 9. Activation DEV — séquence restante
+## 9. Limites fonctionnelles restantes
 
-1. Finaliser et fusionner la PR #176 après réussite des contrôles du commit exact.
-2. Déployer `boussole-editor` sur MIZANE-DEV uniquement, avec validation JWT effectuée dans le code de la fonction.
-3. Vérifier les réponses sans JWT, avec un utilisateur sans rôle, et avec un rôle synthétique si nécessaire ; ne pas attribuer de rôle réel.
-4. Vérifier les journaux Edge, les advisors Supabase et les privilèges après déploiement.
-5. Raccorder ultérieurement la diffusion des médias au lecteur documentaire utilisateur, avec des URL signées conformes aux règles de visibilité.
+1. La diffusion des médias aux utilisateurs finaux du lecteur documentaire doit être raccordée à une voie de lecture signée respectant la visibilité globale/entreprise et la version publiée.
+2. L'attribution des rôles éditoriaux doit faire l'objet d'un processus privilégié explicite ; aucune attribution automatique n'est prévue.
+3. Un test d'acceptation Auth avec comptes synthétiques doit vérifier les refus sans rôle et les autorisations avec rôles de test, sans créer de rôle réel.
+4. Les index et politiques signalés par les Performance Advisors doivent être optimisés séparément.
+5. Aucune mise en production n'est incluse : pas de fusion dans `main`, pas de GitHub Pages Production et pas de Supabase Production.
 
-Aucune migration supplémentaire n'est requise pour la tranche #170 à #175. Aucun déploiement vers `main`, GitHub Pages Production ou Supabase Production n'est autorisé par cette feuille de livraison.
+## 10. Séquence suivante
+
+1. Vérifier les journaux de la fonction `boussole-editor` après les premiers appels authentifiés de test.
+2. Effectuer les tests Auth avec utilisateur sans rôle, puis rôles synthétiques dans un environnement de test isolé.
+3. Raccorder la lecture média côté lecteur documentaire.
+4. Préparer une migration de performance pour les index et politiques, avec tests transactionnels et Advisors.
+5. N'envisager Production qu'après validation explicite distincte et revue de sécurité complète.

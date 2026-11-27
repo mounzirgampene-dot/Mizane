@@ -4,7 +4,7 @@ import { store, planAccounts, $app, toast, esc, money } from "./state.js";
 import { buildBudgetReport, validateBudgetLines } from "./budget-core.js";
 import { buildBudgetOutlook } from "./budget-outlook-core.js";
 import { buildAnalyticalBudgetReport, validateAnalyticalBudgets } from "./analytical-budget-core.js";
-import { renderLineChart } from "./charts.js";
+import { chartModeControls, bindChartMode, renderLineChart } from "./charts.js";
 
 const fiscalStart = () => store.settings.exerciceStart || new Date().getFullYear() + "-01-01";
 const fiscalEnd = () => store.settings.exerciceEnd || new Date().getFullYear() + "-12-31";
@@ -84,12 +84,14 @@ export function viewBudget() {
   $app.innerHTML = `
     <h1>Gestion budgétaire</h1>
     <p class="muted">Exercice : ${esc(start)} → ${esc(end)} · Devise : ${esc(store.settings.currency)}. Les réalisations proviennent exclusivement des écritures comptabilisées.</p>
+    ${chartModeControls("budget")}
+    <div id="budget-chart-view" hidden>${budgetChartsHtml}</div>
+    <div id="budget-table-view">
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Charges — budget / réel</div><div class="value">${money(total.budgetExpenses)}</div><div class="muted">Réel : ${money(total.actualExpenses)}</div></section>
       <section class="card kpi"><div class="label">Produits — budget / réel</div><div class="value">${money(total.budgetIncome)}</div><div class="muted">Réel : ${money(total.actualIncome)}</div></section>
       <section class="card kpi"><div class="label">Résultat budgété / réalisé</div><div class="value">${money(total.netActual)}</div><div class="muted">Budget : ${money(total.netBudget)} · Écart : ${money(total.netVariance)}</div></section>
     </div>
-    ${budgetChartsHtml}
     <section class="card">
       <h2>Projection de fin d’exercice</h2>
       <p class="muted">${outlook.ok ? esc(outlook.method) : "Projection indisponible : " + esc(outlook.errors[0] || "données insuffisantes.")}</p>
@@ -150,7 +152,9 @@ export function viewBudget() {
       <p class="muted">Projection indicative fondée sur le rythme moyen constaté. Elle n'est ni probabiliste ni une garantie de résultat. Ce pilotage ne modifie aucune écriture comptable.</p>
     </section>
     <p class="muted">Les budgets sont enregistrés dans les paramètres de l’entreprise. Ce suivi est analytique : il ne génère aucune écriture, ne modifie aucun règlement et ne clôture aucune période.</p>
+    </div>
   `;
+  bindChartMode("budget");
   document.getElementById("analytical-budget-form")?.addEventListener("submit", event => {
     event.preventDefault();
     const account=document.getElementById("ab-account").value, axis=document.getElementById("ab-axis").value.split("|"), monthlyAmount=Number(document.getElementById("ab-monthly").value), currency=String(document.getElementById("ab-currency").value||"").trim().toUpperCase();

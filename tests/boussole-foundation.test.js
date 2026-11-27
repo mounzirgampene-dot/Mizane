@@ -18,7 +18,8 @@ assert.match(migration, /consent_type in \('ai_processing','business_data_access
 assert.match(migration, /locale in \('fr','ar'\)/);
 
 // Aucun rôle anon ne doit déclencher le helper private, dont le schéma n'est pas exposé.
-const anonPolicies = migration.match(/create policy [\s\S]*?to anon,authenticated[\s\S]*?;/gi) ?? [];
+const policyStatements = migration.match(/create policy\b[\s\S]*?;/gi) ?? [];
+const anonPolicies = policyStatements.filter(policy => /\bto\s+anon\s*,\s*authenticated\b/i.test(policy));
 assert.equal(anonPolicies.length, 4, "quatre politiques publiques sans helper privé");
 for (const policy of anonPolicies) {
   assert.doesNotMatch(policy, /private\.is_active_company_member/i, "une politique publique ne doit pas appeler le helper privé");

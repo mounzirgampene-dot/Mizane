@@ -18,6 +18,8 @@ import { LANGS } from "../i18n.js";
 import { extractPdfDocument, isSupportedDocumentFile, documentFactsFromProposal, matchDocumentToRecords } from "../ai-documents.js";
 import { putLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
 import { uploadCloudAccountingDocument } from "../accounting-documents-cloud.js";
+import { resolveDocumentStorageScope } from "../document-storage-scope.js";
+import { inspectLegacyDocumentVaults, recoverLegacyAccountingDocuments, recoverLegacyTaxEvidence } from "../document-vault-recovery.js";
 import { syncCloudIfReady } from "../cloud-sync.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
@@ -409,6 +411,15 @@ export function viewSettings() {
     ${customPlansCard}
     ${conversionCard}
 
+    <section class="card" id="legacy-document-recovery">
+      <h2>Récupération des anciens justificatifs</h2>
+      <p class="muted">Inventoriez les anciens coffres de cet appareil. Les fichiers historiques ne sont jamais attribués automatiquement à une entreprise. Sélectionnez uniquement les pièces dont vous confirmez l’appartenance à l’espace actif. Les bases sources resteront intactes.</p>
+      <div class="actions"><button type="button" class="secondary" id="legacy-vault-scan">Analyser les anciens coffres</button></div>
+      <p id="legacy-vault-status" class="muted" aria-live="polite">Aucun inventaire effectué.</p>
+      <div id="legacy-vault-results"></div>
+      <div class="actions"><button type="button" id="legacy-import-accounting" disabled>Récupérer les justificatifs comptables sélectionnés</button><button type="button" class="secondary" id="legacy-import-tax" disabled>Récupérer les justificatifs fiscaux sélectionnés</button></div>
+    </section>
+
     <div class="card">
       <h2>💾 Données</h2>
       <div class="actions">
@@ -421,6 +432,74 @@ export function viewSettings() {
     </div>
   `;
 
+
+  let legacyInventory = null;
+  const legacyStatus = document.getElementById("legacy-vault-status");
+  const legacyResults = document.getElementById("legacy-vault-results");
+  const renderLegacyInventory = (inventory) => {
+    const renderRows = (rows, kind, label) => {
+      if (!rows.length) return '<p class="muted">Aucun fichier ancien détecté dans le coffre ' + label + '.</p>';
+      return '<h3>' + label + ' (' + rows.length + ')</h3><div class="table-wrap"><table><thead><tr><th>Sélection</th><th>Fichier</th><th>Taille</th><th>Liens / catégorie</th><th>État</th></tr></thead><tbody>' +
+        rows.map((row) => '<tr><td><input type="checkbox" data-legacy-kind="' + kind + '" value="' + esc(row.id) + '"' + (row.hasBlob && row.id ? '' : ' disabled') + '></td><td>' + esc(row.fileName) + '</td><td>' + Math.ceil(row.size / 1024) + ' Ko</td><td>' + esc(kind === 'accounting' ? (row.entryIds.join(', ') || 'Aucune écriture') : [row.declarationId, row.category].filter(Boolean).join(' · ') || 'Métadonnées limitées') + '</td><td>' + (row.hasBlob ? '<span class="ok-msg">Fichier présent</span>' : '<span class="errors">Fichier absent</span>') + '</td></tr>').join('') +
+        '</tbody></table></div>';
+    };
+    legacyResults.innerHTML = renderRows(inventory.accounting, 'accounting', 'Comptabilité') + renderRows(inventory.tax, 'tax', 'Fiscalité');
+    const updateButtons = () => {
+      document.getElementById("legacy-import-accounting").disabled = !legacyResults.querySelector('[data-legacy-kind="accounting"]:checked');
+      document.getElementById("legacy-import-tax").disabled = !legacyResults.querySelector('[data-legacy-kind="tax"]:checked');
+    };
+    legacyResults.querySelectorAll('input[data-legacy-kind]').forEach((input) => input.addEventListener('change', updateButtons));
+    updateButtons();
+  };
+  document.getElementById("legacy-vault-scan").addEventListener("click", async () => {
+    legacyStatus.textContent = "Lecture en cours, sans modification des anciennes bases…";
+    legacyResults.innerHTML = "";
+    try {
+      legacyInventory = await inspectLegacyDocumentVaults();
+      const scope = resolveDocumentStorageScope();
+      renderLegacyInventory(legacyInventory);
+      legacyStatus.textContent = "Inventaire terminé. Destination actuelle : " + (scope.mode === "company" ? "entreprise " + scope.companyId : "profil local") + ". Les anciens coffres n’ont pas été modifiés.";
+    } catch (error) {
+      legacyStatus.textContent = "Inventaire impossible : " + (error?.message || error);
+    }
+  });
+  document.getElementById("legacy-import-accounting").addEventListener("click", async () => {
+    const selectedIds = [...legacyResults.querySelectorAll('[data-legacy-kind="accounting"]:checked')].map((input) => input.value);
+    if (!selectedIds.length) return;
+    try {
+      const scope = resolveDocumentStorageScope();
+      const destination = scope.mode === "company" ? "l’entreprise " + scope.companyId : "le profil local " + scope.userId;
+      if (!confirm("Confirmez-vous que chacun des " + selectedIds.length + " justificatif(s) comptable(s) sélectionné(s) appartient à " + destination + " ? Les anciens fichiers resteront conservés.")) return;
+      const result = await recoverLegacyAccountingDocuments({
+        selectedIds,
+        confirmation: { confirmed: true, databaseSuffix: scope.databaseSuffix },
+        existingEntryIds: (store.entries || []).map((entry) => entry.id),
+      });
+      legacyStatus.textContent = result.imported.length + " justificatif(s) comptable(s) récupéré(s), " + result.skipped.length + " ignoré(s). Ancien coffre conservé.";
+      document.getElementById("legacy-vault-scan").click();
+      toast("Récupération comptable terminée.");
+    } catch (error) {
+      legacyStatus.textContent = "Récupération impossible : " + (error?.message || error);
+    }
+  });
+  document.getElementById("legacy-import-tax").addEventListener("click", async () => {
+    const selectedIds = [...legacyResults.querySelectorAll('[data-legacy-kind="tax"]:checked')].map((input) => input.value);
+    if (!selectedIds.length) return;
+    try {
+      const scope = resolveDocumentStorageScope();
+      const destination = scope.mode === "company" ? "l’entreprise " + scope.companyId : "le profil local " + scope.userId;
+      if (!confirm("Confirmez-vous que chacun des " + selectedIds.length + " justificatif(s) fiscal(aux) sélectionné(s) appartient à " + destination + " ? Les anciens fichiers resteront conservés.")) return;
+      const result = await recoverLegacyTaxEvidence({
+        selectedIds,
+        confirmation: { confirmed: true, databaseSuffix: scope.databaseSuffix },
+      });
+      legacyStatus.textContent = result.imported.length + " justificatif(s) fiscal(aux) récupéré(s), " + result.skipped.length + " ignoré(s). Ancien coffre conservé.";
+      document.getElementById("legacy-vault-scan").click();
+      toast("Récupération fiscale terminée.");
+    } catch (error) {
+      legacyStatus.textContent = "Récupération impossible : " + (error?.message || error);
+    }
+  });
 
   let conversionSuggestions = [];
   const getConversionPlan = (id) => {

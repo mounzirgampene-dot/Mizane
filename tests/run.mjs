@@ -2800,5 +2800,19 @@ test("restauration cloud : association vérifiée de l'appareil avant retour à 
   assert.ok(restoreSource.indexOf('window.location.assign("/index.html")') > restoreSource.indexOf("bindCompanyStorage(activeCompanyId,session.user.id)"));
 });
 
+test("déconnexion SaaS : verrouillage de la comptabilité locale sans suppression des données", () => {
+  const storageSource = readFileSync(new URL("../js/company-storage.js", import.meta.url), "utf8");
+  const portalSource = readFileSync(new URL("../js/saas-portal.js", import.meta.url), "utf8");
+  const appSource = readFileSync(new URL("../js/app.js", import.meta.url), "utf8");
+  assert.match(storageSource, /SESSION_LOCK_KEY/);
+  assert.match(storageSource, /export function lockCompanyStorage/);
+  assert.match(storageSource, /export function unlockCompanyStorage/);
+  assert.match(storageSource, /reason: "session-locked"/);
+  assert.match(storageSource, /localStorage\.removeItem\(ACTIVE_COMPANY_KEY\)/);
+  assert.doesNotMatch(storageSource, /removeItem\(["']mizane_v1["']\)/);
+  assert.match(portalSource, /lockCompanyStorage\(session\?\.user\?\.id\)/);
+  assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId\)/);
+  assert.match(appSource, /storageStatus\.reason === "session-locked"/);
+});
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

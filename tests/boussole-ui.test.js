@@ -1,6 +1,7 @@
 import { strict as assert } from "node:assert";
 import { normalizeBoussoleQuery, matchesBoussoleQuery } from "../js/boussole-search.js";
 import { expandBoussoleCloudSearchVariants } from "../js/boussole-cloud.js";
+import { searchAcademyCourses } from "../js/academy.js";
 import { readFileSync } from "node:fs";
 const app=readFileSync(new URL("../js/app.js",import.meta.url),"utf8");
 const guide=readFileSync(new URL("../js/boussole.js",import.meta.url),"utf8");
@@ -65,3 +66,6 @@ assert.ok(html.includes('id="boussole-editor-dialog"'));
 assert.ok(worker.includes("js/boussole-editor.js"));
 assert.ok(worker.includes("js/academy-en.js"));
 console.log("Boussole UI: French, Arabic and English guide, Academy and editorial administration checks passed.");
+
+assert.ok(searchAcademyCourses("cash flow forecast").some(course => course.id === "treasury"));
+assert.ok(searchAcademyCourses("serial number").some(course => course.id === "stock"));

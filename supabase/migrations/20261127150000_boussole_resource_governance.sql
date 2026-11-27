@@ -56,7 +56,10 @@ create policy boussole_media_read_global_published
     is_active and exists (
       select 1 from public.boussole_documents d
       where d.id=document_id and d.status='published' and d.visibility='global'
-    )
+    ) and (version_id is null or exists (
+      select 1 from public.boussole_document_versions v
+      where v.id=version_id and v.document_id=document_id and v.status='published'
+    ))
   );
 create policy boussole_media_read_company_published
   on public.boussole_media_assets for select to authenticated
@@ -67,7 +70,10 @@ create policy boussole_media_read_company_published
         d.visibility='global' or
         (d.visibility='company' and private.is_active_company_member(d.company_id))
       )
-    )
+    ) and (version_id is null or exists (
+      select 1 from public.boussole_document_versions v
+      where v.id=version_id and v.document_id=document_id and v.status='published'
+    ))
   );
 
 -- Bucket privé : les téléchargements et URL signées passent par le service serveur.

@@ -2,6 +2,32 @@
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
 const ACTIVE_USER_KEY = "mizane_active_user_v1";
 const BINDING_KEY = "mizane_local_company_binding_v1";
+const SESSION_LOCK_KEY = "mizane_company_session_lock_v1";
+
+export function getCompanySessionLock() {
+  try { return JSON.parse(localStorage.getItem(SESSION_LOCK_KEY) || "null"); }
+  catch { return null; }
+}
+
+export function lockCompanyStorage(userId) {
+  const binding = (() => { try { return JSON.parse(localStorage.getItem(BINDING_KEY) || "null"); } catch { return null; } })();
+  const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY) || binding?.companyId || "";
+  const verifiedUserId = String(userId || binding?.userId || "").trim();
+  if (!companyId || !verifiedUserId || binding?.companyId !== companyId || binding?.userId !== verifiedUserId) return false;
+  localStorage.setItem(SESSION_LOCK_KEY, JSON.stringify({ version: 1, userId: verifiedUserId, companyId, lockedAt: new Date().toISOString() }));
+  localStorage.removeItem(ACTIVE_COMPANY_KEY);
+  localStorage.removeItem(ACTIVE_USER_KEY);
+  return true;
+}
+
+export function unlockCompanyStorage(userId, companyId) {
+  const lock = getCompanySessionLock();
+  if (!lock) return true;
+  const binding = (() => { try { return JSON.parse(localStorage.getItem(BINDING_KEY) || "null"); } catch { return null; } })();
+  if (lock.userId !== String(userId || "") || lock.companyId !== String(companyId || "") || binding?.userId !== lock.userId || binding?.companyId !== lock.companyId) return false;
+  localStorage.removeItem(SESSION_LOCK_KEY);
+  return true;
+}
 
 export function getCompanyStorageStatus() {
   const companyId = localStorage.getItem(ACTIVE_COMPANY_KEY);

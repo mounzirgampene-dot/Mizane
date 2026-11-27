@@ -825,7 +825,7 @@ export function viewSettings() {
   }));
   document.querySelectorAll("[data-cp-delete]").forEach((button) => button.addEventListener("click", () => {
     const target = s.customPlans.find((p) => p.id === button.dataset.cpDelete);
-    if (!target || !confirm("Supprimer le plan « " + target.name + " » ? Les écritures existantes ne seront pas supprimées.")) return;
+    if (!target) return;\n    if (hasPostedEntries() && target.id === s.plan) return toast("Suppression bloquée : ce plan est associé aux écritures existantes. Migrez d’abord vers un autre référentiel.");\n    if (!confirm("Supprimer le plan « " + target.name + " » ? Les écritures existantes ne seront pas supprimées.")) return;
     s.customPlans = s.customPlans.filter((p) => p.id !== target.id);
     if (s.plan === target.id) s.plan = PLANS[target.basePlanId] ? target.basePlanId : "syscohada";
     refreshPlan(); saveStore(store); toast("Plan personnalisé supprimé."); router.render();

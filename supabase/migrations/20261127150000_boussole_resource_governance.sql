@@ -232,7 +232,11 @@ begin
     if p_action='media_upload_authorize' then
       if p_storage_path is null or p_storage_path not like p_document_id::text || '/%'
         or p_content_type is null or p_content_type not in ('image/jpeg','image/png','image/webp','image/avif','video/mp4','video/webm','application/pdf')
-        or p_byte_size is null or p_byte_size not between 1 and 20971520 then
+        or p_byte_size is null or p_byte_size not between 1 and 20971520
+        or (p_version_id is not null and not exists (
+          select 1 from public.boussole_document_versions v
+          where v.id=p_version_id and v.document_id=p_document_id
+        )) then
         raise exception 'Téléversement média invalide.' using errcode='22023';
       end if;
       return jsonb_build_object('status','authorized','document_id',p_document_id,'storage_path',p_storage_path);

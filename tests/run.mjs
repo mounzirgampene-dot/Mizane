@@ -2785,7 +2785,7 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v115"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v116"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

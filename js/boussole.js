@@ -40,7 +40,9 @@ function renderResults(){
 function refresh(){
  const arabic=ar(), routeLabel=ROUTES[route]||["Espace de travail","مساحة العمل"];
  panel.dir=arabic?"rtl":"ltr";panel.lang=arabic?"ar":"fr";
+ toggle.textContent=arabic?"البوصلة":"Boussole";
  panel.querySelector(".boussole-title").textContent=arabic?"بوصلة ميزان":"Boussole MIZANE";
+ panel.querySelector('label[for="boussole-search"]').textContent=arabic?"البحث":"Recherche";
  panel.querySelector(".boussole-intro").textContent=arabic?"دليل محلي وبحث في المساعدة، متاحان دون اتصال بعد تحميل التطبيق.":"Guide local et recherche d’aide, disponibles hors connexion après chargement.";
  search.placeholder=arabic?"ابحث في دليل ميزان...":"Rechercher dans le guide MIZANE...";
  search.setAttribute("aria-label",search.placeholder);

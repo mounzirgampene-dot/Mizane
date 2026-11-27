@@ -251,6 +251,7 @@ begin
     else
       update public.boussole_document_versions set status='approved',reviewed_by=p_actor_id,reviewed_at=now(),approved_by=p_actor_id,approved_at=now()
         where id=p_version_id and document_id=v_document.id and status='review'
+          and created_by is distinct from p_actor_id
         returning * into v_version;
       if not found then raise exception 'Version non disponible pour approbation.' using errcode='42501'; end if;
       insert into public.boussole_editor_audit(actor_user_id,company_id,document_id,version_id,action)

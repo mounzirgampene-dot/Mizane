@@ -2811,7 +2811,12 @@ test("déconnexion SaaS : verrouillage de la comptabilité locale sans suppressi
   assert.match(storageSource, /localStorage\.removeItem\(ACTIVE_COMPANY_KEY\)/);
   assert.doesNotMatch(storageSource, /removeItem\(["']mizane_v1["']\)/);
   assert.match(portalSource, /lockCompanyStorage\(session\?\.user\?\.id\)/);
-  assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId\)/);
+  assert.match(portalSource, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId,\{authorizedCompanyMember:true\}\)/);
+  assert.match(storageSource, /lock\.companyId !== targetCompanyId/);
+  assert.match(storageSource, /authorizedCompanyMember = false/);
+  assert.match(storageSource, /reboundAt: new Date\(\)\.toISOString\(\)/);
+  assert.match(portalSource, /const canUnlock=!!lockedMembership&&\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);
+  assert.doesNotMatch(portalSource.slice(portalSource.indexOf("const sessionLock=getCompanySessionLock()"),portalSource.indexOf("localStorage.setItem(ACTIVE_USER_KEY")), /restoreAccountingFromCloud|syncAccounting/);
   assert.match(appSource, /storageStatus\.reason === "session-locked"/);
   assert.match(storageSource, /const lock = getCompanySessionLock\(\)/);
   assert.match(portalSource, /\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);

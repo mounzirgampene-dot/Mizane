@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { readFileSync } from "node:fs";
 
-const migration = readFileSync(new URL("../supabase/migrations/20261127000100_boussole_foundation.sql", import.meta.url), "utf8");
+const migration = readFileSync(new URL("../supabase/migrations/20261127105326_boussole_foundation.sql", import.meta.url), "utf8");
 
 assert.match(migration, /begin;[\s\S]*commit;/i);
 for (const table of ["boussole_documents","boussole_document_versions","boussole_document_relations","boussole_search_synonyms","boussole_user_preferences","boussole_consent_events"]) {

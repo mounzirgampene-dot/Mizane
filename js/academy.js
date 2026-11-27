@@ -243,6 +243,7 @@ export function initAcademy() {
   function render() {
     const l=labels();
     heading.textContent=l.heading;localNote.textContent=l.local;
+    dialog.dir=l.direction;
     body.dir=l.direction;
     const stats=progressStats();
     const tabs='<div class="academy-tabs"><button type="button" data-academy-view="catalog" aria-current="'+(view==="catalog"||view==="course"||view==="quiz")+'">'+l.catalog+'</button><button type="button" data-academy-view="progress" aria-current="'+(view==="progress")+'">'+l.progress+'</button></div>';

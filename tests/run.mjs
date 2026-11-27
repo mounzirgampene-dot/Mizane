@@ -18,6 +18,7 @@ import { COUNTRIES, formatMoney } from "../js/countries.js";
 import { chartModeControls, renderHorizontalBars } from "../js/charts.js";
 import { periodControls, previousYearRange, comparisonTable } from "../js/report-periods.js";
 import { validateBackup } from "../js/db.js";
+import { bindCompanyStorage, getCompanyStorageStatus } from "../js/company-storage.js";
 import { invokeWithRetry as invokeBillingWithRetry } from "../js/billing-sync.js";
 import { buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestStockAccounts } from "../js/billing-accounting.js";
 import { calculateOutstandingBase } from "../js/billing-core.js";
@@ -717,6 +718,38 @@ test("i18n : mêmes clés pour toutes les langues", async () => {
   assert.ok(counts[0] > 100, "dictionnaire substantiel");
 });
 
+
+test("isolation locale : une comptabilité est liée à un utilisateur et une entreprise précis", () => {
+  const previousStorage = globalThis.localStorage;
+  const values = new Map();
+  globalThis.localStorage = {
+    getItem: key => values.has(key) ? values.get(key) : null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+  };
+  try {
+    values.set("mizane_active_company_v1", "company-alpha");
+    values.set("mizane_active_user_v1", "user-one");
+    assert.equal(getCompanyStorageStatus().ok, false);
+    assert.equal(getCompanyStorageStatus().reason, "unbound");
+    bindCompanyStorage("company-alpha", "user-one");
+    assert.deepEqual(getCompanyStorageStatus(), {
+      ok: true, mode: "company", companyId: "company-alpha", userId: "user-one",
+    });
+    values.set("mizane_active_company_v1", "company-beta");
+    assert.equal(getCompanyStorageStatus().ok, false);
+    assert.equal(getCompanyStorageStatus().reason, "mismatch");
+    values.set("mizane_active_company_v1", "company-alpha");
+    values.set("mizane_active_user_v1", "user-two");
+    assert.equal(getCompanyStorageStatus().ok, false);
+    assert.equal(getCompanyStorageStatus().reason, "mismatch");
+    values.delete("mizane_active_company_v1");
+    assert.deepEqual(getCompanyStorageStatus(), { ok: true, mode: "local" });
+  } finally {
+    if (previousStorage === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = previousStorage;
+  }
+});
 
 console.log("— Synchronisation comptable —");
 

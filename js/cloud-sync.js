@@ -2,8 +2,10 @@
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
 import { syncAccounting } from "./accounting-sync.js";
 import { syncBilling } from "./billing-sync.js";
+import { getCompanyStorageStatus } from "./company-storage.js";
 
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
+const ACTIVE_USER_KEY = "mizane_active_user_v1";
 const SHADOW_PREFIX = "mizane_sync_shadow_v1:";
 let clientPromise;
 let activeSync = null;
@@ -24,7 +26,11 @@ export async function getCurrentCompanyRole() {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
   const user = sessionData?.session?.user;
-  if (!user) return null;
+  if (!user) {
+    localStorage.removeItem(ACTIVE_USER_KEY);
+    return null;
+  }
+  localStorage.setItem(ACTIVE_USER_KEY, user.id);
   const { data: membership, error } = await supabase
     .from("company_memberships")
     .select("role,status")
@@ -53,6 +59,11 @@ export function syncCloudIfReady() {
     if (sessionError) throw sessionError;
     const user = sessionData?.session?.user;
     if (!user) return { skipped: true, reason: "not-authenticated" };
+    localStorage.setItem(ACTIVE_USER_KEY, user.id);
+    const storageStatus = getCompanyStorageStatus();
+    if (!storageStatus.ok || storageStatus.companyId !== companyId || storageStatus.userId !== user.id) {
+      return { skipped: true, reason: "company-storage-not-bound" };
+    }
 
     const { data: membership, error: membershipError } = await supabase
       .from("company_memberships")

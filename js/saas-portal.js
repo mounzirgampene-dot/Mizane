@@ -1,10 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
 import { syncAccounting, restoreAccountingFromCloud } from "./accounting-sync.js";
+import { bindCompanyStorage, getCompanyStorageStatus } from "./company-storage.js";
 
 const root = document.querySelector("#portal");
 const toastNode = document.querySelector("#portal-toast");
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
+const ACTIVE_USER_KEY = "mizane_active_user_v1";
 let supabase;
 let session = null;
 let memberships = [];
@@ -124,7 +126,11 @@ async function importAccountingSnapshot(button){
   }
   if(data?.imported!==true)throw new Error("Le serveur n'a pas confirmé l'import comptable.");
   await refresh();
-  toast("Import initial terminé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+  // La première lecture cloud vérifie l'import et établit le shadow local.
+  const initialSync = await syncAccounting(supabase, activeCompanyId, active.role);
+  bindCompanyStorage(activeCompanyId, session.user.id);
+  toast("Import initial terminé et espace local associé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+  return initialSync;
  }finally{busy(button,false)}
 }
 async function restoreCloudToThisDevice(button){
@@ -271,13 +277,19 @@ root.addEventListener("click",async(e)=>{
   if(action==="show-work"){await loadWorkspace("work");return;}
   if(action==="show-history"){await loadWorkspace("history");return;}
   if(action==="forgot"){const email=root.querySelector("#email")?.value.trim();if(!email)throw new Error("Saisissez d'abord votre adresse e-mail.");const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;toast("E-mail de réinitialisation envoyé si le compte existe.");}
-  if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];authView();}
+  if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView();}
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
-  if(action==="import-accounting"){await importAccountingSnapshot(button);return;}
+  if(action==="import-accounting"){
+   const localStatus=getCompanyStorageStatus();
+   if(localStatus.reason==="mismatch")throw new Error("Les données locales sont déjà associées à une autre entreprise ou à un autre compte. Récupérez d'abord les données cloud de l'entreprise sélectionnée ; l'import croisé est bloqué pour éviter tout mélange.");
+   await importAccountingSnapshot(button);return;
+  }
   if(action==="restore-cloud"){await restoreCloudToThisDevice(button);return;}
   if(action==="sync-accounting"){
+   const localStatus=getCompanyStorageStatus();
+   if(!localStatus.ok||localStatus.companyId!==activeCompanyId||localStatus.userId!==session.user.id)throw new Error("Cet appareil n'est pas encore associé de manière vérifiée à cette entreprise. Récupérez d'abord les données cloud sur cet appareil.");
    busy(button,true);
    try{
     const result=await syncAccounting(supabase,activeCompanyId,memberships.find(m=>m.company.id===activeCompanyId)?.role);

@@ -18,19 +18,21 @@ import { viewCustomerFollowups } from "./customer-followups.js";
 import { viewTax } from "./tax.js";
 import { initWorkHistory, canAccessWorkHistory, viewActivityHistory, viewMyWork } from "./work-history.js";
 import { syncCloudIfReady, getCurrentCompanyRole } from "./cloud-sync.js";
+import { getCompanyStorageStatus } from "./company-storage.js";
 import { initNotifications, getUnreadNotificationCount, notifySyncFailure, refreshUnreadCount, viewNotifications } from "./notifications.js";
 
 let currentCompanyRole = null;
 
 async function refreshCompanyRole() {
   const companyId = localStorage.getItem("mizane_active_company_v1");
-  if (!companyId) { currentCompanyRole = null; return; }
+  if (!companyId) { currentCompanyRole = null; return true; }
   try {
     currentCompanyRole = await getCurrentCompanyRole();
-    if (!["admin", "accountant", "reader"].includes(currentCompanyRole)) currentCompanyRole = "reader";
+    return ["admin", "accountant", "reader"].includes(currentCompanyRole);
   } catch (error) {
     console.warn("Vérification du rôle MIZANE impossible :", error?.message || error);
-    currentCompanyRole = "reader";
+    currentCompanyRole = null;
+    return false;
   }
 }
 
@@ -169,7 +171,16 @@ document.getElementById("work-sidebar")?.addEventListener("click", (e) => {
 });
 
 async function start() {
-  await refreshCompanyRole();
+  const roleVerified = await refreshCompanyRole();
+  const activeCompanyId = localStorage.getItem("mizane_active_company_v1");
+  const storageStatus = getCompanyStorageStatus();
+  if (activeCompanyId && (!roleVerified || !storageStatus.ok)) {
+    $nav.innerHTML = "";
+    document.getElementById("work-sidebar").hidden = true;
+    document.getElementById("company-tag").textContent = "Espace professionnel";
+    $app.innerHTML = `<section class="panel"><p class="eyebrow">Protection des données</p><h1>Vérification de l’espace nécessaire</h1><p>Les données locales de cet appareil ne sont pas encore associées de manière vérifiée à l’entreprise sélectionnée, ou votre appartenance n’a pas pu être confirmée. Pour éviter qu’une comptabilité d’une autre entreprise soit affichée ou synchronisée, MIZANE a bloqué temporairement cet espace sur cet appareil.</p><p>Ouvrez l’espace professionnel, puis choisissez <strong>Récupérer les données du cloud sur cet appareil</strong> (une sauvegarde locale sera téléchargée) ou effectuez l’import initial si cet espace cloud n’a encore aucune comptabilité.</p><div class="actions"><a class="button" href="espace.html">Ouvrir l’espace professionnel</a><a class="button secondary" href="index.html">Réessayer</a></div></section>`;
+    return;
+  }
   const hash = location.hash.replace("#", "");
   const initialRoute = isReader() && readerRestrictedRoutes.includes(hash) ? "dashboard" : hash;
   setRoute(NAV.some(([id]) => id === initialRoute) ? initialRoute : "dashboard");
@@ -199,24 +210,10 @@ window.addEventListener("mizane:legacy-stock-loaded", (event) => {
   if (currentRoute === "stock") render();
 });
 
-window.addEventListener("storage", async (event) => {
-  if (event.key === "mizane_active_company_v1") {
-    await refreshCompanyRole();
-    const allowed = await initWorkHistory();
-    if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
-    if (!allowed && ["history", "my-work"].includes(currentRoute)) setRoute("dashboard");
-    renderNav();
-    render();
-    return;
-  }
-  if (event.key !== "mizane_v1" || !event.newValue) return;
-  try {
-    initStore(loadStore(allAccounts("syscohada")));
-    renderNav();
-    render();
-    toast("Comptabilité actualisée depuis un autre onglet.");
-  } catch (error) {
-    toast("Mise à jour cloud reçue, mais le rechargement local a échoué : " + (error?.message || "erreur inconnue"), 5000);
+window.addEventListener("storage", (event) => {
+  if (["mizane_active_company_v1", "mizane_active_user_v1", "mizane_local_company_binding_v1", "mizane_v1"].includes(event.key)) {
+    // Un changement d'espace ou de magasin impose une nouvelle vérification avant affichage.
+    location.reload();
   }
 });
 
@@ -241,8 +238,12 @@ window.addEventListener("mizane:cloud-synced", (event) => {
 
 async function syncWhenActive() {
   if (document.visibilityState !== "visible") return;
-  await refreshCompanyRole();
-  try { await refreshUnreadCount(); } catch (error) { console.warn("Actualisation des notifications impossible :", error?.message || error); }
+  const roleVerified = await refreshCompanyRole();
+  if (localStorage.getItem("mizane_active_company_v1") && !roleVerified) {
+    location.reload();
+    return;
+  }
+  try { await refreshUnreadCount(); catch (error) { console.warn("Actualisation des notifications impossible :", error?.message || error); }
   if (isReader() && readerRestrictedRoutes.includes(currentRoute)) setRoute("dashboard");
   renderNav();
   render();

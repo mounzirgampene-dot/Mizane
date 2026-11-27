@@ -223,12 +223,13 @@ export function initAcademy() {
   let progress = createEmptyAcademyProgress();
   let storageKey = "";
   const locale = () => document.documentElement.lang === "ar" ? "ar" : "fr";
+  const safeGet = (key) => { try { return localStorage.getItem(key); } catch { return null; } };
   const text = (pair) => Array.isArray(pair) ? pair[locale()==="ar"?1:0] : String(pair ?? "");
   const labels = () => LABELS[locale()];
   const entry = (course) => progress.courses[course.id] || {completedLessons:[],quizScore:null,completedAt:null};
   const save = () => { if (!writeProgress(storageKey,progress)) localNote.textContent=labels().storage; };
   const open = () => {
-    storageKey=getAcademyScopeKey(localStorage.getItem("mizane_active_user_v1"),localStorage.getItem("mizane_active_company_v1"));
+    storageKey=getAcademyScopeKey(safeGet("mizane_active_user_v1"),safeGet("mizane_active_company_v1"));
     progress=readProgress(storageKey);
     view="catalog";activeCourse=null;lastResult=null;
     render();
@@ -240,7 +241,7 @@ export function initAcademy() {
     return {lessons,completed,totalLessons:COURSES.reduce((sum,course)=>sum+course.lessons.length,0)};
   };
   function render() {
-    const l=labels(),rtl=l.direction==="rtl";
+    const l=labels();
     heading.textContent=l.heading;localNote.textContent=l.local;
     body.dir=l.direction;
     const stats=progressStats();

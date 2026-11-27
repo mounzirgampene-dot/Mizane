@@ -116,8 +116,7 @@ export function viewAssistant() {
       <div id="invoice-result" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <h2>💬 Conversation</h2>
-      <p class="muted">Mémoire de conversation temporaire, limitée à cette session et réinitialisée lors d’un changement d’entreprise. Aucun historique de conversation n’est partagé entre entreprises.</p>
+      <h2>💬 Conversation</h2>\n      <p class="muted">Mémoire de conversation temporaire, limitée à cette session et réinitialisée lors d’un changement d’entreprise. Aucun historique de conversation n’est partagé entre entreprises.</p>
       <div class="chat-box" id="chat-box">
         <div class="chat-msg ai">Bonjour ! Je suis l'assistant comptable MIZANE${configured ? " (IA connectée)" : " (mode local)"}. Posez vos questions, ou joignez la photo d'une facture ou d'un reçu pour que je la lise.</div>
         ${aiHistory.map((m) => `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}</div>`).join("")}
@@ -156,9 +155,7 @@ export function viewAssistant() {
       let pdfInfo = null;
       if (isPdf) {
         pdfInfo = await extractPdfDocument(file);
-        const documentText = [note, pdfInfo.text].filter(Boolean).join("
-
-");
+        const documentText = [note, pdfInfo.text].filter(Boolean).join("\n\n");
         if (pdfInfo.images.length) proposals = [await suggestEntry(store, documentText, pdfInfo.images)];
         else proposals = await importEntriesFromText(store, documentText);
       } else {
@@ -283,10 +280,7 @@ export function viewAssistant() {
         ? await chatWithImage(store, aiHistory.slice(0, -1), msg || "Lis ce justificatif et résume les montants.", photoData)
         : aiConfigured(store) ? await chat(store, aiHistory.slice(0, -1), msg) : localAssist(store, msg);
     } catch (err) {
-      reply = "Erreur IA : " + err.message + "
-
-Réponse de l'assistant local :
-" + localAssist(store, msg);
+      reply = "Erreur IA : " + err.message + "\n\nRéponse de l'assistant local :\n" + localAssist(store, msg);
     }
     aiHistory.push({ role: "assistant", content: reply });
     box.querySelector(".chat-msg.ai:last-child").textContent = reply;
@@ -574,9 +568,7 @@ export function viewSettings() {
       document.getElementById("conversion-export-report").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), "mizane-simulation-conversion.json"));
       const applyButton = document.getElementById("conversion-apply");
       if (applyButton) applyButton.addEventListener("click", () => {
-        if (!confirm("CONFIRMATION DE MIGRATION
-
-Les " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
+        if (!confirm("CONFIRMATION DE MIGRATION\n\nLes " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
         const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
         try {
           const applied = applyPlanMigration(store, { sourcePlan: source, targetPlan: target, mapping });

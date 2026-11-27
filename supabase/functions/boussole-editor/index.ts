@@ -118,11 +118,13 @@ Deno.serve(async (request) => {
 
     if (action === "list") {
       let query = adminClient.from("boussole_documents")
-        .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,updated_at,published_at")
+        .select("id,slug,module_key,feature_key,visibility,company_id,status,current_published_version,created_by,updated_at,published_at")
         .eq("visibility", scope)
         .order("updated_at", { ascending: false })
         .limit(100);
       if (scope === "company") query = query.eq("company_id", companyId);
+      const canReviewAll = scopeRoles.some((role) => ["reviewer", "publisher", "admin"].includes(role.role));
+      if (!canReviewAll) query = query.or("status.eq.published,created_by.eq." + authData.user.id);
       const { data: documents, error: documentsError } = await query;
       if (documentsError) return json(500, { error: "Chargement des documents éditoriaux impossible." });
       return json(200, { scope, company_id: companyId, roles: scopeRoles.map((role) => role.role), documents: documents ?? [] });
@@ -137,6 +139,10 @@ Deno.serve(async (request) => {
     if (documentError || !document) return json(404, { error: "Document introuvable." });
     if (scope === "global" && document.visibility !== "global") return json(403, { error: "Document hors de cet espace éditorial." });
     if (scope === "company" && (document.visibility !== "company" || document.company_id !== companyId)) return json(403, { error: "Document hors de cet espace éditorial." });
+    const canReviewAll = scopeRoles.some((role) => ["reviewer", "publisher", "admin"].includes(role.role));
+    if (!canReviewAll && document.status !== "published" && document.created_by !== authData.user.id) {
+      return json(403, { error: "Un auteur ne peut consulter que ses propres brouillons et les documents publiés." });
+    }
     const { data: versions, error: versionsError } = await adminClient
       .from("boussole_document_versions")
       .select("id,document_id,version_number,locale,title,summary,content_markdown,structured_content,source_references,learning_level,estimated_minutes,status,created_by,reviewed_by,approved_by,created_at,reviewed_at,approved_at,published_at")

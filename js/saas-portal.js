@@ -160,7 +160,11 @@ async function restoreCloudToThisDevice(button){
  busy(button,true);
  try{
   const result=await restoreAccountingFromCloud(supabase,activeCompanyId);
+  // L'appareil ne devient associé à l'entreprise qu'après une restauration cloud complète.
+  bindCompanyStorage(activeCompanyId,session.user.id);
   toast("Récupération terminée : "+result.entries+" écriture(s), "+result.thirds+" tiers, "+result.assets+" immobilisation(s) et "+result.customAccounts+" compte(s) personnalisé(s).");
+  // Revenir à l'application comptable après avoir établi l'association vérifiée.
+  window.location.assign("/index.html");
  }finally{busy(button,false)}
 }
 async function refresh(){

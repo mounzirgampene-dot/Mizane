@@ -696,7 +696,7 @@ test("service worker : les dépendances locales directes de l'application sont p
   const modules = [...appSource.matchAll(/from\s+["']\.\/([^"']+)["']/g)].map(match => match[1]);
   const missing = modules.filter(path => !serviceWorkerSource.includes('"js/' + path + '"'));
   assert.deepEqual(missing, [], "tous les modules importés directement par app.js doivent être précachés");
-  assert.match(serviceWorkerSource, /const CACHE = "mizane-v114"/);
+  assert.match(serviceWorkerSource, /const CACHE = "mizane-v115"/);
 });
 
 console.log("— Internationalisation —");
@@ -2784,7 +2784,7 @@ assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/budget-outlook-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-core.js"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/analytical-advanced-core.js"'));
-assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v114"'));
+assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"mizane-v115"'));
 assert.ok(readFileSync(new URL("../sw.js", import.meta.url), "utf8").includes('"js/purchase-delivery-tracking.js"'));
 console.log(`\nRésultat : ${passed} test(s) réussi(s), ${failed} échec(s)`);
 process.exit(failed ? 1 : 0);

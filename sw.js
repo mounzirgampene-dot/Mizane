@@ -1,5 +1,5 @@
 // MIZANE — Service worker : cache hors-ligne.
-const CACHE = "mizane-v114";
+const CACHE = "mizane-v115";
 const ASSETS = [
   "./",
   "index.html",
@@ -15,6 +15,7 @@ const ASSETS = [
   "js/ai-documents.js",
   "js/accounting-documents.js",
   "js/accounting-documents-cloud.js",
+  "js/document-vault-recovery.js",
   "js/crypto.js",
   "js/finance.js",
   "js/fixed-assets-core.js",
@@ -119,27 +120,10 @@ self.addEventListener("fetch", (e) => {
       } catch (_error) {
         const cached = await caches.match(e.request);
         if (cached) return cached;
-        const home = await caches.match(new URL("/index.html", self.location.origin).href);
-        if (home) return home;
-        return new Response("MIZANE est temporairement indisponible hors connexion.", {
-          status: 503,
-          headers: { "Content-Type": "text/plain; charset=utf-8" },
-        });
+        return new Response("MIZANE est momentanément hors ligne.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
       }
     })());
     return;
   }
-
-  e.respondWith(caches.match(e.request).then((cached) => {
-    const fetchPromise = fetch(e.request)
-      .then((res) => {
-        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
-        return res;
-      })
-      .catch(() => cached || new Response("Ressource temporairement indisponible.", {
-        status: 503,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      }));
-    return cached || fetchPromise;
-  }));
+  e.respondWith(caches.match(e.request).then((cached) => cached || fetch(e.request)));
 });

@@ -159,6 +159,18 @@ document.addEventListener("click", (e) => {
   }
 });
 
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-chart-toggle]");
+  if (!button) return;
+  const card = button.closest(".financial-chart");
+  const visual = card?.querySelector(".chart-visual");
+  if (!visual) return;
+  visual.hidden = !visual.hidden;
+  const expanded = !visual.hidden;
+  button.setAttribute("aria-expanded", String(expanded));
+  button.textContent = expanded ? "Masquer les graphiques" : "Afficher les graphiques";
+});
+
 $app.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-route]");
   if (btn) go(btn.dataset.route);

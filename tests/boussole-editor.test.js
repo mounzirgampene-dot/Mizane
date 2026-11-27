@@ -38,15 +38,16 @@ assert.match(edge, /1_000_000/);
 console.log("Boussole éditoriale : rôles serveur, séparation des tâches et transitions contrôlées vérifiés.");
 
 
-assert.match(migration, /Les versions française, arabe et anglaise doivent être approuvées avant publication/);
-assert.match(migration, /v_other_locale_count<>3/);
-assert.match(migration, /v_next_version := coalesce\\(v_document.current_published_version,0\\) \\+ 1/);
-assert.match(migration, /locale in \\('fr','ar','en'\\)/);
-assert.match(englishMigration, /locale in \\('fr','ar','en'\\)/);
-assert.match(englishMigration, /interface_locale in \\('fr','ar','en'\\)/);
-assert.match(englishMigration, /response_locale in \\('fr','ar','en'\\)/);
-assert.match(edge, /action === "list" \\|\\| action === "get"/);
-assert.match(edge, /scopeRoles\\.length/);
-assert.match(edge, /body\\.locale !== "en"/);
-assert.match(editorUi, /functions\\.invoke\\("boussole-editor"/);
-assert.doesNotMatch(editorUi, /\\.from\\("boussole_documents"\\)/);
+assert.ok(migration.includes("Les versions française, arabe et anglaise doivent être approuvées avant publication"));
+assert.ok(migration.includes("v_other_locale_count<>3"));
+assert.ok(migration.includes("v_next_version := coalesce(v_document.current_published_version,0) + 1"));
+assert.ok(migration.includes("locale in ('fr','ar','en')"));
+assert.ok(englishMigration.includes("locale in ('fr','ar','en')"));
+assert.ok(englishMigration.includes("interface_locale in ('fr','ar','en')"));
+assert.ok(englishMigration.includes("response_locale in ('fr','ar','en')"));
+assert.ok(edge.includes('action === "list" || action === "get"'));
+assert.ok(edge.includes("scopeRoles.length"));
+assert.ok(edge.includes('body.locale !== "en"'));
+assert.ok(editorUi.includes('functions.invoke("boussole-editor"'));
+assert.ok(!editorUi.includes('.from("boussole_documents")'));
+console.log("Boussole editorial: tri-language governance and scoped administration checks passed.");

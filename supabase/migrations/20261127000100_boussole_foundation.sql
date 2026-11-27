@@ -124,39 +124,64 @@ alter table public.boussole_user_preferences force row level security;
 alter table public.boussole_consent_events enable row level security;
 alter table public.boussole_consent_events force row level security;
 
-create policy boussole_documents_read_published on public.boussole_documents
-  for select to anon,authenticated using (
-    status='published' and (
-      visibility='global' or
-      (visibility='company' and private.is_active_company_member(company_id))
-    )
+-- Le contenu global est lisible publiquement sans appeler le helper privé.
+create policy boussole_documents_read_global_published
+  on public.boussole_documents for select to anon,authenticated
+  using (status='published' and visibility='global');
+create policy boussole_documents_read_company_published
+  on public.boussole_documents for select to authenticated
+  using (
+    status='published' and visibility='company'
+    and private.is_active_company_member(company_id)
   );
-create policy boussole_versions_read_published on public.boussole_document_versions
-  for select to anon,authenticated using (
+
+create policy boussole_versions_read_global_published
+  on public.boussole_document_versions for select to anon,authenticated
+  using (
     status='published' and exists (
       select 1 from public.boussole_documents d
-      where d.id=document_id and d.status='published' and (
-        d.visibility='global' or
-        (d.visibility='company' and private.is_active_company_member(d.company_id))
-      )
+      where d.id=document_id and d.status='published' and d.visibility='global'
     )
   );
-create policy boussole_relations_read_published on public.boussole_document_relations
-  for select to anon,authenticated using (
+create policy boussole_versions_read_company_published
+  on public.boussole_document_versions for select to authenticated
+  using (
+    status='published' and exists (
+      select 1 from public.boussole_documents d
+      where d.id=document_id and d.status='published'
+        and d.visibility='company'
+        and private.is_active_company_member(d.company_id)
+    )
+  );
+
+-- Anon ne voit que les relations entre deux documents globaux publiés.
+create policy boussole_relations_read_global_published
+  on public.boussole_document_relations for select to anon,authenticated
+  using (
     exists (
       select 1 from public.boussole_documents d
-      where d.id=source_document_id and d.status='published' and (
-        d.visibility='global' or
-        (d.visibility='company' and private.is_active_company_member(d.company_id))
-      )
+      where d.id=source_document_id and d.status='published' and d.visibility='global'
     ) and exists (
       select 1 from public.boussole_documents d
-      where d.id=target_document_id and d.status='published' and (
-        d.visibility='global' or
-        (d.visibility='company' and private.is_active_company_member(d.company_id))
-      )
+      where d.id=target_document_id and d.status='published' and d.visibility='global'
     )
   );
+create policy boussole_relations_read_company_published
+  on public.boussole_document_relations for select to authenticated
+  using (
+    exists (
+      select 1 from public.boussole_documents d
+      where d.id=source_document_id and d.status='published'
+        and (d.visibility='global' or
+          (d.visibility='company' and private.is_active_company_member(d.company_id)))
+    ) and exists (
+      select 1 from public.boussole_documents d
+      where d.id=target_document_id and d.status='published'
+        and (d.visibility='global' or
+          (d.visibility='company' and private.is_active_company_member(d.company_id)))
+    )
+  );
+
 create policy boussole_synonyms_read_active on public.boussole_search_synonyms
   for select to anon,authenticated using (is_active);
 create policy boussole_preferences_select_own on public.boussole_user_preferences

@@ -16,4 +16,14 @@ assert.match(migration, /grant select,insert on public\.boussole_consent_events 
 assert.doesNotMatch(migration, /grant\s+.*\b(update|delete|all)\b.*boussole_consent_events\s+to\s+authenticated/i);
 assert.match(migration, /consent_type in \('ai_processing','business_data_access','usage_analytics'\)/);
 assert.match(migration, /locale in \('fr','ar'\)/);
-console.log("Boussole foundation: contrôles statiques réussis.");
+
+// Aucun rôle anon ne doit déclencher le helper private, dont le schéma n'est pas exposé.
+const anonPolicies = migration.match(/create policy [\s\S]*?to anon,authenticated[\s\S]*?;/gi) ?? [];
+assert.equal(anonPolicies.length, 4, "quatre politiques publiques sans helper privé");
+for (const policy of anonPolicies) {
+  assert.doesNotMatch(policy, /private\.is_active_company_member/i, "une politique publique ne doit pas appeler le helper privé");
+}
+assert.match(migration, /boussole_documents_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
+assert.match(migration, /boussole_versions_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
+assert.match(migration, /boussole_relations_read_company_published[\s\S]*?to authenticated[\s\S]*?private\.is_active_company_member/i);
+console.log("Boussole foundation: contrôles statiques et séparation anon/authenticated réussis.");

@@ -568,7 +568,7 @@ export function viewSettings() {
       document.getElementById("conversion-export-report").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), "mizane-simulation-conversion.json"));
       const applyButton = document.getElementById("conversion-apply");
       if (applyButton) applyButton.addEventListener("click", () => {
-        if (!confirm("CONFIRMATION DE MIGRATION\\n\\nLes " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
+        if (!confirm("CONFIRMATION DE MIGRATION\n\nLes " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
         const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
         try {
           const applied = applyPlanMigration(store, { sourcePlan: source, targetPlan: target, mapping });
@@ -810,13 +810,14 @@ export function viewSettings() {
     for (const a of s.customAccounts || []) if (!rows.some((row) => row[0] === a.code)) rows.push([a.code, a.label, a.type]);
     try {
       const created = createCustomPlan({ id: makeCustomPlanId(), name, basePlanId: baseId, description: "Copie personnalisable de " + base.name, accounts: rows });
-      s.customPlans.push(created); s.plan = created.id; refreshPlan(); saveStore(store);
-      toast("✓ Plan personnalisé créé et activé."); router.render();
+      s.customPlans.push(created); if (!hasPostedEntries()) s.plan = created.id; refreshPlan(); saveStore(store);
+      toast(hasPostedEntries() ? "Plan créé. Le plan actif est conservé pour protéger les écritures existantes ; utilisez l’assistant de conversion pour le remplacer." : "✓ Plan personnalisé créé et activé."); router.render();
     } catch (err) { toast(err.message); }
   });
   document.querySelectorAll("[data-cp-activate]").forEach((button) => button.addEventListener("click", () => {
     const target = s.customPlans.find((p) => p.id === button.dataset.cpActivate);
     if (!target) return;
+    if (hasPostedEntries() && target.id !== s.plan) return toast("Activation bloquée : migrez d’abord les écritures avec l’assistant de conversion.");
     s.plan = target.id; refreshPlan(); saveStore(store); toast("Plan personnalisé activé."); router.render();
   }));
   document.querySelectorAll("[data-cp-export]").forEach((button) => button.addEventListener("click", () => {

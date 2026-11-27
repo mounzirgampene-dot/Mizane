@@ -43,6 +43,7 @@ export function viewAnalytical() {
   $app.innerHTML = `
     <h1>Comptabilité analytique</h1>
     <p class="muted">Exercice : ${esc(start)} → ${esc(end)}. Les affectations analytiques sont distinctes des écritures générales : aucune écriture comptable n'est modifiée.</p>
+    ${analyticalChartsHtml}
     <div class="grid cols-3">
       <section class="card kpi"><div class="label">Produits affectés</div><div class="value">${money(report.totals.income)}</div></section>
       <section class="card kpi"><div class="label">Charges affectées</div><div class="value">${money(report.totals.expenses)}</div></section>

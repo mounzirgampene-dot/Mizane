@@ -5,6 +5,7 @@ const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const charts = read("../js/charts.js");
 const entries = read("../js/views/core.js");
 const accountingSync = read("../js/accounting-sync.js");
+const appSource = read("../js/app.js");
 const cloudDocuments = read("../js/accounting-documents-cloud.js");
 
 console.log("— Régressions UI et permissions —");
@@ -32,6 +33,11 @@ for (const [path, id] of [
 const deleteHandler = entries.slice(entries.indexOf('$app.querySelectorAll("[data-delete-entry]")'), entries.indexOf('$app.querySelectorAll("[data-reverse]")'));
 assert.ok(deleteHandler.length > 0, "gestionnaire de suppression des écritures présent");
 assert.match(deleteHandler, /entry\.reversed\s*\|\|\s*entry\.reverseOf/);
+assert.match(entries, /export function viewEntries\(readOnly = false\)/);
+assert.match(entries, /if\(readOnly\)return toast\("Suppression refusée : votre rôle est en lecture seule\."/);
+assert.match(entries, /readOnly \? "disabled title=/);
+assert.match(appSource, /entries: \(\) => viewEntries\(isReader\(\)\)/);
+
 assert.match(entries, /hasAccountingSyncBaseline\(activeCompanyId\)/);
 assert.match(entries, /Suppression suspendue : synchronisez d’abord cette entreprise/);
 assert.match(accountingSync, /export function hasAccountingSyncBaseline\(companyId\)/);

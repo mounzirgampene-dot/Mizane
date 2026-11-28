@@ -40,7 +40,7 @@ async function refreshCompanyRole() {
 }
 
 const isReader = () => currentCompanyRole === "reader";
-const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "commercial-margins", "customer-followups", "budget", "analytical", "tax", "notifications"];
+const readerRestrictedRoutes = ["entry", "tools", "financial", "billing", "stock", "purchases", "commercial-margins", "customer-followups", "budget", "analytical", "tax", "notifications", "assistant", "settings"];
 
 const NAV = [
   ["dashboard", "Tableau de bord"],
@@ -153,6 +153,7 @@ document.addEventListener("click", (e) => {
   if (act.dataset.act === "go-entry") go("entry");
   if (act.dataset.act === "go-assistant") go("assistant");
   if (act.dataset.act === "demo") {
+    if (isReader()) return toast("Action refusée : le rôle Lecteur ne peut pas modifier les données comptables.");
     demoData(store);
     saveNow();
     go("dashboard");

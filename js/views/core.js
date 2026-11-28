@@ -330,7 +330,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button> <button class="danger small" data-delete-entry="${e.id}" ${e.reversed || e.reverseOf ? "disabled title=\"Une écriture liée à une contrepassation ne peut pas être supprimée.\"" : "title=\"Supprimer cette écriture\""}>Supprimer</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -377,6 +377,22 @@ export function viewEntries() {
        try{const id=action.dataset.accountingDocDelete;if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(id);else await deleteLocalAccountingDocument(id);toast("Pièce justificative supprimée.");closeModal();button.click();}
        catch(error){toast(error?.message||"Suppression impossible.");}
       }));
+    });
+  });
+  $app.querySelectorAll("[data-delete-entry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id=Number(button.dataset.deleteEntry);
+      const entry=store.entries.find(item=>Number(item.id)===id);
+      if(!entry)return;
+      if(entry.reversed||entry.reverseOf)return toast("Suppression bloquée : cette écriture est liée à une contrepassation. Utilisez la procédure comptable appropriée.");
+      const confirmed=confirm("Supprimer définitivement l’écriture #"+id+" du journal local ? Cette action sera répercutée dans le cloud lors de la prochaine synchronisation si la synchronisation de cette entreprise est déjà initialisée. Vérifiez les pièces justificatives associées avant de continuer.");
+      if(!confirmed)return;
+      const index=store.entries.findIndex(item=>Number(item.id)===id);
+      if(index<0)return;
+      store.entries.splice(index,1);
+      saveStore(store);
+      toast("Écriture #"+id+" supprimée du journal local. Synchronisez la comptabilité pour répercuter la suppression dans le cloud.");
+      router.render();
     });
   });
   $app.querySelectorAll("[data-reverse]").forEach((b) => {

@@ -309,7 +309,7 @@ function loadDraftFromSuggestion(s, note) {
   toast(note);
 }
 
-export function viewEntries() {
+export function viewEntries(readOnly = false) {
   const rows = [...store.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   $app.innerHTML = `
     <h1>Écritures (${rows.length})</h1>
@@ -331,7 +331,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button> <button class="danger small" data-delete-entry="${e.id}" ${e.reversed || e.reverseOf ? "disabled title=\"Une écriture liée à une contrepassation ne peut pas être supprimée.\"" : "title=\"Supprimer cette écriture\""}>Supprimer</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button> <button class="danger small" data-delete-entry="${e.id}" ${readOnly ? "disabled title=\"Lecture seule : suppression réservée à l’administrateur ou au comptable.\"" : e.reversed || e.reverseOf ? "disabled title=\"Une écriture liée à une contrepassation ne peut pas être supprimée.\"" : "title=\"Supprimer cette écriture\""}>Supprimer</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -410,6 +410,7 @@ export function viewEntries() {
   });
   $app.querySelectorAll("[data-delete-entry]").forEach((button) => {
     button.addEventListener("click", () => {
+      if(readOnly)return toast("Suppression refusée : votre rôle est en lecture seule.");
       const id=Number(button.dataset.deleteEntry);
       const entry=store.entries.find(item=>Number(item.id)===id);
       if(!entry)return;

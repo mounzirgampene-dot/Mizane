@@ -557,3 +557,19 @@ main.workspace.has-work-sidebar {
 .chart-axis-label{fill:var(--muted);font-size:11px}
 .financial-chart{overflow:hidden}
 @media(max-width:640px){.chart-heading{display:block}.chart-svg-wrap svg{min-width:560px}}
+
+/* Barre de marque adaptative : évite le débordement horizontal sur téléphone. */
+@media (max-width: 640px) {
+  .brand {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+  .brand small {
+    margin-left: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .brand #theme-toggle {
+    margin-left: auto !important;
+  }
+}

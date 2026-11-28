@@ -37,6 +37,9 @@ assert.match(entries, /export function viewEntries\(readOnly = false\)/);
 assert.match(entries, /if\(readOnly\)return toast\("Suppression refusée : votre rôle est en lecture seule\."/);
 assert.match(entries, /readOnly \? "disabled title=/);
 assert.match(appSource, /entries: \(\) => viewEntries\(isReader\(\)\)/);
+assert.match(appSource, /"notifications", "assistant", "settings"\]/);
+assert.match(appSource, /if \(isReader\(\)\) return toast\("Action refusée : le rôle Lecteur ne peut pas modifier les données comptables\."/);
+assert.match(entries, /Aucune écriture\.\$\{readOnly \? "" :/);
 
 assert.match(entries, /hasAccountingSyncBaseline\(activeCompanyId\)/);
 assert.match(entries, /Suppression suspendue : synchronisez d’abord cette entreprise/);

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 const charts = read("../js/charts.js");
 const entries = read("../js/views/core.js");
+const accountingSync = read("../js/accounting-sync.js");
 const cloudDocuments = read("../js/accounting-documents-cloud.js");
 
 console.log("— Régressions UI et permissions —");
@@ -31,6 +32,11 @@ for (const [path, id] of [
 const deleteHandler = entries.slice(entries.indexOf('$app.querySelectorAll("[data-delete-entry]")'), entries.indexOf('$app.querySelectorAll("[data-reverse]")'));
 assert.ok(deleteHandler.length > 0, "gestionnaire de suppression des écritures présent");
 assert.match(deleteHandler, /entry\.reversed\s*\|\|\s*entry\.reverseOf/);
+assert.match(entries, /hasAccountingSyncBaseline\(activeCompanyId\)/);
+assert.match(entries, /Suppression suspendue : synchronisez d’abord cette entreprise/);
+assert.match(accountingSync, /export function hasAccountingSyncBaseline\(companyId\)/);
+assert.match(accountingSync, /SHADOW_PREFIX \+ String\(companyId\)/);
+
 assert.match(deleteHandler, /if\s*\(!confirmed\)\s*return/);
 assert.match(deleteHandler, /store\.entries\.splice\(index,\s*1\)/);
 assert.match(deleteHandler, /saveStore\(store\)/);
@@ -66,4 +72,4 @@ assert.match(portal, /\["admin","accountant"\]\.includes\(lockedMembership\.role
 assert.match(portal, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId,\{authorizedCompanyMember:true\}\)/);
 assert.match(app, /storageStatus\.reason === "session-locked"/);
 
-console.log("✓ Bascule des vues, suppression, coffre documentaire, verrouillage de session et protection pays/plan validés.");
+console.log("✓ Bascule des vues, suppression synchronisée, coffre documentaire, verrouillage de session et protection pays/plan validés.");

@@ -68,7 +68,7 @@ const NAV = [
 ];
 
 const VIEWS = {
-  dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: viewEntries, ledger: viewLedger,
+  dashboard: () => viewDashboard(isReader()), entry: viewEntry, entries: () => viewEntries(isReader()), ledger: viewLedger,
   balance: viewBalance, income: viewIncome, sheet: viewSheet, thirds: () => viewThirds(isReader()),
   tools: viewTools, financial: viewFinancial, billing: viewBilling, stock: () => viewStock(isReader(), currentCompanyRole), purchases: () => viewPurchases(isReader(), currentCompanyRole), "commercial-margins": viewCommercialMargins, "customer-followups": viewCustomerFollowups, budget: viewBudget, analytical: viewAnalytical, tax: viewTax, calculator: viewCalculator,
   assistant: viewAssistant, settings: viewSettings,

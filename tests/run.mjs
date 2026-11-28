@@ -1422,7 +1422,7 @@ test("stock : navigation et synchronisation cloud sont raccordées", () => {
   assert.match(app, /\["purchases", "Achats"\]/);
   assert.match(app, /\["commercial-margins", "Marges commerciales"\]/);
   assert.match(app, /\["budget", "Budget et écarts"\]/);
-  assert.match(app, /"stock", "purchases", "commercial-margins", "customer-followups", "budget", "analytical", "tax"(?:, "notifications")?\]\s*;/);
+  assert.match(app, /"stock", "purchases", "commercial-margins", "customer-followups", "budget", "analytical", "tax", "notifications", "assistant", "settings"\]\s*;/);
   assert.match(cloud, /delete billingPayload\.stock/);
   assert.match(cloud, /legacyStockAvailable: Boolean\(localStore\.stock\)/);
   assert.match(cloud, /localStore\.stock = syncedBilling\.stock/);

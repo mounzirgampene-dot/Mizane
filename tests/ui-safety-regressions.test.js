@@ -42,4 +42,28 @@ assert.match(cloudDocuments, /if\(!ctx\.canWrite\)throw new Error/);
 assert.match(cloudDocuments, /upsert:false/);
 assert.match(cloudDocuments, /createAccountingDocumentMetadata/);
 
-console.log("✓ Bascule des vues, suppression protégée des écritures et droits du coffre documentaire validés.");
+
+const settings = read("../js/views/assistant.js");
+const companyStorage = read("../js/company-storage.js");
+const portal = read("../js/saas-portal.js");
+const app = read("../js/app.js");
+
+assert.match(settings, /const hasPostedEntries = \(\) => Array\.isArray\(store\.entries\) && store\.entries\.length > 0/);
+assert.match(settings, /Changement de plan bloqué/);
+assert.match(settings, /Le pays a changé, mais le plan comptable actif est conservé/);
+assert.match(settings, /Enregistrement refusé : une migration comptable contrôlée est obligatoire/);
+assert.match(settings, /s\.country = c\.code/);
+assert.match(settings, /s\.currency = document\.getElementById\("s-currency"\)\.value/);
+assert.match(settings, /applyPlanMigration\(store, \{ sourcePlan: source, targetPlan: target, mapping \}\)/);
+
+assert.match(companyStorage, /export function lockCompanyStorage/);
+assert.match(companyStorage, /export function unlockCompanyStorage/);
+assert.match(companyStorage, /reason: "session-locked"/);
+assert.match(companyStorage, /lock\.companyId !== targetCompanyId/);
+assert.match(companyStorage, /authorizedCompanyMember = false/);
+assert.doesNotMatch(companyStorage, /removeItem\(["']mizane_v1["']\)/);
+assert.match(portal, /\["admin","accountant"\]\.includes\(lockedMembership\.role\)/);
+assert.match(portal, /unlockCompanyStorage\(session\.user\.id,sessionLock\.companyId,\{authorizedCompanyMember:true\}\)/);
+assert.match(app, /storageStatus\.reason === "session-locked"/);
+
+console.log("✓ Bascule des vues, suppression, coffre documentaire, verrouillage de session et protection pays/plan validés.");

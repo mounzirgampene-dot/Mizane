@@ -40,6 +40,10 @@ assert.match(accountingSync, /SHADOW_PREFIX \+ String\(companyId\)/);
 assert.match(deleteHandler, /if\s*\(!confirmed\)\s*return/);
 assert.match(deleteHandler, /store\.entries\.splice\(index,\s*1\)/);
 assert.match(deleteHandler, /saveStore\(store\)/);
+assert.match(deleteHandler, /if\s*\(!saveStore\(store\)\)/);
+assert.match(deleteHandler, /store\.entries\.splice\(index,\s*0,\s*removedEntry\)/);
+assert.match(deleteHandler, /Suppression annulée : la sauvegarde locale a échoué/);
+
 assert.match(deleteHandler, /router\.render\(\)/);
 
 assert.match(cloudDocuments, /membership\.status\s*!==\s*"active"/);

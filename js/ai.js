@@ -1,5 +1,7 @@
 // MIZANE — Assistant IA multi-fournisseurs (Mistral, Groq, Gemini) + assistant local de secours.
-import { trialBalance, incomeStatement, checkAnomalies, entryTotals } from "./accounting.js";
+import { trialBalance, incomeStatement, checkAnomalies, entryTotals, validDate } from "./accounting.js";
+import { buildAccountingControlReport } from "./accounting-controls.js";
+import { getTaxCountryProfile, getActiveTaxRules } from "./tax-core.js";
 import { formatMoney } from "./countries.js";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
@@ -132,7 +134,7 @@ export function systemPrompt(store) {
     "Réponds toujours dans la langue de l'utilisateur (français par défaut).",
     "Quand on te demande une écriture, propose-la au format JSON : {\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}",
     "Quand on te demande plusieurs écritures à partir d'un texte, renvoie : {\"entries\":[ ...même format... ]}.",
-    "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits).",
+    "Les comptes doivent exister dans le plan fourni. Chaque écriture doit être équilibrée (somme débits = somme crédits). Ne devine jamais une date, un montant, un compte, une devise ou une TVA absents ou illisibles : signale l’incertitude et laisse la valeur vide ou demande une précision. Ne déduis jamais un taux de TVA sans preuve explicite sur le justificatif et le contexte fiscal applicable. Une écriture proposée reste une hypothèse à vérifier par l’utilisateur, jamais une validation fiscale ou juridique.",
     "Comptes disponibles (extrait) :\n" + planDigest(store),
   ].join("\n");
 }
@@ -158,20 +160,29 @@ export function imageFileToDataUrl(file, maxDim = 1280) {
 
 // Texte libre (+ photo optionnelle) -> écriture proposée (JSON) revue par l'utilisateur avant validation.
 export async function suggestEntry(store, text, imageDataUrl = null) {
-  const userContent = imageDataUrl
+  const imageList = Array.isArray(imageDataUrl) ? imageDataUrl.filter(Boolean).slice(0, 4) : imageDataUrl ? [imageDataUrl] : [];
+  const prompt = "Analyse ce justificatif (facture, reçu, ticket ou document de transaction), relève uniquement les faits réellement visibles et prépare une écriture détaillée. Renvoie un JSON avec documentFacts {date, total, currency, reference, counterparty}, date, journal, reference, lines, sourceFacts et uncertainties. N’invente aucun montant, compte, date, devise, tiers ou taux fiscal. Si une donnée est absente ou illisible, laisse-la vide et signale-la dans uncertainties.";
+  const userContent = imageList.length
     ? [
-        { type: "text", text: "Voici un justificatif photographié (facture, reçu, ticket). Lis-le" + (text ? " en tenant compte de ces précisions" : "") + " et propose l'écriture comptable, uniquement le JSON :\n" + text },
-        { type: "image_url", image_url: imageDataUrl },
+        { type: "text", text: prompt + (text ? "\nContexte ou texte extrait du document :\n" + text : "") },
+        ...imageList.map(image => ({ type: "image_url", image_url: image })),
       ]
-    : "Propose l'écriture comptable pour cette opération, uniquement le JSON :\n" + text;
+    : prompt + "\nAnalyse le texte du document et prépare l’écriture.\n" + text;
   const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content: userContent },
-  ], { json: true, model: imageDataUrl ? visionModel(store) : undefined });
+  ], { json: true, model: imageList.length ? visionModel(store) : undefined });
   try {
     const parsed = JSON.parse(content);
-    if (parsed.lines) return parsed;
-    if (parsed.ecriture?.lines) return parsed.ecriture;
+    const proposal = parsed.lines ? parsed : parsed.ecriture?.lines ? parsed.ecriture : parsed.entry?.lines ? parsed.entry : null;
+    if (proposal) return {
+      ...proposal,
+      aiReview: {
+        sourceFacts: Array.isArray(parsed.sourceFacts) ? parsed.sourceFacts.slice(0, 20) : [],
+        uncertainties: Array.isArray(parsed.uncertainties) ? parsed.uncertainties.slice(0, 20) : [],
+        documentFacts: parsed.documentFacts && typeof parsed.documentFacts === "object" ? parsed.documentFacts : {},
+      },
+    };
   } catch (_e) { /* fallthrough */ }
   throw new Error("Réponse IA inexploitable : " + content.slice(0, 300));
 }
@@ -196,35 +207,106 @@ export async function chatWithImage(store, history, text, imageDataUrl) {
 
 // Texte (relevé, factures, notes…) -> tableau d'écritures proposées par l'IA.
 export async function importEntriesFromText(store, text) {
-  const today = new Date().toISOString().slice(0, 10);
   const content = await aiChat(store, [
     { role: "system", content: systemPrompt(store) },
     { role: "user", content:
       "Voici un texte (relevé bancaire, factures, notes, cahier d'opérations). Extrais TOUTES les opérations comptables et renvoie UNIQUEMENT un JSON : " +
-      "{\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}]}]}. " +
-      "Chaque écriture doit être équilibrée, avec des comptes du plan fourni. Utilise " + today + " si la date est inconnue.\n\nTEXTE :\n" + text },
+      "{\"documentFacts\":{\"date\":\"\",\"total\":null,\"currency\":\"\",\"reference\":\"\",\"counterparty\":\"\"},\"entries\":[{\"date\":\"AAAA-MM-JJ\",\"journal\":\"ACH|VTE|BAN|CAI|OD\",\"reference\":\"...\",\"lines\":[{\"account\":\"...\",\"label\":\"...\",\"debit\":0,\"credit\":0}],\"sourceFacts\":[],\"uncertainties\":[]} ]}. " +
+      "Renseigne documentFacts avec la date, le total TTC ou total du document, la devise, la référence et le tiers uniquement lorsqu’ils sont explicitement présents ; sinon laisse les champs vides/null. Chaque écriture doit être équilibrée et utiliser des comptes du plan fourni. Renseigne sourceFacts avec les éléments réellement présents dans le texte et uncertainties avec les champs absents, ambigus ou illisibles. Si la date est absente ou illisible, laisse date vide : ne la remplace jamais par la date du jour. Ne complète aucune donnée manquante.\n\nTEXTE :\n" + text },
   ], { json: true });
   let parsed;
   try { parsed = JSON.parse(content); } catch (_e) { throw new Error("Réponse IA inexploitable : " + content.slice(0, 300)); }
   const arr = parsed.entries || parsed.ecritures || [];
   if (!Array.isArray(arr) || arr.length === 0) throw new Error("Aucune écriture trouvée dans la réponse IA.");
-  return arr;
+  const documentFacts = parsed.documentFacts && typeof parsed.documentFacts === "object" ? parsed.documentFacts : {};
+  return arr.map((entry) => ({ ...entry, date: validDate(entry?.date) ? entry.date : "", aiReview: { sourceFacts: Array.isArray(entry?.sourceFacts) ? entry.sourceFacts.slice(0, 20) : [], uncertainties: Array.isArray(entry?.uncertainties) ? entry.uncertainties.slice(0, 20) : [], documentFacts: entry?.documentFacts && typeof entry.documentFacts === "object" ? entry.documentFacts : documentFacts } }));
+}
+
+export function buildAiAuditSnapshot(store) {
+  const controls = buildAccountingControlReport(store);
+  const profile = getTaxCountryProfile(store?.settings?.country);
+  const taxFindings = [];
+  let taxMetadataCount = 0;
+  for (const entry of (Array.isArray(store?.entries) ? store.entries : [])) {
+    if (!validDate(entry?.date)) continue;
+    if ((controls.period.start && entry.date < controls.period.start) || (controls.period.end && entry.date > controls.period.end)) continue;
+    for (const [index, line] of (Array.isArray(entry.lines) ? entry.lines : []).entries()) {
+      const rawRate = line?.taxRate ?? line?.vatRate;
+      const taxCode = String(line?.taxCode || line?.vatCode || "").trim();
+      const rawTax = line?.taxAmount ?? line?.vatAmount;
+      const rawBase = line?.taxBase ?? line?.taxableBase ?? line?.baseAmount;
+      if (rawRate === undefined && !taxCode && rawTax === undefined && rawBase === undefined) continue;
+      taxMetadataCount++;
+      const add = (type, message, extra = {}) => taxFindings.push({
+        type, entryId: entry.id ?? null, date: entry.date, line: index + 1,
+        account: String(line?.account || ""), message, ...extra,
+      });
+      if (profile.status !== "active") {
+        add("tax_reference_unavailable", "Données fiscales explicites détectées, mais aucun référentiel fiscal actif et vérifié ne permet de qualifier cette ligne. Aucun taux n’a été supposé.");
+        continue;
+      }
+      const rules = getActiveTaxRules(profile.countryCode, "VAT", entry.date);
+      if (!rules.length) {
+        add("tax_reference_missing", "Aucune règle de TVA active n’est disponible dans le référentiel pour cette date. Le contrôle du taux est indisponible.", { taxCode: taxCode || null });
+        continue;
+      }
+      const codeRule = taxCode ? rules.find(rule => rule.code === taxCode) : null;
+      const rate = rawRate === "" || rawRate === null || rawRate === undefined ? NaN : Number(rawRate);
+      if (taxCode && !codeRule) add("tax_code_unrecognized", "Code fiscal absent ou inactif dans le référentiel officiel à la date de l’écriture.", { taxCode });
+      if (Number.isFinite(rate) && (rate < 0 || rate > 100)) add("tax_rate_invalid", "Taux fiscal hors de l’intervalle autorisé.", { rate });
+      else if (Number.isFinite(rate) && !rules.some(rule => Math.abs(rule.rate - rate) < 0.0001)) {
+        add("tax_rate_unreferenced", "Taux présent sur la ligne mais non reconnu par le référentiel actif à cette date. Vérification humaine nécessaire.", { rate });
+      }
+      if (codeRule && Number.isFinite(rate) && Math.abs(codeRule.rate - rate) > 0.0001) {
+        add("tax_code_rate_mismatch", "Le code fiscal et le taux saisi sur la ligne ne correspondent pas.", { taxCode, rate, officialRate: codeRule.rate });
+      }
+      const effectiveRate = Number.isFinite(rate) ? rate : codeRule?.rate;
+      if (!Number.isFinite(effectiveRate) && (rawTax !== undefined || rawBase !== undefined)) {
+        add("tax_data_incomplete", "Informations fiscales incomplètes : aucun taux explicite ni code fiscal reconnu ne permet de vérifier le calcul.");
+      }
+      const taxAmount = rawTax === "" || rawTax === null || rawTax === undefined ? NaN : Number(rawTax);
+      const base = rawBase === "" || rawBase === null || rawBase === undefined ? NaN : Number(rawBase);
+      if (Number.isFinite(taxAmount) && Number.isFinite(base) && Number.isFinite(effectiveRate) && base >= 0 && taxAmount >= 0) {
+        const expected = Math.round((base * effectiveRate / 100 + Number.EPSILON) * 100) / 100;
+        if (Math.abs(expected - taxAmount) > 0.02) add("tax_amount_mismatch", "Montant de taxe différent du calcul arithmétique à partir de la base et du taux explicitement enregistrés.", { expectedTax: expected, recordedTax: taxAmount });
+      }
+    }
+  }
+  return {
+    period: controls.period,
+    accounting: {
+      totals: controls.totals,
+      bySeverity: controls.bySeverity,
+      warnings: controls.warnings.slice(0, 35),
+      abnormalBalances: controls.balances.filter(row => row.abnormalSide).slice(0, 25),
+    },
+    tax: {
+      countryCode: profile.countryCode,
+      countryName: profile.countryName,
+      referenceStatus: profile.status,
+      rulesVersion: profile.rulesVersion || null,
+      explicitTaxLines: taxMetadataCount,
+      findings: taxFindings.slice(0, 35),
+      note: taxMetadataCount ? null : "Aucune donnée fiscale explicite détectée dans les lignes comptables. Cela ne prouve ni l’absence ni la présence d’une TVA oubliée.",
+    },
+  };
 }
 
 export async function aiAudit(store) {
-  const anomalies = checkAnomalies(store);
+  const snapshot = buildAiAuditSnapshot(store);
   const is = incomeStatement(store, store.settings.exerciceStart, store.settings.exerciceEnd);
   const tb = trialBalance(store, store.settings.exerciceStart, store.settings.exerciceEnd);
   const resume = [
-    `Écritures : ${store.entries.length}. Anomalies détectées par le moteur : ${anomalies.length}.`,
+    `Écritures : ${store.entries.length}.`,
     `Balance : débits ${tb.totals.debit} / crédits ${tb.totals.credit}.`,
     `Produits ${is.totProduits} - Charges ${is.totCharges} = Résultat ${is.resultat}.`,
-    anomalies.slice(0, 20).map((a) => "- " + a.message).join("\n"),
+    "Contrôles comptables et fiscaux structurés :",
+    JSON.stringify(snapshot),
   ].join("\n");
   return aiChat(store, [
-    { role: "system", content: systemPrompt(store) },
-    { role: "user", content: "Voici l'état de ma comptabilité. Analyse-la, signale les erreurs, les comptes suspects, les oublis probables (TVA, charges à payer…) et donne des recommandations concrètes :\n" + resume },
-  ], { temperature: 0.3 });
+    { role: "system", content: systemPrompt(store) + "\nPour l’audit, distingue impérativement les anomalies calculées des hypothèses à examiner. Ne conclus jamais à une fraude ou à une omission fiscale sur une simple absence de donnée. N’invente ni taux, ni règle, ni obligation fiscale. Si le référentiel fiscal du pays n’est pas actif, indique clairement que le contrôle de conformité au taux n’est pas disponible. Donne des recommandations traçables en citant les identifiants d’écriture, dates et comptes disponibles. L’audit est consultatif et ne modifie aucune écriture." },
+    { role: "user", content: "Effectue un audit comptable et une revue de cohérence fiscale à partir des éléments calculés ci-dessous. Sépare les constats vérifiables, les signaux à examiner et les limites du contrôle.\n" + resume },
+  ], { temperature: 0.2 });
 }
 
 // ---------- Assistant local (sans clé API) ----------
@@ -283,7 +365,7 @@ export function parseEntryFromTextLocal(store, text) {
         { account: "6055", label: text.slice(0, 60), debit: amount, credit: 0 },
         { account: isCash ? "571" : isBank ? "521" : "401", label: text.slice(0, 60), debit: 0, credit: amount },
       ];
-  return { date: new Date().toISOString().slice(0, 10), journal: isSale ? "VTE" : "ACH", reference: "IA locale", lines };
+  return { date: "", journal: isSale ? "VTE" : "ACH", reference: "IA locale", lines };
 }
 
 // Repli local de l'import de texte : une ligne par écriture, format
@@ -298,7 +380,6 @@ function guessJournalLocal(debit, credit) {
 }
 
 export function parseEntriesFromTextLocal(store, text) {
-  const today = new Date().toISOString().slice(0, 10);
   const out = [];
   for (const raw of String(text || "").split(/\n+/)) {
     const line = raw.trim();
@@ -309,7 +390,7 @@ export function parseEntriesFromTextLocal(store, text) {
     if (!amount || amount <= 0) continue;
     const label = (m[5] || line).slice(0, 60);
     out.push({
-      date: m[1] || today,
+      date: m[1] || "",
       journal: guessJournalLocal(m[2], m[3]),
       reference: "Import local",
       lines: [

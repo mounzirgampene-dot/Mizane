@@ -3,6 +3,12 @@ import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatemen
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
+import { hasAccountingSyncBaseline } from "../accounting-sync.js";
+import { notifyDetectedAnomalies } from "../notifications.js";
+import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
+import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
+import { listLocalAccountingDocuments, getLocalAccountingDocument, putLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
+import { listCloudAccountingDocumentsForEntry, listCloudAccountingDocuments, downloadCloudAccountingDocument, uploadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -13,32 +19,106 @@ export function viewDashboard(readOnly = false) {
   const is = incomeStatement(store, exerciceStart, exerciceEnd);
   const tb = trialBalance(store, exerciceStart, exerciceEnd);
   const anomalies = checkAnomalies(store);
-  const cash = cashBalance(store, exerciceStart, exerciceEnd);
-  const balanced = tb.totals.debit === tb.totals.credit;
+  const controlReport = buildAccountingControlReport(store, { start: exerciceStart, end: exerciceEnd });
+  const controlRows = accountingControlRows(controlReport);
+  if (anomalies.length) notifyDetectedAnomalies(anomalies).catch(error => console.warn("Signalement des anomalies comptables impossible :", error?.message || error));
+  const cash = cashBalance(store, "", new Date().toISOString().slice(0, 10));
+  const balanced = Math.abs(tb.totals.debit - tb.totals.credit) < 0.001;
+  const overview = buildStrategicDashboardSnapshot(store);
+  const currencyRows = values => Object.entries(values).sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, amount]) => `<div class="dashboard-currency"><strong>${esc(code)}</strong><span>${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(amount)}</span></div>`).join("") || '<p class="muted">Aucune donnée disponible.</p>';
+  const profitabilityRows = Object.entries(overview.profitability).sort(([a], [b]) => a.localeCompare(b))
+    .map(([code, item]) => `<div class="dashboard-currency"><strong>${esc(code)}</strong><span>Marge brute : ${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: code, maximumFractionDigits: 2 }).format(item.margin)} · Taux : ${item.marginRate == null ? "indisponible" : item.marginRate + " %"} · Coûts incomplets : ${item.incompleteLines}</span></div>`).join("") || '<p class="muted">Aucune marge calculable sur les ventes avec mouvements de stock disponibles.</p>';
+  const alertItems = [
+    ...overview.receivables.overdue.map(item => `<li>Facture client ${esc(item.number)} — ${esc(item.customer)} : ${new Intl.NumberFormat(store.settings.locale || "fr-FR", { style: "currency", currency: item.currency, maximumFractionDigits: 2 }).format(item.balance)} (échéance ${esc(item.dueDate)})</li>`),
+    ...overview.inventory.lowStock.map(item => `<li>Stock bas : ${esc(item.name)} — ${item.quantity} ${esc(item.unit)} (seuil : ${item.threshold})</li>`),
+    ...anomalies.slice(0, 8).map(item => `<li>${esc(item.message)}</li>`),
+  ];
   $app.innerHTML = `
-    <h1>Tableau de bord</h1>
+    <h1>Tableau de bord stratégique</h1>
+    <p class="muted">Vue de synthèse au ${esc(overview.asOf)} · Exercice du ${esc(exerciceStart)} au ${esc(exerciceEnd)}</p>
     <div class="grid cols-3">
-      <div class="card kpi"><div class="value">${money(is.totProduits)}</div><div class="label">Produits (exercice)</div></div>
-      <div class="card kpi"><div class="value">${money(is.totCharges)}</div><div class="label">Charges (exercice)</div></div>
-      <div class="card kpi"><div class="value">${money(is.resultat)}</div><div class="label">Résultat (${is.resultat >= 0 ? "bénéfice" : "perte"})</div></div>
-      <div class="card kpi"><div class="value">${money(cash)}</div><div class="label">Trésorerie (classe 5)</div></div>
-      <div class="card kpi"><div class="value">${store.entries.length}</div><div class="label">Écritures</div></div>
-      <div class="card kpi"><div class="value">${anomalies.length === 0 ? "✓" : anomalies.length}</div><div class="label">${anomalies.length === 0 ? "Aucune anomalie" : "Anomalies détectées"}</div></div>
+      <div class="card kpi"><div class="value">${money(is.totProduits)}</div><div class="label">Produits comptabilisés (exercice)</div></div>
+      <div class="card kpi"><div class="value">${money(is.totCharges)}</div><div class="label">Charges comptabilisées (exercice)</div></div>
+      <div class="card kpi"><div class="value">${money(is.resultat)}</div><div class="label">Résultat comptable</div></div>
+      <div class="card kpi"><div class="value">${money(cash)}</div><div class="label">Trésorerie comptabilisée</div></div>
+      <div class="card kpi"><div class="value">${store.entries.length}</div><div class="label">Écritures comptables</div></div>
+      <div class="card kpi"><div class="value">${anomalies.length === 0 ? "✓" : anomalies.length}</div><div class="label">${anomalies.length === 0 ? "Aucune anomalie comptable" : "Anomalies comptables"}</div></div>
     </div>
+    <div class="grid cols-2">
+      <section class="card">
+        <h2>Activité commerciale</h2>
+        <p class="muted">${overview.sales.invoices} facture(s) de vente · Montants par devise</p>
+        ${currencyRows(overview.sales.amountByCurrency)}
+        <p class="muted">${overview.purchases.invoices} facture(s) fournisseur(s) · Montants par devise</p>
+        ${currencyRows(overview.purchases.amountByCurrency)}
+        <h3>Rentabilité commerciale</h3>
+        ${profitabilityRows}
+        <div class="actions"><button class="secondary" data-route="billing">Facturation</button><button class="secondary" data-route="purchases">Achats</button><button class="secondary" data-route="commercial-margins">Marges commerciales</button></div>
+      </section>
+      <section class="card">
+        <h2>Stocks et alertes</h2>
+        <div class="grid cols-2">
+          <div class="kpi"><div class="value">${overview.inventory.products}</div><div class="label">Articles actifs stockables</div></div>
+          <div class="kpi"><div class="value">${overview.inventory.lowStock.length}</div><div class="label">Alertes de seuil de stock</div></div>
+          <div class="kpi"><div class="value">${overview.receivables.overdueCount}</div><div class="label">Factures clients en retard</div></div>
+        </div>
+        <div class="actions"><button class="secondary" data-route="stock">Gestion de stock</button><button class="secondary" data-route="financial">Pilotage financier</button></div>
+      </section>
+    </div>
+    <section class="card">
+      <h2>Alertes de gestion</h2>
+      ${alertItems.length ? `<ul class="errors">${alertItems.slice(0, 12).join("")}</ul>` : '<p class="ok-msg">Aucune alerte détectée dans les données disponibles.</p>'}
+      <p class="muted">Les montants commerciaux restent séparés par devise. Les alertes de stock ne sont calculées que pour les articles disposant d’un seuil minimum renseigné.</p>
+    </section>
+    <div class="card">
+          <section class="card" id="accounting-control-panel">
+      <h2>Contrôle comptable automatisé</h2>
+      <p class="muted">Analyse en lecture seule de l’exercice ${esc(exerciceStart)} → ${esc(exerciceEnd)}. Les alertes sont des signaux de contrôle à examiner ; elles ne modifient aucune écriture.</p>
+      <div class="grid cols-3">
+        <div class="kpi"><div class="value">${controlReport.bySeverity.critical}</div><div class="label">Anomalies critiques</div></div>
+        <div class="kpi"><div class="value">${controlReport.bySeverity.warning}</div><div class="label">Points à vérifier</div></div>
+        <div class="kpi"><div class="value">${controlReport.bySeverity.info}</div><div class="label">Informations / vigilance</div></div>
+      </div>
+      <p class="${controlReport.totals.balanced ? "ok-msg" : "errors"}">${controlReport.totals.balanced ? "✓ Totaux débit/crédit équilibrés sur la période." : "⚠ Écart de balance : " + money(controlReport.totals.debit) + " / " + money(controlReport.totals.credit)}</p>
+      <p class="muted">${controlReport.totals.periodEntries} écriture(s) sur la période · ${controlReport.totals.accounts} compte(s) mouvementé(s) · ${controlReport.totals.journals} journal(aux) · ${controlReport.totals.outOfPeriodCount} écriture(s) hors période détectée(s).</p>
+      ${controlReport.warnings.length ? '<div class="table-wrap"><table><thead><tr><th>Gravité</th><th>Date</th><th>Journal</th><th>Écriture</th><th>Anomalie</th></tr></thead><tbody>' + controlReport.warnings.slice(0, 20).map(item => '<tr><td>' + esc(item.severity === "critical" ? "Critique" : item.severity === "warning" ? "À vérifier" : "Information") + '</td><td>' + esc(item.date || "—") + '</td><td>' + esc(item.journal || "—") + '</td><td>' + esc(item.entryId ?? "—") + '</td><td>' + esc(item.message) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="ok-msg">Aucune anomalie détectée par les contrôles activés.</p>'}
+      <h3>Contrôle par journal</h3>
+      <div class="table-wrap"><table><thead><tr><th>Journal</th><th>Écritures</th><th class="num">Débit</th><th class="num">Crédit</th><th>État</th></tr></thead><tbody>${controlReport.journals.map(row => '<tr><td>' + esc(row.journal) + '</td><td>' + row.entries + '</td><td class="num">' + money(row.debit) + '</td><td class="num">' + money(row.credit) + '</td><td>' + (row.balanced ? "Équilibré" : "Écart : " + money(row.difference)) + '</td></tr>').join("") || '<tr><td colspan="5" class="muted">Aucun mouvement sur la période.</td></tr>'}</tbody></table></div>
+      <details style="margin-top:12px"><summary>Soldes et mouvements par compte (${controlReport.balances.length})</summary><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Type</th><th class="num">Débit</th><th class="num">Crédit</th><th class="num">Solde</th><th>Contrôle</th></tr></thead><tbody>${controlReport.balances.map(row => '<tr><td>' + esc(row.code) + '</td><td>' + esc(row.type) + '</td><td class="num">' + money(row.debit) + '</td><td class="num">' + money(row.credit) + '</td><td class="num">' + money(row.balance) + '</td><td>' + (row.abnormalSide ? "Sens inhabituel — à examiner" : "—") + '</td></tr>').join("")}</tbody></table></div></details>
+      <div class="actions">
+        <button class="secondary" id="accounting-controls-csv">Exporter les alertes CSV</button>
+        <button class="secondary" id="accounting-controls-xls">Exporter le rapport Excel</button>
+        <button class="secondary" id="accounting-controls-print">Imprimer le rapport / PDF</button>
+      </div>
+      <p class="muted">Les soldes de sens inhabituel sont signalés à titre indicatif : les comptes correcteurs et situations particulières nécessitent une appréciation comptable. Le contrôle ne remplace pas la révision par un professionnel.</p>
+    </section>
     <div class="card">
       <h2>État de la comptabilité</h2>
       <p class="${balanced ? "ok-msg" : "errors"}">${balanced ? "✓ Balance équilibrée" : "⚠ Balance déséquilibrée : " + money(tb.totals.debit) + " / " + money(tb.totals.credit)}</p>
-      <p class="muted">Exercice du ${esc(exerciceStart)} au ${esc(exerciceEnd)} — Plan ${esc(store.settings.plan)}</p>
+      <p class="muted">Plan comptable : ${esc(store.settings.plan)} · La trésorerie affichée correspond au solde des comptes de classe 5 à la date du jour.</p>
       <div class="actions">
         ${readOnly ? "" : '<button class="secondary" data-act="go-entry">➕ Nouvelle écriture</button>'}
-        <button class="secondary" data-act="go-assistant">🤖 Ouvrir l'assistant IA</button>
-        ${!readOnly && store.entries.length === 0 ? `<button data-act="demo">Charger des données de démonstration</button>` : ""}
+        <button class="secondary" data-act="go-assistant">Ouvrir l’assistant IA</button>
+        ${!readOnly && store.entries.length === 0 ? '<button data-act="demo">Charger des données de démonstration</button>' : ""}
       </div>
     </div>
-    ${anomalies.length ? `<div class="card"><h2>Anomalies</h2><ul class="errors">${anomalies.slice(0, 8).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul></div>` : ""}
   `;
+  document.getElementById("accounting-controls-csv")?.addEventListener("click", () => {
+    const rows = controlRows.length ? controlRows : [{ gravite: "—", type: "aucune_anomalie", date: "", journal: "", ecriture: "", compte: "", anomalie: "Aucune anomalie détectée." }];
+    downloadBlob(new Blob(["\ufeff" + toCSV(rows)], { type: "text/csv;charset=utf-8" }), "mizane-controle-comptable.csv");
+  });
+  document.getElementById("accounting-controls-xls")?.addEventListener("click", () => {
+    const panel = $app.querySelector("#accounting-control-panel");
+    if (!panel) return toast("Aucun rapport de contrôle à exporter.");
+    exportXLS("Contrôle comptable — " + store.settings.companyName, panel.outerHTML, "mizane-controle-comptable.xls");
+  });
+  document.getElementById("accounting-controls-print")?.addEventListener("click", () => {
+    const panel = $app.querySelector("#accounting-control-panel");
+    if (!panel) return;
+    printHTML("Contrôle comptable — " + store.settings.companyName, panel.innerHTML);
+  });
 }
-
 function lineRowHTML(l, i) {
   return `
     <tr>
@@ -229,12 +309,18 @@ function loadDraftFromSuggestion(s, note) {
   toast(note);
 }
 
-export function viewEntries() {
+export function viewEntries(readOnly = false) {
   const rows = [...store.entries].sort((a, b) => (a.date < b.date ? 1 : -1));
   $app.innerHTML = `
     <h1>Écritures (${rows.length})</h1>
+    <section class="card" id="accounting-document-vault">
+      <h2>Coffre documentaire — recherche globale</h2>
+      <p class="muted">Retrouvez les justificatifs par nom, type, date, tiers, référence, journal ou note. Les documents locaux restent propres à cet appareil ; les documents du coffre privé sont limités à l’entreprise active.</p>
+      <div class="row"><div><label for="accounting-document-search">Recherche</label><input id="accounting-document-search" type="search" placeholder="Facture, fournisseur, référence, journal…"></div><div><label for="accounting-document-type-filter">Type</label><select id="accounting-document-type-filter"><option value="">Tous les types</option><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option><option value="other">Autre</option></select></div></div>
+      <div id="accounting-document-results"><p class="muted">Chargement du coffre documentaire…</p></div>
+    </section>
     <div class="card table-wrap">
-      ${rows.length === 0 ? `<p class="muted">Aucune écriture. <button class="small" data-act="demo">Charger la démo</button></p>` : `
+      ${rows.length === 0 ? `<p class="muted">Aucune écriture.${readOnly ? "" : ' <button class="small" data-act="demo">Charger la démo</button>'}</p>` : `
       <table>
         <thead><tr><th>#</th><th>Date</th><th>Journal</th><th>Référence</th><th>Détail</th><th class="num">Débit</th><th class="num">Crédit</th><th></th></tr></thead>
         <tbody>
@@ -245,7 +331,7 @@ export function viewEntries() {
               <td>${esc(e.date)}</td><td>${esc(e.journal)}</td><td>${esc(e.reference)}</td>
               <td class="muted">${esc(e.lines.map((l) => l.account + " " + (l.label || "")).join(" · ").slice(0, 80))}</td>
               <td class="num">${money(t.d)}</td><td class="num">${money(t.c)}</td>
-              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button></td>
+              <td><button class="secondary small" data-invoice="${e.id}" title="Facture / pièce à imprimer">🧾</button> <button class="secondary small" data-accounting-documents="${e.id}" title="Pièces justificatives">📎 Pièces</button> <button class="danger small" data-reverse="${e.id}" ${e.reversed || e.reverseOf ? "disabled" : ""}>${e.reversed ? "Déjà contrepassée" : e.reverseOf ? "Contrepassation" : "Contrepasser"}</button> <button class="danger small" data-delete-entry="${e.id}" ${readOnly ? "disabled title=\"Lecture seule : suppression réservée à l’administrateur ou au comptable.\"" : e.reversed || e.reverseOf ? "disabled title=\"Une écriture liée à une contrepassation ne peut pas être supprimée.\"" : "title=\"Supprimer cette écriture\""}>Supprimer</button></td>
             </tr>`;
           }).join("")}
         </tbody>
@@ -257,6 +343,95 @@ export function viewEntries() {
       <button class="secondary" id="print-entries">🖨 Imprimer le journal</button>
     </div>
   `;
+  const vaultSearch=document.getElementById("accounting-document-search"),vaultType=document.getElementById("accounting-document-type-filter"),vaultResults=document.getElementById("accounting-document-results");
+  if(vaultSearch&&vaultType&&vaultResults){
+    Promise.all([listLocalAccountingDocuments().catch(()=>[]),listCloudAccountingDocuments().catch(error=>{vaultResults.innerHTML='<p class="warn">Coffre partagé indisponible : '+esc(error?.message||"erreur")+'</p>';return[];})]).then(([localDocs,cloudDocs])=>{
+      const documents=[...(cloudDocs||[]).map(doc=>({...doc,kind:"cloud"})),...(localDocs||[]).map(doc=>({...doc,kind:"local"}))];
+      const labels={supplier_invoice:"Facture fournisseur",customer_invoice:"Facture client",receipt:"Reçu / quittance",bank_statement:"Relevé bancaire",tax_document:"Document fiscal",contract:"Contrat",other:"Autre"};
+      const render=()=>{
+        const term=vaultSearch.value.trim().toLocaleLowerCase(),type=vaultType.value;
+        const filtered=documents.filter(doc=>(!type||doc.type===type)&&(!term||[doc.fileName,doc.type,doc.documentDate,doc.counterparty,doc.reference,doc.journal,doc.notes].some(value=>String(value||"").toLocaleLowerCase().includes(term))));
+        vaultResults.innerHTML=filtered.length?'<div class="table-wrap"><table><thead><tr><th>Document</th><th>Type</th><th>Date</th><th>Tiers</th><th>Référence</th><th>Journal</th><th>Stockage</th><th>Actions</th></tr></thead><tbody>'+filtered.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+esc(labels[doc.type]||"Autre")+'</td><td>'+esc(doc.documentDate||"—")+'</td><td>'+esc(doc.counterparty||"—")+'</td><td>'+esc(doc.reference||"—")+'</td><td>'+esc(doc.journal||"—")+'</td><td>'+(doc.kind==="cloud"?"Coffre entreprise":"Appareil")+'</td><td><button class="small secondary" data-vault-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-vault-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+'</tbody></table></div>':'<p class="muted">Aucun document ne correspond à la recherche.</p>';
+        vaultResults.querySelectorAll("[data-vault-download]").forEach(action=>action.addEventListener("click",async()=>{try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.vaultDownload):await getLocalAccountingDocument(action.dataset.vaultDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}catch(error){toast(error?.message||"Téléchargement impossible.");}}));
+        vaultResults.querySelectorAll("[data-vault-delete]").forEach(action=>action.addEventListener("click",async()=>{try{if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(action.dataset.vaultDelete);else await deleteLocalAccountingDocument(action.dataset.vaultDelete);toast("Pièce justificative supprimée.");router.render();}catch(error){toast(error?.message||"Suppression impossible.");}}));
+      };
+      vaultSearch.addEventListener("input",render);vaultType.addEventListener("change",render);render();
+    });
+  }
+  $app.querySelectorAll("[data-accounting-documents]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const entryId=Number(button.dataset.accountingDocuments),entry=store.entries.find(item=>Number(item.id)===entryId);
+      if(!entry)return;
+      const openDocuments=async()=>{
+        let localDocuments=[],cloudDocuments=[],warning="";
+        try{localDocuments=await listLocalAccountingDocuments(entryId);}catch(error){warning="Lecture locale indisponible : "+(error?.message||"erreur")+". ";}
+        try{cloudDocuments=await listCloudAccountingDocumentsForEntry(entryId)||[];}catch(error){warning+="Coffre partagé : "+(error?.message||"indisponible")+". ";}
+        const rows=[...cloudDocuments.map(doc=>({...doc,kind:"cloud"})),...localDocuments.map(doc=>({...doc,kind:"local"}))];
+        openModal('<h2>Pièces justificatives — écriture #'+entryId+'</h2>'+
+         '<section class="card"><h3>Ajouter un justificatif</h3><p class="muted">Formats acceptés : PDF, JPEG, PNG ou WebP. Taille maximale : 20 Mo (15 Mo pour les images).</p>'+
+         '<label for="accounting-doc-file">Fichier</label><input id="accounting-doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">'+
+         '<div class="row"><div><label for="accounting-doc-type">Type de document</label><select id="accounting-doc-type"><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option><option value="other">Autre</option></select></div>'+
+         '<div><label for="accounting-doc-date">Date du document</label><input id="accounting-doc-date" type="date"></div></div>'+
+         '<div class="row"><div><label for="accounting-doc-counterparty">Tiers / fournisseur / client</label><input id="accounting-doc-counterparty" maxlength="160" placeholder="Nom du tiers"></div><div><label for="accounting-doc-reference">Référence du document</label><input id="accounting-doc-reference" maxlength="120" placeholder="N° de facture ou reçu"></div></div>'+
+         '<label for="accounting-doc-notes">Note (facultatif)</label><input id="accounting-doc-notes" maxlength="500" placeholder="Précision utile">'+
+         '<label for="accounting-doc-storage">Emplacement de stockage</label><select id="accounting-doc-storage"><option value="device">Sur cet appareil uniquement</option><option value="cloud">Coffre privé de l’entreprise (nécessite connexion et synchronisation de l’écriture)</option></select>'+
+         '<div class="actions"><button id="accounting-doc-upload">Joindre le justificatif</button></div><div id="accounting-doc-upload-status" class="muted" aria-live="polite"></div></section>'+
+         (warning?'<p class="warn">'+esc(warning)+'</p>':'')+
+         (rows.length?'<h3>Documents déjà associés</h3><div class="table-wrap"><table><thead><tr><th>Fichier</th><th>Stockage</th><th>Taille</th><th>Ajouté le</th><th>Actions</th></tr></thead><tbody>'+
+         rows.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+(doc.kind==="cloud"?'Coffre privé entreprise':'Cet appareil uniquement')+'</td><td>'+(Number(doc.size)/1024/1024).toFixed(2)+' Mo</td><td>'+esc(String(doc.uploadedAt||"").slice(0,10)||"—")+'</td><td><button class="small secondary" data-accounting-doc-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-accounting-doc-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+
+         '</tbody></table></div>':'<p class="muted">Aucune pièce justificative associée à cette écriture.</p>')+'<div class="actions"><button class="secondary" data-close>Fermer</button></div>');
+        document.getElementById("accounting-doc-upload")?.addEventListener("click",async()=>{
+          const file=document.getElementById("accounting-doc-file")?.files?.[0],status=document.getElementById("accounting-doc-upload-status"),action=document.getElementById("accounting-doc-upload");
+          if(!file){toast("Sélectionnez d’abord un fichier.");return;}
+          const metadata={type:document.getElementById("accounting-doc-type").value,documentDate:document.getElementById("accounting-doc-date").value,counterparty:document.getElementById("accounting-doc-counterparty").value,reference:document.getElementById("accounting-doc-reference").value,journal:entry.journal,notes:document.getElementById("accounting-doc-notes").value};
+          const storage=document.getElementById("accounting-doc-storage").value;
+          action.disabled=true;status.textContent="Enregistrement du justificatif…";
+          try{
+            if(storage==="cloud"){
+              await uploadCloudAccountingDocument({file,entryLocalIds:[entryId],metadata});
+            }else{
+              const id=globalThis.crypto?.randomUUID?.()||("doc-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+              await putLocalAccountingDocument({id,file,entryIds:[entryId],metadata});
+            }
+            toast("Pièce justificative ajoutée.");await openDocuments();
+          }catch(error){status.textContent=error?.message||"Ajout impossible.";action.disabled=false;}
+        });
+        document.querySelectorAll("[data-accounting-doc-download]").forEach(action=>action.addEventListener("click",async()=>{
+         try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.accountingDocDownload):await getLocalAccountingDocument(action.dataset.accountingDocDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}
+         catch(error){toast(error?.message||"Téléchargement impossible.");}
+        }));
+        document.querySelectorAll("[data-accounting-doc-delete]").forEach(action=>action.addEventListener("click",async()=>{
+         try{const id=action.dataset.accountingDocDelete;if(!confirm("Supprimer définitivement cette pièce justificative ?"))return;if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(id);else await deleteLocalAccountingDocument(id);toast("Pièce justificative supprimée.");await openDocuments();}
+         catch(error){toast(error?.message||"Suppression impossible.");}
+        }));
+      };
+      await openDocuments();
+    });
+  });
+  $app.querySelectorAll("[data-delete-entry]").forEach((button) => {
+    button.addEventListener("click", () => {
+      if(readOnly)return toast("Suppression refusée : votre rôle est en lecture seule.");
+      const id=Number(button.dataset.deleteEntry);
+      const entry=store.entries.find(item=>Number(item.id)===id);
+      if(!entry)return;
+      if(entry.reversed||entry.reverseOf)return toast("Suppression bloquée : cette écriture est liée à une contrepassation. Utilisez la procédure comptable appropriée.");
+      const activeCompanyId=localStorage.getItem("mizane_active_company_v1");
+      if(activeCompanyId&&!hasAccountingSyncBaseline(activeCompanyId)){
+        return toast("Suppression suspendue : synchronisez d’abord cette entreprise pour établir la référence cloud. Cela évite que des écritures supprimées localement réapparaissent lors de la première synchronisation.");
+      }
+      const confirmed=confirm("Supprimer définitivement l’écriture #"+id+" du journal local ? La suppression sera transmise au cloud lors de la prochaine synchronisation. Vérifiez les pièces justificatives associées avant de continuer.");
+      if(!confirmed)return;
+      const index=store.entries.findIndex(item=>Number(item.id)===id);
+      if(index<0)return;
+      const [removedEntry]=store.entries.splice(index,1);
+      if(!saveStore(store)){
+        store.entries.splice(index,0,removedEntry);
+        return toast("Suppression annulée : la sauvegarde locale a échoué. Libérez de l’espace ou exportez une sauvegarde avant de réessayer.");
+      }
+      toast("Écriture #"+id+" supprimée du journal local. La suppression sera répercutée dans le cloud lors de la prochaine synchronisation.");
+      router.render();
+    });
+  });
   $app.querySelectorAll("[data-reverse]").forEach((b) => {
     b.addEventListener("click", () => {
       const id = Number(b.dataset.reverse);

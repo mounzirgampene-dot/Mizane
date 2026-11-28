@@ -1,10 +1,17 @@
-// MIZANE — Plans comptables : index et fonctions utilitaires.
+// MIZANE — Bibliothèque des plans comptables et fonctions utilitaires.
 import { SYSCOHADA } from "./plans/syscohada.js";
 import { PCG } from "./plans/pcg.js";
 import { NCT } from "./plans/nct.js";
 import { CGNC } from "./plans/cgnc.js";
+import { SECTORAL_TEMPLATES } from "./plans/templates.js";
 
-export const PLANS = { syscohada: SYSCOHADA, pcg: PCG, nct: NCT, cgnc: CGNC };
+// Les quatre référentiels nationaux/régionaux restent distincts des modèles indicatifs.
+export const OFFICIAL_PLANS = { syscohada: SYSCOHADA, pcg: PCG, nct: NCT, cgnc: CGNC };
+export const PLANS = { ...OFFICIAL_PLANS, ...Object.fromEntries(SECTORAL_TEMPLATES.map((plan) => [plan.id, plan])) };
+export const PLAN_CATEGORIES = {
+  official: "Référentiels nationaux et régionaux",
+  "sectoral-template": "Modèles sectoriels indicatifs",
+};
 
 export const ACCOUNT_TYPES = {
   asset: "Actif",
@@ -14,8 +21,12 @@ export const ACCOUNT_TYPES = {
   income: "Produit",
 };
 
-export function getPlan(id) {
-  return PLANS[id] || PLANS.syscohada;
+export function getPlan(id, customPlans = []) {
+  return PLANS[id] || customPlans.find((plan) => plan.id === id) || PLANS.syscohada;
+}
+
+export function listPlans() {
+  return Object.values(PLANS);
 }
 
 export function allAccounts(planId) {

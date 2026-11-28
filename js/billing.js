@@ -3,10 +3,12 @@
 // des écritures comptables selon les comptes configurés par l'entreprise.
 import { COUNTRIES, formatMoney, currencyOptionLabel, getCountry } from "./countries.js";
 import { store, planAccounts, $app, saveNow, esc, toast } from "./state.js";
-import { postEntry, reverseEntry } from "./accounting.js";
-import { buildBillingJournalEntries, suggestBillingAccounts } from "./billing-accounting.js";
+import { reverseEntry } from "./accounting.js";
+import { buildBillingJournalEntries, buildFullCreditNoteJournalEntry, buildCreditNoteJournalEntry, buildCreditNoteRefundJournalEntry, postBillingJournalEntriesAtomically, suggestBillingAccounts, suggestStockAccounts } from "./billing-accounting.js";
 import { printHTML } from "./print.js";
 import { calculateBillingTotals, calculateOutstandingBase, calculatePaymentBalance, convertBillingAmount, makeBillingNumber, migrateLegacyInvoicePayment, validateBillingDocument, validateBillingPayment } from "./billing-core.js";
+import { hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, postCloudStockDocument, reserveCloudStock } from "./cloud-sync.js";
+import { postSalesStockCostJournalEntry, retryPendingStockAccountingOperations } from "./stock-accounting.js";
 
 const CURRENCIES = [...new Set([
   ...(typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : []),
@@ -34,7 +36,12 @@ const getBilling = () => {
   if (!Array.isArray(store.billing.documents)) store.billing.documents = [];
   if (!store.billing.settings) store.billing.settings = {};
   store.billing.nextPaymentId = Math.max(1, Number(store.billing.nextPaymentId) || 1);
+  store.billing.nextRefundId = Math.max(1, Number(store.billing.nextRefundId) || 1);
   for (const doc of store.billing.documents) {
+    if (doc.type === "credit_note") {
+      for (const refund of doc.refunds || []) store.billing.nextRefundId = Math.max(store.billing.nextRefundId, number(refund.id) + 1);
+      continue;
+    }
     if (doc.type !== "invoice") continue;
     const migrated = migrateLegacyInvoicePayment(doc, store.billing.nextPaymentId);
     doc.payments = migrated.payments;
@@ -45,11 +52,12 @@ const getBilling = () => {
   const settings = store.billing.settings;
   const availableAccounts = [...planAccounts, ...(store.settings.customAccounts || [])];
   const suggestedAccounts = suggestBillingAccounts(store.settings.plan, availableAccounts);
-  if (!settings.accountingAccounts) settings.accountingAccounts = suggestedAccounts;
-  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"]) {
+  const suggestedStockAccounts = suggestStockAccounts(store.settings.plan, availableAccounts);
+  if (!settings.accountingAccounts) settings.accountingAccounts = { ...suggestedAccounts, inventory:suggestedStockAccounts.inventory, stockVariation:suggestedStockAccounts.stockVariation };
+  else for (const key of ["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"]) {
     const code = settings.accountingAccounts[key];
-    const type = key === "revenue" || key === "fxGain" ? "income" : key === "tax" ? "liability" : key === "fxLoss" ? "expense" : "asset";
-    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && account.type === type)) settings.accountingAccounts[key] = suggestedAccounts[key];
+    const type = key === "revenue" || key === "fxGain" || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "income") ? "income" : key === "tax" ? "liability" : ["fxLoss","cogs","stockConsumption","stockLoss","stockAdjustmentLoss"].includes(key) || (key === "stockVariation" && suggestedStockAccounts.stockVariationType === "expense") ? "expense" : "asset";
+    if (!code || !availableAccounts.some(account => String(account.code) === String(code) && (key === "stockVariation" ? ["expense","income"].includes(account.type) : account.type === type))) settings.accountingAccounts[key] = key === "inventory" ? suggestedStockAccounts.inventory : key === "stockVariation" ? suggestedStockAccounts.stockVariation : ["cogs","stockConsumption","stockLoss","stockAdjustmentGain","stockAdjustmentLoss"].includes(key) ? "" : suggestedAccounts[key];
   }
   settings.currency ||= store.settings.currency || "XOF";
   settings.taxLabel ||= "Taxe";
@@ -60,18 +68,274 @@ const getBilling = () => {
   return store.billing;
 };
 const fmt = (value, currency, locale) => formatMoney(value, currency, locale);
+function formatRecordedAt(value, locale = "fr") {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "medium", hourCycle: "h23" }).format(date);
+}
 const totals = calculateBillingTotals;
 function postInvoiceAccounting(invoice) {
   const mapping = getBilling().settings.accountingAccounts || {};
   const proposal = buildBillingJournalEntries(store, invoice, mapping);
   if (!proposal.ok) return proposal;
-  let created = 0;
-  for (const entry of proposal.entries) {
-    const result = postEntry(store, entry);
-    if (!result.ok) return { ok: false, errors: result.errors, created };
-    created++;
+  return postBillingJournalEntriesAtomically(store, proposal.entries);
+}
+
+function canIssueFullCreditNote(invoice) {
+  if (!invoice || invoice.type !== "invoice" || ["cancelled","credited"].includes(invoice.status)) return false;
+  if (number(invoice.paidAmount) > 0 || (invoice.payments || []).some(payment => number(payment.amount) > 0)) return false;
+  if (invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending) return false;
+  if ((invoice.stockDocuments || []).length || (invoice.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status))) return false;
+  if ((invoice.lines || []).some(line => number(line.stockFulfilledQuantity) > 0)) return false;
+  if (getBilling().documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(invoice.id))) return false;
+  const source = (store.entries || []).find(entry => entry.reference === "FACTURE " + String(invoice.number || invoice.id));
+  return Boolean(source && !source.reversed);
+}
+function issueFullCreditNote(invoiceId) {
+  const billing = getBilling();
+  const invoice = billing.documents.find(doc => doc.type === "invoice" && Number(doc.id) === Number(invoiceId));
+  if (!canIssueFullCreditNote(invoice)) return toast("Avoir impossible : vérifiez les règlements, les mouvements de stock et la comptabilisation de la facture.", 6000);
+  if (!window.confirm("Confirmer l’émission d’un avoir TOTAL de " + fmt(invoice.totals?.ttc || totals(invoice.lines || []).ttc, invoice.currency, store.settings.locale) + " pour la facture " + invoice.number + " ? Cette opération comptabilisera l’avoir et clôturera la facture d’origine.")) return;
+  const date = today();
+  const numberValue = Number(billing.settings.nextCreditNote) || 1;
+  billing.settings.nextCreditNote = numberValue + 1;
+  const creditNote = {
+    id: billing.nextId++,
+    type: "credit_note",
+    number: (billing.settings.prefixCreditNote || "AVO") + "-" + new Date().getFullYear() + "-" + String(numberValue).padStart(4,"0"),
+    date,
+    dueDate: "",
+    customerName: invoice.customerName,
+    customerAddress: invoice.customerAddress,
+    customerCountry: invoice.customerCountry,
+    currency: invoice.currency,
+    baseCurrency: invoice.baseCurrency,
+    exchangeRate: invoice.exchangeRate,
+    taxLabel: invoice.taxLabel,
+    paymentTerms: "",
+    notes: "Avoir total de la facture " + invoice.number + ".",
+    lines: structuredClone(invoice.lines || []),
+    totals: structuredClone(invoice.totals || totals(invoice.lines || [])),
+    paidAmount: 0,
+    payments: [],
+    sourceInvoiceId: invoice.id,
+    sourceInvoiceNumber: invoice.number,
+    status: "issued",
+    createdAt: new Date().toISOString(),
+  };
+  const proposal = buildFullCreditNoteJournalEntry(store, invoice, creditNote, billing.settings.accountingAccounts || {});
+  if (!proposal.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + proposal.errors[0], 6000);
   }
-  return { ok: true, errors: [], created };
+  const posted = postBillingJournalEntriesAtomically(store, proposal.entries);
+  if (!posted.ok) {
+    billing.settings.nextCreditNote = numberValue;
+    billing.nextId = Math.max(1, billing.nextId - 1);
+    return toast("Avoir non émis : " + posted.errors[0], 6000);
+  }
+  billing.documents.push(creditNote);
+  invoice.status = "credited";
+  invoice.creditedBy = creditNote.id;
+  invoice.creditedAt = new Date().toISOString();
+  saveBilling();
+  renderList();
+  toast("Avoir total émis et comptabilisé. La facture d'origine reste conservée dans l'historique.");
+}
+
+function creditNoteTotals(note) {
+  const amount=number(note?.totals?.ttc || totals(note?.lines || []).ttc);
+  const refunded=round((note?.refunds || []).reduce((sum,item)=>sum+number(item.amount),0));
+  const invoice=getBilling().documents.find(doc=>doc.type==="invoice" && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!invoice) return {amount,refunded,refundable:0};
+  const related=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice.id));
+  const issued=round(related.reduce((sum,item)=>sum+number(item.totals?.ttc || totals(item.lines||[]).ttc),0));
+  const refundedAll=round(related.reduce((sum,item)=>sum+(item.refunds||[]).reduce((subtotal,refund)=>subtotal+number(refund.amount),0),0));
+  const paid=round((invoice.payments||[]).reduce((sum,item)=>sum+number(item.amount),0) || number(invoice.paidAmount));
+  const customerCredit= Math.max(0,round(paid-Math.max(0,round(number(invoice.totals?.ttc)-issued))));
+  const availableRefundTotal=Math.max(0,round(customerCredit-refundedAll));
+  const noteIndex=related.findIndex(item=>Number(item.id)===Number(note.id));
+  const priorCapacity=related.slice(0,Math.max(0,noteIndex)).reduce((sum,item)=>{const itemAmount=number(item.totals?.ttc || totals(item.lines||[]).ttc);const itemRefunded=round((item.refunds||[]).reduce((subtotal,refundItem)=>subtotal+number(refundItem.amount),0));return sum+Math.max(0,round(itemAmount-itemRefunded));},0);
+  const availableForThisNote=Math.max(0,round(availableRefundTotal-priorCapacity));
+  return {amount,refunded,refundable:Math.min(Math.max(0,round(amount-refunded)),availableForThisNote)};
+}
+function creditedQuantity(invoice,index) {
+  return round(getBilling().documents.filter(doc=>doc.type==='credit_note' && Number(doc.sourceInvoiceId)===Number(invoice.id)).reduce((sum,note)=>sum+(note.lines||[]).reduce((subtotal,line,i)=>{const sourceIndex=Number.isInteger(Number(line.sourceLineIndex))?Number(line.sourceLineIndex):i;return subtotal+(sourceIndex===index?number(line.quantity):0);},0),0));
+}
+function canIssuePartialCreditNote(invoice) {
+  if(!invoice || invoice.type!=='invoice' || ['cancelled','credited'].includes(invoice.status)) return false;
+  if(invoice.stockPendingOperation || invoice.stockReservationsCreated || invoice.stockReservationPending || (invoice.stockDocuments||[]).length || (invoice.stockReservationOperations||[]).some(op=>['pending','done'].includes(op.status)) || (invoice.lines||[]).some(line=>number(line.stockFulfilledQuantity)>0)) return false;
+  const source=(store.entries||[]).find(entry=>entry.reference==='FACTURE '+String(invoice.number||invoice.id));
+  return Boolean(source && !source.reversed && (invoice.lines||[]).some((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)>0.000001));
+}
+function openPartialCreditNote(invoiceId) {
+  const billing=getBilling(),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(invoiceId));
+  if(!canIssuePartialCreditNote(invoice)) return toast('Avoir partiel impossible : vérifiez la comptabilisation et les mouvements de stock.',6000);
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  const rows=(invoice.lines||[]).map((line,index)=>({line,index,remaining:Math.max(0,round(number(line.quantity)-creditedQuantity(invoice,index)))})).filter(row=>row.remaining>0.000001);
+  content.innerHTML='<h2>Avoir partiel — '+esc(invoice.number)+'</h2><p class="muted">Saisissez les quantités à créditer. Les prix et taxes sont repris de la facture. Les quantités déjà créditées sont déduites.</p><div class="table-wrap"><table><thead><tr><th>Désignation</th><th>Facturée</th><th>Déjà créditée</th><th>Reste</th><th>À créditer</th></tr></thead><tbody>'+rows.map(row=>'<tr data-credit-line="'+row.index+'"><td>'+esc(row.line.description)+'</td><td>'+number(row.line.quantity)+'</td><td>'+creditedQuantity(invoice,row.index)+'</td><td>'+row.remaining+'</td><td><input data-credit-quantity type="number" min="0" max="'+row.remaining+'" step="0.0001" value="0"></td></tr>').join('')+'</tbody></table></div><p id="bill-credit-total">Total de l’avoir : '+fmt(0,invoice.currency,store.settings.locale)+'</p><div id="bill-credit-error" class="errors"></div><div class="actions"><button id="bill-credit-submit">Émettre et comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  const calculate=()=>{const lines=[];for(const tr of content.querySelectorAll('[data-credit-line]')){const index=Number(tr.dataset.creditLine),quantity=number(tr.querySelector('[data-credit-quantity]').value);if(quantity>0)lines.push({...invoice.lines[index],sourceLineIndex:index,quantity});}const value=totals(lines).ttc;content.querySelector('#bill-credit-total').textContent='Total de l’avoir : '+fmt(value,invoice.currency,store.settings.locale);return {lines,value};};
+  content.querySelectorAll('[data-credit-quantity]').forEach(input=>input.addEventListener('input',calculate));
+  content.querySelector('#bill-credit-submit').addEventListener('click',()=>{
+    const selection=calculate();if(!selection.lines.length || !(selection.value>0)){content.querySelector('#bill-credit-error').textContent='Sélectionnez au moins une quantité.';return;}
+    for(const line of selection.lines){if(line.quantity>number(invoice.lines[line.sourceLineIndex].quantity)-creditedQuantity(invoice,line.sourceLineIndex)+0.000001){content.querySelector('#bill-credit-error').textContent='Une quantité dépasse le reliquat créditable.';return;}}
+    if(!window.confirm('Confirmer l’avoir de '+fmt(selection.value,invoice.currency,store.settings.locale)+' ?'))return;
+    const sequence=Number(billing.settings.nextCreditNote)||1;
+    const note={id:billing.nextId++,type:'credit_note',number:(billing.settings.prefixCreditNote||'AVO')+'-'+new Date().getFullYear()+'-'+String(sequence).padStart(4,'0'),date:today(),dueDate:'',customerName:invoice.customerName,customerAddress:invoice.customerAddress,customerCountry:invoice.customerCountry,currency:invoice.currency,baseCurrency:invoice.baseCurrency,exchangeRate:invoice.exchangeRate,taxLabel:invoice.taxLabel,paymentTerms:'',notes:'Avoir partiel de la facture '+invoice.number+'.',lines:selection.lines,totals:totals(selection.lines),paidAmount:0,payments:[],refunds:[],sourceInvoiceId:invoice.id,sourceInvoiceNumber:invoice.number,status:'issued',createdAt:new Date().toISOString()};
+    const proposal=buildCreditNoteJournalEntry(store,invoice,note,billing.settings.accountingAccounts||{});if(!proposal.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=proposal.errors[0];return;}
+    const posted=postBillingJournalEntriesAtomically(store,proposal.entries);if(!posted.ok){billing.nextId--;content.querySelector('#bill-credit-error').textContent=posted.errors[0];return;}
+    billing.settings.nextCreditNote=sequence+1;billing.documents.push(note);
+    const allCredited=(invoice.lines||[]).every((line,index)=>number(line.quantity)-creditedQuantity(invoice,index)<=0.000001);invoice.status=allCredited?'credited':'partially_credited';invoice.creditedAt=new Date().toISOString();
+    saveBilling();modal.close();renderList();toast('Avoir partiel émis et comptabilisé.');
+  });modal.showModal();
+}
+function openCreditNoteRefund(noteId) {
+  const billing=getBilling(),note=billing.documents.find(doc=>doc.type==='credit_note' && Number(doc.id)===Number(noteId)),invoice=billing.documents.find(doc=>doc.type==='invoice' && Number(doc.id)===Number(note?.sourceInvoiceId));
+  if(!note || !invoice)return;const balance=creditNoteTotals(note).refundable;if(balance<=0.000001)return toast('Cet avoir a déjà été intégralement remboursé.');
+  const modal=document.getElementById('modal'),content=document.getElementById('modal-content');
+  content.innerHTML='<h2>Remboursement — '+esc(note.number)+'</h2><p>Solde remboursable : <strong>'+fmt(balance,note.currency,store.settings.locale)+'</strong></p><div class="grid cols-2"><div><label>Date</label><input id="bill-refund-date" type="date" value="'+today()+'"></div><div><label>Montant</label><input id="bill-refund-amount" type="number" min="0.01" max="'+balance+'" step="0.01" value="'+balance+'"></div><div><label>Mode</label><select id="bill-refund-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option></select></div><div><label>Taux de change</label><input id="bill-refund-rate" type="number" min="0.00000001" step="0.00000001" value="'+number(invoice.exchangeRate)+'"></div></div><div id="bill-refund-error" class="errors"></div><div class="actions"><button id="bill-refund-submit">Comptabiliser</button><button class="secondary" data-close>Annuler</button></div>';
+  bindBillingModalClose(content);
+  content.querySelector('#bill-refund-submit').addEventListener('click',()=>{
+    const refund={id:billing.nextRefundId++,date:content.querySelector('#bill-refund-date').value,amount:number(content.querySelector('#bill-refund-amount').value),method:content.querySelector('#bill-refund-method').value,exchangeRate:number(content.querySelector('#bill-refund-rate').value),currency:note.currency};
+    if(refund.amount>balance+0.001){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent='Le remboursement dépasse le solde de l’avoir.';return;}
+    const reference='REMBOURSEMENT AVOIR '+String(note.number)+' #'+String(refund.id);
+    const alreadyPosted=(store.entries||[]).find(entry=>entry.reference===reference);
+    if(alreadyPosted){note.refunds||=[];if(!note.refunds.some(item=>Number(item.id)===refund.id))note.refunds.push({...refund,status:'posted',createdAt:new Date().toISOString()});saveBilling();modal.close();renderList();toast('Remboursement déjà comptabilisé : état réconcilié.');return;}
+    const proposal=buildCreditNoteRefundJournalEntry(store,invoice,note,refund,billing.settings.accountingAccounts||{});
+    if(!proposal.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=proposal.errors[0];return;}
+    const posted=postBillingJournalEntriesAtomically(store,proposal.entries);
+    if(!posted.ok){billing.nextRefundId--;content.querySelector('#bill-refund-error').textContent=posted.errors[0];return;}
+    note.refunds||=[];note.refunds.push({...refund,status:'posted',createdAt:new Date().toISOString()});saveBilling();modal.close();renderList();toast('Remboursement comptabilisé dans le journal de trésorerie.');
+  });modal.showModal();
+}
+function invoiceHasAccountingEntries(invoice) {
+  const number = String(invoice?.number || invoice?.id || "");
+  const invoiceReference = "FACTURE " + number;
+  const paymentPrefix = "REGLEMENT " + number + " #";
+  return (store.entries || []).some(entry =>
+    entry.reference === invoiceReference || String(entry.reference || "").startsWith(paymentPrefix)
+  );
+}
+
+function invoiceHasStockLines(invoice) {
+  return (invoice?.lines || []).some(line => line.stockProductId && line.stockWarehouseId);
+}
+function stockSerials(value) {
+  return String(value || "").split(/[\r\n,;]+/).map(value => value.trim()).filter(Boolean);
+}
+function stockOperationUid() {
+  if (!globalThis.crypto?.randomUUID) throw new Error("Ce navigateur ne permet pas de sécuriser l'identifiant de mouvement de stock.");
+  return globalThis.crypto.randomUUID();
+}
+
+async function invoiceReservationOperationUid(invoice,lineIndex,productId,warehouseId,quantity) {
+  if(!globalThis.crypto?.subtle) throw new Error("Ce navigateur ne permet pas de créer une clé de réservation stable.");
+  const companyId=localStorage.getItem("mizane_active_company_v1") || "";
+  const input=[companyId,invoice.id,lineIndex,productId,warehouseId,quantity].join(":");
+  const digest=await globalThis.crypto.subtle.digest("SHA-256",new TextEncoder().encode(input));
+  const bytes=Array.from(new Uint8Array(digest).slice(0,16));
+  bytes[6]=(bytes[6]&0x0f)|0x50;
+  bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=bytes.map(value=>value.toString(16).padStart(2,"0")).join("");
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+}
+function invoiceStockLines(invoice, stockState, rows = null) {
+  const products = new Map((stockState?.products || []).map(product => [product.id, product]));
+  const lines = [];
+  const fulfilled = [];
+  for (let index=0; index<(invoice.lines || []).length; index++) {
+    const line=invoice.lines[index];
+    if (!line.stockProductId) continue;
+    const product=products.get(line.stockProductId);
+    if (!product || product.product_type==="service" || !line.stockWarehouseId) throw new Error("Chaque ligne liée au stock doit désigner un article physique et un entrepôt.");
+    if (rows && !rows[index]) continue;
+    const row=rows?.[index] || {};
+    const quantity=Number(rows ? row.quantity : line.quantity);
+    if (!(quantity>0) || !Number.isFinite(quantity)) continue;
+    const lotCode=String(row.lotCode ?? line.stockLotCode ?? "").trim();
+    const serialNumbers=stockSerials(row.serialNumbers ?? line.stockSerialNumbers);
+    if (product.tracking==="lot" && !lotCode) throw new Error("Le code de lot est obligatoire pour l’article "+product.name+".");
+    if (product.tracking==="serial" && (quantity!==Math.trunc(quantity) || serialNumbers.length!==quantity)) throw new Error("Saisissez un numéro de série pour chaque unité de "+product.name+".");
+    lines.push({
+      product_id:product.id, warehouse_id:line.stockWarehouseId, quantity,
+      unit:String(row.unit || line.stockUnit || product.base_unit || "unité"),
+      unit_cost:0, lot_code:lotCode || null, serial_numbers:serialNumbers,
+    });
+    fulfilled.push({lineIndex:index,quantity});
+  }
+  return {lines,fulfilled};
+}
+async function submitInvoiceStockOperation(invoice, operation) {
+  if (!operation) return {ok:true,skipped:true};
+  invoice.stockPendingOperation=operation;
+  saveBilling();
+  try {
+    const result=await postCloudStockDocument({
+      operationUid:operation.operationUid, documentType:"issue", documentDate:operation.documentDate,
+      reference:invoice.number, note:operation.note, lines:operation.lines,
+      sourceType:operation.sourceType, sourceId:operation.sourceId,
+    });
+    const stockState=await readCloudStock();
+    const accountingMode=stockState?.settings?.accounting_mode || "perpetual";
+    if(accountingMode==="perpetual"){
+      const accountingResult=postSalesStockCostJournalEntry(
+        store,
+        {document_id:result?.document_id,operation_uid:operation.operationUid,document_date:operation.documentDate,reference:invoice.number},
+        stockState.movements || [],
+        getBilling().settings.accountingAccounts || {},
+        accountingMode
+      );
+      if(!accountingResult.ok) throw new Error("Sortie de stock enregistrée, mais coût des ventes non comptabilisé : "+(accountingResult.errors||["erreur inconnue"]).join(" "));
+    }
+    for (const item of operation.fulfilled) {
+      const line=invoice.lines[item.lineIndex];
+      if (line) { line.stockFulfilledQuantity=round(number(line.stockFulfilledQuantity)+item.quantity); if(operation.kind==="delivery") line.stockSerialNumbers=""; }
+    }
+    invoice.stockDocuments ||= [];
+    invoice.stockDocuments.push({documentId:result?.document_id || null,operationUid:operation.operationUid,kind:operation.kind,date:operation.documentDate,createdAt:new Date().toISOString()});
+    delete invoice.stockPendingOperation;
+    saveBilling();
+    return {ok:true,result};
+  } catch(error) {
+    saveBilling();
+    return {ok:false,error};
+  }
+}
+async function retryInvoiceStock(invoice) {
+  if (!invoice?.stockPendingOperation) return {ok:false,error:new Error("Aucun mouvement de stock en attente.")};
+  return submitInvoiceStockOperation(invoice,invoice.stockPendingOperation);
+}
+
+let pendingStockRetryPromise = null;
+async function retryPendingInvoiceStockOperations() {
+  if (pendingStockRetryPromise) return pendingStockRetryPromise;
+  const billing = getBilling();
+  const mapping = billing.settings.accountingAccounts || {};
+  const accounts = [...planAccounts, ...(store.settings.customAccounts || [])];
+  const hasInventoryAccount = accounts.some(account => String(account.code) === String(mapping.inventory || "") && account.type === "asset");
+  const hasCogsAccount = accounts.some(account => String(account.code) === String(mapping.cogs || "") && account.type === "expense");
+  const pending = billing.documents.filter(invoice => invoice.type === "invoice" && invoice.stockPendingOperation);
+  if (!pending.length || !hasInventoryAccount || !hasCogsAccount) return {attempted:0,succeeded:0,skipped:true};
+  pendingStockRetryPromise = (async () => {
+    let succeeded = 0;
+    const failures = [];
+    for (const invoice of pending) {
+      const result = await retryInvoiceStock(invoice);
+      if (result.ok) succeeded += 1;
+      else failures.push(invoice.number + " : " + (result.error?.message || "erreur inconnue"));
+    }
+    if (succeeded) {
+      renderList();
+      toast(succeeded + " opération(s) de stock en attente reprise(s) automatiquement.");
+    }
+    if (failures.length) toast("Certaines opérations de stock restent en attente : " + failures.join(" ; "), 7000);
+    return {attempted:pending.length,succeeded,failures};
+  })();
+  try { return await pendingStockRetryPromise; }
+  finally { pendingStockRetryPromise = null; }
 }
 
 const nextNumber = (kind, settings) => {
@@ -105,8 +369,8 @@ function documentHTML(doc) {
     const lineTax = round(lineHT * number(line.taxRate) / 100);
     return `<tr><td>${esc(line.description)}</td><td class="num">${number(line.quantity)}</td><td class="num">${fmt(line.unitPrice,currency,locale)}</td><td class="num">${number(line.taxRate)} %</td><td class="num">${fmt(lineHT+lineTax,currency,locale)}</td></tr>`;
   }).join("");
-  const title = doc.type === "quote" ? "DEVIS" : "FACTURE";
-  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p><p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
+  const title = doc.type === "quote" ? "DEVIS" : doc.type === "credit_note" ? "AVOIR" : "FACTURE";
+  return `<div class="inv-head"><div><h2>${esc(company.companyName)}</h2><p>${esc(company.country || "")}</p><p>${esc(company.address || "")}</p><p>${esc(company.taxId || "")}</p></div><div><h2>${title}</h2><p>N° ${esc(doc.number)}</p><p>Date : ${esc(doc.date)}</p>${doc.type === "credit_note" ? `<p>Avoir relatif à la facture : ${esc(doc.sourceInvoiceNumber || "—")}</p>` : ""}${doc.type === "invoice" ? `<p>Enregistrée le : ${esc(formatRecordedAt(doc.createdAt, locale))}</p>` : ""}<p>Échéance : ${esc(doc.dueDate || "—")}</p><p>Client : ${esc(doc.customerName)}</p><p>${esc(doc.customerAddress || "")}</p><p>${esc(customerCountryName)}</p></div></div>
   <table><thead><tr><th>Description</th><th class="num">Qté</th><th class="num">Prix unitaire</th><th class="num">Taxe</th><th class="num">Total TTC</th></tr></thead><tbody>${rows}</tbody></table>
   <table class="inv-totals"><tr><td>Total HT</td><td class="num">${fmt(t.ht,currency,locale)}</td></tr><tr><td>${esc(doc.taxLabel || "Taxes")}</td><td class="num">${fmt(t.tax,currency,locale)}</td></tr><tr class="total"><td>Total TTC</td><td class="num"><strong>${fmt(t.ttc,currency,locale)}</strong></td></tr></table>
   ${paymentSummary}
@@ -118,24 +382,28 @@ function renderList() {
   const docs = [...billing.documents].sort((a,b) => String(b.date).localeCompare(String(a.date)) || b.id-a.id);
   const quotes = docs.filter((doc) => doc.type === "quote");
   const invoices = docs.filter((doc) => doc.type === "invoice");
-  const openAmount = calculateOutstandingBase(invoices);
+  const openAmount = calculateOutstandingBase(billing.documents);
   const row = (doc) => {
     const paid = number(doc.paidAmount);
-    const balance = Math.max(0, number(doc.totals?.ttc) - paid);
-    const status = doc.type === "invoice" && doc.status !== "cancelled"
-      ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
-      : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
-    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
+    const balance = Math.max(0, netInvoiceReceivable(doc) - paid);
+    const status = doc.type === "invoice" && doc.status === "credited" ? "Avoir émis" : doc.type === "invoice" && doc.status === "partially_credited" ? "Partiellement créditée"
+      : doc.type === "invoice" && doc.status !== "cancelled"
+        ? balance <= 0 ? "Payée" : paid > 0 ? "Partiellement payée" : doc.dueDate && doc.dueDate < today() ? "En retard" : "À payer"
+        : doc.status === "accepted" ? "Accepté" : doc.status === "converted" ? "Converti" : doc.status === "cancelled" ? "Annulé" : doc.status === "draft" ? "Brouillon" : "Émis";
+    return "<tr><td>" + esc(doc.number) + "</td><td>" + (doc.type === "quote" ? "Devis" : doc.type === "credit_note" ? "Avoir" : "Facture") + "</td><td>" + esc(doc.date) + "</td><td>" + (doc.type === "invoice" ? esc(formatRecordedAt(doc.createdAt,store.settings.locale || "fr")) : "—") + "</td><td>" + esc(doc.customerName) + "</td><td>" + esc(currencyOptionLabel(doc.currency,store.settings.locale || "fr")) + "</td><td class=\"num\">" + fmt(doc.totals?.ttc || 0,doc.currency,store.settings.locale) + "</td><td>" + status + "</td><td>" +
       '<button class="secondary small" data-bill-print="' + doc.id + '">Imprimer</button>' +
-      (doc.status !== "cancelled" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
+      (doc.type !== "credit_note" && doc.status !== "cancelled" && doc.status !== "credited" && doc.status !== "partially_credited" && !(doc.type === "quote" && doc.status === "converted") ? '<button class="secondary small" data-bill-edit="' + doc.id + '">Modifier</button>' : "") +
       (doc.type === "quote" && doc.status !== "converted" && doc.status !== "cancelled" ? '<button class="small" data-bill-convert="' + doc.id + '">Convertir</button>' : "") +
-      (doc.type === "invoice" && doc.status !== "cancelled" ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' : "") +
+      (doc.type === "invoice" && !["cancelled","credited"].includes(doc.status) ? '<button class="secondary small" data-bill-post="' + doc.id + '">Comptabiliser</button><button class="secondary small" data-bill-payments="' + doc.id + '">Paiements (' + (doc.payments || []).length + ')</button>' + (canIssueFullCreditNote(doc) ? '<button class="danger small" data-bill-credit-note="' + doc.id + '">Émettre un avoir total</button>' : "") + (canIssuePartialCreditNote(doc) ? '<button class="secondary small" data-bill-partial-credit="' + doc.id + '">Avoir partiel</button>' : "") : "") + (doc.type === "credit_note" && creditNoteTotals(doc).refundable > 0.000001 ? '<button class="secondary small" data-bill-refund-credit="' + doc.id + '">Rembourser</button>' : "") +
+      (doc.type === "invoice" && doc.stockPendingOperation ? '<button class="danger small" data-bill-stock-retry="' + doc.id + '">Réessayer le stock</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockReservationsCreated && !doc.stockPendingOperation && (doc.lines || []).some(line => line.stockProductId && number(line.quantity) - number(line.stockFulfilledQuantity) > 0.000001) ? '<button class="secondary small" data-bill-reserve-stock="' + doc.id + '">Réserver le stock</button>' : "") +
+      (doc.type === "invoice" && doc.status !== "cancelled" && invoiceHasStockLines(doc) && !doc.stockPendingOperation && !["invoice_validation"].includes(doc.stockTrigger || "") && (doc.lines || []).some(line => number(line.stockFulfilledQuantity) + 0.000001 < number(line.quantity)) ? '<button class="small" data-bill-deliver="' + doc.id + '">Livrer</button>' : "") +
       "</td></tr>";
   };
   $app.innerHTML = `
     <div class="row" style="justify-content:space-between;align-items:center"><div><h1>Facturation</h1><p class="muted">Devis, factures et facturation multi-devises.</p></div><div class="actions"><button id="bill-new-quote" class="secondary">Nouveau devis</button><button id="bill-new-invoice">Nouvelle facture</button><button id="bill-settings" class="secondary">Paramètres</button></div></div>
     <div class="grid cols-3"><section class="card kpi"><div class="label">Devis</div><div class="value">${quotes.length}</div></section><section class="card kpi"><div class="label">Factures émises</div><div class="value">${invoices.length}</div></section><section class="card kpi"><div class="label">Solde à recouvrer</div><div class="value">${fmt(openAmount,store.settings.currency,store.settings.locale)}</div></section></div>
-    <section class="card"><h2>Documents</h2><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Type</th><th>Date</th><th>Client</th><th>Devise</th><th class="num">Total TTC</th><th>État</th><th>Actions</th></tr></thead><tbody>${docs.length ? docs.map(row).join("") : '<tr><td colspan="8" class="muted">Aucun devis ou facture pour le moment.</td></tr>'}</tbody></table></div></section>
+    <section class="card"><h2>Documents</h2><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Type</th><th>Date</th><th>Enregistrée le</th><th>Client</th><th>Devise</th><th class="num">Total TTC</th><th>État</th><th>Actions</th></tr></thead><tbody>${docs.length ? docs.map(row).join("") : '<tr><td colspan="9" class="muted">Aucun devis ou facture pour le moment.</td></tr>'}</tbody></table></div></section>
     <p class="muted">Les devis et factures sont enregistrés localement. Les écritures comptables générées sont ajoutées au journal et suivent la synchronisation comptable existante.</p>`;
   document.getElementById("bill-new-quote").addEventListener("click", () => openEditor("quote"));
   document.getElementById("bill-new-invoice").addEventListener("click", () => openEditor("invoice"));
@@ -150,6 +418,9 @@ function renderList() {
   }));
   $app.querySelectorAll("[data-bill-convert]").forEach((button) => button.addEventListener("click", () => convertQuote(Number(button.dataset.billConvert))));
   $app.querySelectorAll("[data-bill-payments]").forEach((button) => button.addEventListener("click", () => openPaymentManager(Number(button.dataset.billPayments))));
+  $app.querySelectorAll("[data-bill-credit-note]").forEach(button => button.addEventListener("click", () => issueFullCreditNote(Number(button.dataset.billCreditNote))));
+  $app.querySelectorAll("[data-bill-partial-credit]").forEach(button => button.addEventListener("click", () => openPartialCreditNote(Number(button.dataset.billPartialCredit))));
+  $app.querySelectorAll("[data-bill-refund-credit]").forEach(button => button.addEventListener("click", () => openCreditNoteRefund(Number(button.dataset.billRefundCredit))));
   $app.querySelectorAll("[data-bill-post]").forEach((button) => button.addEventListener("click", () => {
     const invoice = billing.documents.find(item => item.id === Number(button.dataset.billPost) && item.type === "invoice");
     if (!invoice) return;
@@ -158,10 +429,153 @@ function renderList() {
     saveBilling();
     toast(result.created ? result.created + " écriture(s) comptable(s) générée(s)." : "Toutes les écritures de cette facture existent déjà.");
   }));
+
+  $app.querySelectorAll("[data-bill-stock-retry]").forEach(button => button.addEventListener("click", async () => {
+    const invoice=billing.documents.find(item=>item.id===Number(button.dataset.billStockRetry));
+    if(!invoice) return;
+    button.disabled=true;
+    const result=await retryInvoiceStock(invoice);
+    if(!result.ok) toast("Mouvement de stock toujours en attente : "+(result.error?.message||"erreur inconnue"),6000);
+    else { renderList(); toast("Mouvement de stock confirmé."); }
+    button.disabled=false;
+  }));
+  $app.querySelectorAll("[data-bill-deliver]").forEach(button => button.addEventListener("click", () => openInvoiceDelivery(Number(button.dataset.billDeliver))));
+  $app.querySelectorAll("[data-bill-reserve-stock]").forEach(button => button.addEventListener("click", () => reserveInvoiceStock(Number(button.dataset.billReserveStock))));
 }
 
-function openEditor(type, source = null) {
+
+async function openInvoiceDelivery(invoiceId) {
+  const invoice=getBilling().documents.find(doc=>doc.id===invoiceId && doc.type==="invoice");
+  if(!invoice) return;
+  if(invoice.stockPendingOperation) return toast("Terminez d’abord le mouvement de stock en attente.");
+  let stockState;
+  try { stockState=await readCloudStock(); }
+  catch(error) { return toast("Lecture du stock impossible : "+error.message,6000); }
+  const modal=document.getElementById("modal"),content=document.getElementById("modal-content");
+  const eligible=(invoice.lines||[]).map((line,index)=>({line,index,remaining:Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity))}))
+    .filter(item=>item.line.stockProductId && item.remaining>0.000001);
+  if(!eligible.length) return toast("Aucune quantité liée au stock ne reste à livrer.");
+  const productMap=new Map((stockState.products||[]).map(p=>[p.id,p]));
+  content.innerHTML=`<h2>Livraison — ${esc(invoice.number)}</h2>
+    <p class="muted">Saisissez les quantités livrées. Les quantités restantes seront conservées pour une livraison ultérieure.</p>
+    <div class="table-wrap"><table><thead><tr><th>Article</th><th>Reste</th><th>À livrer</th><th>Lot</th><th>Numéros de série</th></tr></thead><tbody>
+    ${eligible.map(({line,index,remaining})=>{const product=productMap.get(line.stockProductId);return `<tr data-delivery-index="${index}"><td>${esc(product?.name||line.description)}<small class="muted"> — ${esc(line.stockUnit||product?.base_unit||"unité")}</small></td><td>${remaining}</td><td><input data-delivery-quantity type="number" min="0" max="${remaining}" step="0.0001" value="${remaining}"></td><td><input data-delivery-lot value="${esc(line.stockLotCode||"")}" placeholder="Code lot" ${product?.tracking==="lot"?"required":""}></td><td><input data-delivery-serials value="${esc(line.stockSerialNumbers||"")}" placeholder="SN1, SN2…" ${product?.tracking==="serial"?"required":""}></td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div class="actions"><button type="button" id="bill-delivery-submit">Confirmer la livraison</button><button type="button" class="secondary" data-close>Annuler</button></div><div id="bill-delivery-error" class="errors" role="alert"></div>`;
+  bindBillingModalClose(content);
+  content.querySelector("#bill-delivery-submit").addEventListener("click",async()=>{
+    const rows={}; const fulfilled=[];
+    for(const tr of content.querySelectorAll("[data-delivery-index]")){
+      const index=Number(tr.dataset.deliveryIndex),line=invoice.lines[index],quantity=number(tr.querySelector("[data-delivery-quantity]").value);
+      if(quantity<=0) continue;
+      const product=productMap.get(line.stockProductId);
+      if(quantity>Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity))+0.000001){content.querySelector("#bill-delivery-error").textContent="La quantité livrée dépasse le reste à livrer.";return;}
+      const lotCode=tr.querySelector("[data-delivery-lot]").value.trim();
+      const serialNumbers=stockSerials(tr.querySelector("[data-delivery-serials]").value);
+      if(product?.tracking==="lot"&&!lotCode){content.querySelector("#bill-delivery-error").textContent="Le code de lot est obligatoire pour "+product.name+".";return;}
+      if(product?.tracking==="serial"&&(quantity!==Math.trunc(quantity)||serialNumbers.length!==quantity)){content.querySelector("#bill-delivery-error").textContent="Un numéro de série par unité entière est requis pour "+product.name+".";return;}
+      rows[index]={quantity,lotCode,serialNumbers:serialNumbers.join(","),unit:line.stockUnit||product?.base_unit||"unité"};
+      fulfilled.push({lineIndex:index,quantity});
+    }
+    if(!fulfilled.length){content.querySelector("#bill-delivery-error").textContent="Saisissez au moins une quantité à livrer.";return;}
+    try {
+      const built=invoiceStockLines(invoice,stockState,rows);
+      const operation={operationUid:stockOperationUid(),documentDate:today(),note:"Livraison partielle ou totale de la facture "+invoice.number,lines:built.lines,fulfilled,kind:"delivery",sourceType:"sales_delivery",sourceId:String(invoice.id)+":"+((invoice.stockDocuments||[]).length+1)};
+      const button=content.querySelector("#bill-delivery-submit");button.disabled=true;
+      const result=await submitInvoiceStockOperation(invoice,operation);
+      if(!result.ok){content.querySelector("#bill-delivery-error").textContent="Livraison non confirmée : "+(result.error?.message||"erreur inconnue")+". Vous pourrez réessayer sans créer de doublon.";button.disabled=false;return;}
+      modal.close();renderList();toast("Livraison enregistrée dans le stock.");
+    } catch(error) { content.querySelector("#bill-delivery-error").textContent=error.message; }
+  });
+  modal.showModal();
+}
+
+async function reserveInvoiceStock(invoiceId) {
+  const invoice=getBilling().documents.find(doc=>doc.id===invoiceId && doc.type==="invoice");
+  if(!invoice || invoice.status==="cancelled") return;
+  if(invoice.stockPendingOperation) return toast("Terminez d’abord le mouvement de stock en attente.");
+  if(invoice.stockReservationsCreated) return toast("Les quantités de cette facture ont déjà été réservées.");
+  let stockState;
+  try { stockState=await readCloudStock(); }
+  catch(error) { return toast("Lecture du stock impossible : "+error.message,6000); }
+  const products=new Map((stockState.products||[]).map(product=>[product.id,product]));
+  const eligible=(invoice.lines||[]).map((line,index)=>{
+    const product=products.get(line.stockProductId);
+    const remaining=Math.max(0,number(line.quantity)-number(line.stockFulfilledQuantity));
+    const unit=String(line.stockUnit||product?.base_unit||"unité");
+    const conversion=(stockState.unit_conversions||[]).find(item=>item.product_id===line.stockProductId && item.unit_code===unit);
+    const factor=conversion ? number(conversion.factor_to_base) : 1;
+    return {line,index,product,remaining,unit,factor};
+  }).filter(item=>item.line.stockProductId && item.remaining>0.000001);
+  if(!eligible.length) return toast("Aucune quantité physique non livrée ne peut être réservée.");
+  for(const item of eligible){
+    if(!item.product || item.product.product_type==="service" || !item.line.stockWarehouseId) return toast("Une ligne de facture ne possède pas d’article physique ou d’entrepôt valide.");
+    if(!(item.factor>0)) return toast("Conversion d’unité invalide pour "+item.product.name+".");
+    if(item.product.tracking==="serial" && (item.remaining!==Math.trunc(item.remaining) || item.factor!==1)) return toast("Les articles sérialisés doivent être réservés en unités entières de base.");
+  }
+  const modal=document.getElementById("modal"),content=document.getElementById("modal-content");
+  content.innerHTML=`<h2>Réserver le stock — ${esc(invoice.number)}</h2>
+    <p class="muted">Cette action protège les quantités restantes de la facture dans les entrepôts indiqués. Les réservations seront automatiquement consommées lors des sorties liées à cette facture et de ses livraisons partielles.</p>
+    <div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité à réserver</th><th>Unité de base</th></tr></thead><tbody>
+    ${eligible.map(item=>{const warehouse=(stockState.warehouses||[]).find(w=>w.id===item.line.stockWarehouseId);return `<tr><td>${esc(item.product.name)}</td><td>${esc(warehouse?.name||"Entrepôt")}</td><td class="num">${(number(item.remaining)*item.factor).toLocaleString("fr-FR",{maximumFractionDigits:4})}</td><td>${esc(item.product.base_unit||"unité")}</td></tr>`;}).join("")}
+    </tbody></table></div>
+    <div id="bill-reservation-error" class="errors" role="alert"></div>
+    <div class="actions"><button type="button" id="bill-reservation-submit">Confirmer les réservations</button><button type="button" class="secondary" data-close>Annuler</button></div>`;
+  bindBillingModalClose(content);
+  content.querySelector("#bill-reservation-submit").addEventListener("click",async()=>{
+    const button=content.querySelector("#bill-reservation-submit");
+    button.disabled=true;
+    try{
+      invoice.stockReservationOperations ||= [];
+      for(const item of eligible){
+        const quantity=Math.round((item.remaining*item.factor+Number.EPSILON)*10000)/10000;
+        let operation=invoice.stockReservationOperations.find(entry=>entry.lineIndex===item.index);
+        if(operation && (operation.quantity!==quantity || operation.productId!==item.line.stockProductId || operation.warehouseId!==item.line.stockWarehouseId)){
+          throw new Error("La facture a changé depuis la préparation de la réservation. Actualisez-la avant de continuer.");
+        }
+        if(operation?.status==="done") continue;
+        if(!operation){
+          operation={lineIndex:item.index,operationUid:await invoiceReservationOperationUid(invoice,item.index,item.line.stockProductId,item.line.stockWarehouseId,quantity),productId:item.line.stockProductId,warehouseId:item.line.stockWarehouseId,quantity,status:"pending"};
+          invoice.stockReservationOperations.push(operation);
+        }
+        saveBilling();
+        await reserveCloudStock({
+          operationUid:operation.operationUid,productId:operation.productId,warehouseId:operation.warehouseId,
+          quantity:operation.quantity,reference:"Facture "+invoice.number,sourceType:"sales_invoice",sourceId:String(invoice.id),
+        });
+        operation.status="done";
+        saveBilling();
+      }
+      invoice.stockReservationsCreated=true;
+      delete invoice.stockReservationPending;
+      saveBilling();
+      modal.close();
+      renderList();
+      toast("Réservations liées à la facture enregistrées.");
+    }catch(error){
+      invoice.stockReservationPending=true;
+      saveBilling();
+      content.querySelector("#bill-reservation-error").textContent=(error?.message||"Réservation impossible.")+" Vous pouvez reprendre l’opération sans créer de doublon.";
+      button.disabled=false;
+    }
+  });
+  modal.showModal();
+}
+
+
+async function openEditor(type, source = null) {
   const billing = getBilling();
+  let stockState = null;
+  const stockEnabled = type === "invoice" && hasActiveStockCompany();
+  if (stockEnabled) {
+    try { stockState = await readCloudStock(); }
+    catch (error) { toast("Impossible de charger les articles du stock : " + error.message, 6000); return; }
+  }
+  if (source && type === "invoice" && billing.documents.some(doc => doc.type === "credit_note" && Number(doc.sourceInvoiceId) === Number(source.id))) { toast("Cette facture possède déjà un avoir. Sa modification est bloquée pour préserver les écritures et les reliquats crédités."); return; }
+  if (source?.stockPendingOperation || source?.stockReservationsCreated || source?.stockReservationPending || (source?.stockReservationOperations || []).some(operation => ["pending","done"].includes(operation.status)) || (source?.lines || []).some(line => number(line.stockFulfilledQuantity)>0)) {
+    toast("Cette facture possède déjà des mouvements de stock. Sa modification est bloquée pour préserver l’historique.");
+    return;
+  }
   const settings = billing.settings;
   const customers = (store.thirds || []).filter((third) => ["client","customer","client/fournisseur"].includes(String(third.type || "").toLowerCase()));
   const defaultCountry = COUNTRIES.find((country) => country.code === store.settings.country);
@@ -169,13 +583,16 @@ function openEditor(type, source = null) {
   const doc = source || { date: today(), dueDate: "", customerName: "", customerAddress: "", customerCountry: store.settings.country || "OTHER", currency: settings.currency || store.settings.currency, baseCurrency: store.settings.currency, exchangeRate: (settings.currency || store.settings.currency) === store.settings.currency ? 1 : "", taxLabel: settings.taxLabel, paymentTerms: settings.paymentTerms || "", notes: "", advanceRequested: 0, lines: [{ description: "", quantity: 1, unitPrice: 0, taxRate: defaultTax }] };
   const initialCustomerCountry = doc.customerCountry || store.settings.country || "OTHER";
   const title = source ? (type === "quote" ? "Modifier le devis" : "Modifier la facture") : (type === "quote" ? "Créer un devis" : "Créer une facture");
-  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td><td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
+  const stockProducts = (stockState?.products || []).filter(product => product.active !== false && product.product_type !== "service");
+  const stockWarehouses = (stockState?.warehouses || []).filter(warehouse => warehouse.active !== false);
+  const stockOptions = (selected, items, label) => `<option value="">— ${label} —</option>` + items.map(item => `<option value="${esc(item.id)}" ${String(selected||"")===String(item.id)?"selected":""}>${esc(item.sku ? item.sku+" — "+item.name : item.name)}</option>`).join("");
+  const lineMarkup = (line, index) => `<tr data-bill-line="${index}"><td><input data-line-field="description" value="${esc(line.description)}" placeholder="Produit ou prestation"></td><td><input data-line-field="quantity" type="number" min="0.0001" step="0.01" value="${number(line.quantity)}"></td><td><input data-line-field="unitPrice" type="number" min="0" step="0.01" value="${number(line.unitPrice)}"></td><td><input data-line-field="taxRate" type="number" min="0" step="0.01" value="${number(line.taxRate)}"></td><td class="num" data-line-total>—</td>${stockEnabled ? `<td><select data-line-field="stockProductId">${stockOptions(line.stockProductId,stockProducts,"Sans stock")}</select><select data-line-field="stockWarehouseId">${stockOptions(line.stockWarehouseId,stockWarehouses,"Entrepôt")}</select><select data-line-field="stockUnit"><option value="">Unité</option></select><input data-line-field="stockLotCode" value="${esc(line.stockLotCode||"")}" placeholder="Lot (si suivi)"><input data-line-field="stockSerialNumbers" value="${esc(line.stockSerialNumbers||"")}" placeholder="Séries : SN1, SN2"></td>` : ""}<td><button type="button" class="danger small" data-line-remove="${index}">×</button></td></tr>`;
   const modal = document.getElementById("modal");
   const content = document.getElementById("modal-content");
   content.innerHTML = `<h2>${title}</h2>
     <div class="grid cols-2"><div><label>Client</label><input id="bill-customer" list="bill-customer-list" value="${esc(doc.customerName)}" placeholder="Nom du client"><datalist id="bill-customer-list">${customers.map((customer) => `<option value="${esc(customer.name)}">`).join("")}</datalist></div><div><label>Date</label><input id="bill-date" type="date" value="${esc(doc.date)}"></div><div><label>Adresse du client</label><input id="bill-customer-address" value="${esc(doc.customerAddress)}"></div><div><label>Pays du client (propose sa devise)</label><input id="bill-country-search" type="search" placeholder="Rechercher un pays ou une devise"><select id="bill-customer-country">${COUNTRIES.map((country) => `<option value="${country.code}" ${country.code === initialCustomerCountry ? "selected" : ""}>${esc(country.name)} — ${esc(currencyOptionLabel(country.currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Date d'échéance</label><input id="bill-due-date" type="date" value="${esc(doc.dueDate)}"></div>
     <div><label>Devise de facturation</label><select id="bill-currency">${[...new Set([...CURRENCIES, settings.currency, store.settings.currency])].sort().map((currency) => `<option value="${currency}" ${currency === doc.currency ? "selected" : ""}>${esc(currencyOptionLabel(currency, store.settings.locale || "fr"))}</option>`).join("")}</select></div><div><label>Devise comptable de l'entreprise</label><input value="${esc(store.settings.currency)}" readonly></div><div><label>Taux vers devise comptable (1 ${esc(doc.currency)} = ? ${esc(store.settings.currency)})</label><input id="bill-rate" type="number" min="0.00000001" step="0.00000001" value="${doc.exchangeRate == null || doc.exchangeRate === "" ? "" : number(doc.exchangeRate)}"></div><div><label>Libellé de taxe</label><input id="bill-tax-label" value="${esc(doc.taxLabel || settings.taxLabel)}"></div></div>
-    <h3>Articles et prestations</h3><div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th><th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
+    <h3>Articles et prestations</h3>${stockEnabled ? '<p class="muted">Liez chaque ligne physique à un article et à un entrepôt. Les lignes non liées restent des prestations ou des lignes sans mouvement de stock.</p>' : ""}<div class="table-wrap"><table><thead><tr><th>Description</th><th>Quantité</th><th>Prix unitaire</th><th>Taxe %</th><th>Total</th>${stockEnabled ? "<th>Liaison stock / traçabilité</th>" : ""}<th></th></tr></thead><tbody id="bill-lines">${doc.lines.map(lineMarkup).join("")}</tbody></table></div><button type="button" class="secondary small" id="bill-add-line">Ajouter une ligne</button>
     <div id="bill-totals" class="calculator-result"></div>
     <div><label>${type === "quote" ? "Avance demandée" : source ? "Avance déjà encaissée" : "Avance reçue à la création"} (${esc(doc.currency)})</label><input id="bill-advance" type="number" min="0" step="0.01" value="${type === "quote" ? number(doc.advanceRequested) : source ? number(doc.paidAmount) : 0}" ${source && type === "invoice" ? "readonly" : ""}><small class="muted">${type === "quote" ? "Montant d'avance à demander au client ; ce n'est pas un paiement encaissé." : source ? "Les paiements déjà enregistrés sont conservés dans leur historique." : "Cette avance sera enregistrée comme un premier paiement de la facture."}</small></div>
     ${type === "invoice" && !source ? '<div><label>Mode d’encaissement de l’avance</label><select id="bill-advance-method"><option value="bank">Virement bancaire</option><option value="cash">Espèces</option><option value="mobile">Paiement mobile</option><option value="cheque">Chèque</option><option value="card">Carte bancaire</option><option value="other">Autre</option></select></div>' : ""}
@@ -193,6 +610,14 @@ function openEditor(type, source = null) {
     quantity: number(tr.querySelector('[data-line-field="quantity"]').value),
     unitPrice: number(tr.querySelector('[data-line-field="unitPrice"]').value),
     taxRate: number(tr.querySelector('[data-line-field="taxRate"]').value),
+    ...(stockEnabled ? {
+      stockProductId:tr.querySelector('[data-line-field="stockProductId"]').value || null,
+      stockWarehouseId:tr.querySelector('[data-line-field="stockWarehouseId"]').value || null,
+      stockUnit:tr.querySelector('[data-line-field="stockUnit"]').value || "",
+      stockLotCode:tr.querySelector('[data-line-field="stockLotCode"]').value.trim(),
+      stockSerialNumbers:tr.querySelector('[data-line-field="stockSerialNumbers"]').value.trim(),
+      stockFulfilledQuantity:number(doc.lines[Number(tr.dataset.billLine)]?.stockFulfilledQuantity),
+    } : {}),
   }));
   const refreshTotals = () => {
     const lines = readLines();
@@ -207,8 +632,29 @@ function openEditor(type, source = null) {
     const remaining = Math.max(0, round(result.ttc - advance));
     content.querySelector("#bill-totals").innerHTML = `HT : <strong>${fmt(result.ht,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · Taxes : <strong>${fmt(result.tax,content.querySelector("#bill-currency").value,store.settings.locale)}</strong> · TTC : <strong>${fmt(result.ttc,content.querySelector("#bill-currency").value,store.settings.locale)}</strong><br>${advance > 0 ? `<small>${advanceLabel} : ${fmt(advance,content.querySelector("#bill-currency").value,store.settings.locale)} · Solde : ${fmt(remaining,content.querySelector("#bill-currency").value,store.settings.locale)}</small><br>` : ""}<small>Contre-valeur comptable : ${fmt(number(content.querySelector("#bill-rate").value) > 0 ? convertBillingAmount(result.ttc, number(content.querySelector("#bill-rate").value)) : 0,store.settings.currency,store.settings.locale)}</small>`;
   };
+  const configureStockUnit = (tr, preferred = "") => {
+    if (!stockEnabled) return;
+    const productId=tr.querySelector('[data-line-field="stockProductId"]').value;
+    const product=stockProducts.find(item=>item.id===productId);
+    const select=tr.querySelector('[data-line-field="stockUnit"]');
+    if(!select) return;
+    const units=product ? [product.base_unit || "unité",...(product.tracking==="serial"?[]:(stockState.unit_conversions||[]).filter(item=>item.product_id===product.id).map(item=>item.unit_code))] : [];
+    select.innerHTML=units.map(unit=>`<option value="${esc(unit)}">${esc(unit)}</option>`).join("");
+    select.disabled=!product;
+    if(units.includes(preferred)) select.value=preferred;
+    const lotInput=tr.querySelector('[data-line-field="stockLotCode"]');
+    const serialInput=tr.querySelector('[data-line-field="stockSerialNumbers"]');
+    lotInput.hidden=product?.tracking!=="lot";
+    serialInput.hidden=product?.tracking!=="serial";
+    lotInput.placeholder="Lot obligatoire";
+    serialInput.placeholder="Un numéro par unité";
+  };
   const bindRows = () => {
     content.querySelectorAll("#bill-lines input").forEach((input) => input.addEventListener("input", refreshTotals));
+    if(stockEnabled) content.querySelectorAll('[data-line-field="stockProductId"]').forEach(select=>{
+      configureStockUnit(select.closest("tr"),doc.lines[Number(select.closest("tr").dataset.billLine)]?.stockUnit || "");
+      select.addEventListener("change",()=>configureStockUnit(select.closest("tr")));
+    });
     content.querySelectorAll("[data-line-remove]").forEach((button) => button.addEventListener("click", () => {
       if (content.querySelectorAll("#bill-lines tr").length <= 1) return;
       button.closest("tr").remove();
@@ -243,11 +689,11 @@ function openEditor(type, source = null) {
   });
   content.querySelector("#bill-rate").addEventListener("input", refreshTotals);
   content.querySelector("#bill-advance").addEventListener("input", refreshTotals);
-  content.querySelector("#bill-save").addEventListener("click", () => {
+  content.querySelector("#bill-save").addEventListener("click", async () => {
     const lines = readLines();
     const errors = [];
-    if (source && type === "invoice" && store.entries.some(entry => entry.reference === "FACTURE " + String(source.number || source.id))) {
-      content.querySelector("#bill-error").textContent = "Cette facture est déjà comptabilisée. Sa modification est bloquée pour préserver la cohérence entre le document et les journaux. Une procédure de rectification ou d'avoir sera nécessaire.";
+    if (source && type === "invoice" && invoiceHasAccountingEntries(source)) {
+      content.querySelector("#bill-error").textContent = "Cette facture possède déjà au moins une écriture comptable (vente ou règlement). Sa modification est bloquée pour préserver la cohérence des journaux. Utilisez une procédure de rectification ou un avoir.";
       return;
     }
     if (!content.querySelector("#bill-customer").value.trim()) errors.push("Le nom du client est obligatoire.");
@@ -255,6 +701,10 @@ function openEditor(type, source = null) {
     if (!lines.length || lines.some((line) => !line.description || line.quantity <= 0 || line.unitPrice < 0 || line.taxRate < 0)) errors.push("Chaque ligne doit avoir une description, une quantité positive, un prix et un taux valides.");
     const rate = number(content.querySelector("#bill-rate").value);
     if (!(rate > 0)) errors.push("Le taux de conversion doit être supérieur à zéro.");
+    if (stockEnabled) for (const line of lines) {
+      if (line.stockProductId && !line.stockWarehouseId) errors.push("Choisissez un entrepôt pour chaque ligne liée au stock.");
+      if (!line.stockProductId && line.stockWarehouseId) errors.push("Choisissez un article ou retirez l’entrepôt de la ligne.");
+    }
     const draftForValidation = { type, date: content.querySelector("#bill-date").value, customerName: content.querySelector("#bill-customer").value, currency: content.querySelector("#bill-currency").value, exchangeRate: rate, lines };
     errors.push(...validateBillingDocument(draftForValidation).errors);
     if (errors.length) { content.querySelector("#bill-error").textContent = [...new Set(errors)].join(" "); return; }
@@ -290,6 +740,7 @@ function openEditor(type, source = null) {
       paidAmount: source ? number(source.paidAmount) : 0,
       payments: source && Array.isArray(source.payments) ? source.payments : [],
       status: source ? source.status : "issued",
+      ...(stockEnabled ? {stockTrigger:stockState?.settings?.sales_trigger || "delivery"} : {}),
       createdAt: source ? source.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -312,6 +763,16 @@ function openEditor(type, source = null) {
       content.querySelector("#bill-error").textContent = "Le total de la facture ne peut pas être inférieur aux paiements déjà enregistrés.";
       return;
     }
+    let invoiceStockOperation = null;
+    if (type === "invoice" && stockEnabled && saved.stockTrigger === "invoice_validation" && invoiceHasStockLines(saved)) {
+      try {
+        const built=invoiceStockLines(saved,stockState);
+        invoiceStockOperation={operationUid:stockOperationUid(),documentDate:saved.date,note:"Sortie automatique à la validation de la facture "+saved.number,lines:built.lines,fulfilled:built.fulfilled,kind:"invoice_validation",sourceType:"sales_invoice",sourceId:String(saved.id)};
+      } catch(error) {
+        content.querySelector("#bill-error").textContent=error.message;
+        return;
+      }
+    }
     if (source) {
       const index = billing.documents.findIndex((item) => item.id === source.id);
       if (index < 0) {
@@ -325,14 +786,23 @@ function openEditor(type, source = null) {
     const accountingResult = type === "invoice" ? postInvoiceAccounting(saved) : null;
     saveBilling();
     modal.close();
-    renderList();
-    if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
+    if (invoiceStockOperation) {
+      const result=await submitInvoiceStockOperation(saved,invoiceStockOperation);
+      if(!result.ok) toast("Facture enregistrée ; sortie de stock en attente : "+(result.error?.message||"erreur inconnue")+". Utilisez « Réessayer le stock » après correction.",7000);
+      else toast("Facture enregistrée et sortie de stock confirmée.");
+    } else if (accountingResult && !accountingResult.ok) toast("Document enregistré, mais comptabilisation à configurer : " + accountingResult.errors[0], 5500);
     else toast(source ? (type === "quote" ? "Devis modifié." : "Facture modifiée et comptabilisée.") : (type === "quote" ? "Devis enregistré." : "Facture enregistrée et comptabilisée."));
+    renderList();
   });
   refreshTotals();
   modal.showModal();
 }
 
+
+function netInvoiceReceivable(invoice) {
+  const credits=getBilling().documents.filter(doc=>doc.type==="credit_note" && Number(doc.sourceInvoiceId)===Number(invoice?.id)).reduce((sum,note)=>sum+number(note.totals?.ttc || totals(note.lines||[]).ttc),0);
+  return Math.max(0,round(number(invoice?.totals?.ttc)-credits));
+}
 
 function openPaymentManager(invoiceId) {
   const billing = getBilling();
@@ -343,7 +813,8 @@ function openPaymentManager(invoiceId) {
   const modal = document.getElementById("modal");
   const total = number(invoice.totals?.ttc);
   const paid = round(invoice.payments.reduce((sum, payment) => sum + number(payment.amount), 0));
-  const balance = calculatePaymentBalance(total, invoice.payments);
+  const netTotal = netInvoiceReceivable(invoice);
+  const balance = calculatePaymentBalance(netTotal, invoice.payments);
   const methods = [["bank", "Virement bancaire"], ["cash", "Espèces"], ["mobile", "Paiement mobile"], ["cheque", "Chèque"], ["card", "Carte bancaire"], ["other", "Autre"]];
   const methodLabel = (value) => methods.find(([key]) => key === value)?.[1] || (value === "legacy" ? "Ancien règlement" : value || "—");
   const paymentRows = invoice.payments.map((payment) => "<tr><td>" + esc(payment.date || "—") + "</td><td>" + esc(methodLabel(payment.method)) + "</td><td>" + esc(payment.reference || "—") + "</td><td class=\"num\">" + fmt(payment.amount, invoice.currency, store.settings.locale) + "</td><td>" + esc(payment.notes || "") + "</td><td><button type=\"button\" class=\"secondary small\" data-bill-payment-edit=\"" + Number(payment.id) + "\">Modifier</button> <button type=\"button\" class=\"danger small\" data-bill-payment-cancel=\"" + Number(payment.id) + "\">Annuler le règlement</button></td></tr>").join("");
@@ -387,7 +858,7 @@ function openPaymentManager(invoiceId) {
         currency: invoice.currency,
       };
       const otherPayments = invoice.payments.filter((item) => Number(item.id) !== paymentId);
-      const validation = validateBillingPayment(updated, invoice, otherPayments);
+      const validation = validateBillingPayment(updated, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, otherPayments);
       if (!(updated.exchangeRate > 0) || !Number.isFinite(updated.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
       if (!validation.ok) { content.querySelector("#bill-edit-payment-error").textContent = [...new Set(validation.errors)].join(" "); return; }
 
@@ -415,8 +886,22 @@ function openPaymentManager(invoiceId) {
       }
       const accountingResult = postInvoiceAccounting(invoice);
       if (!accountingResult.ok) {
-        invoice.payments[index] = original;
-        content.querySelector("#bill-edit-payment-error").textContent = "L'écriture corrigée n'a pas pu être générée : " + accountingResult.errors[0] + ". L'ancienne écriture a été contrepassée ; demandez une vérification comptable avant toute nouvelle correction.";
+        // L'ancienne écriture est déjà contrepassée : conserver le règlement corrigé
+        // dans le document afin que le bouton « Comptabiliser » puisse reprendre la génération.
+        invoice.paymentHistory ||= [];
+        invoice.paymentHistory.push({
+          eventId: globalThis.crypto?.randomUUID?.() || ("payment-event-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
+          action: "modification",
+          date: today(),
+          paymentId,
+          previous: { ...original },
+          updated: { ...replacement },
+          note: "Ancienne écriture contrepassée ; nouvelle écriture en attente de comptabilisation.",
+          createdAt: new Date().toISOString(),
+        });
+        invoice.paidAmount = round(invoice.payments.reduce((sum, item) => sum + number(item.amount), 0));
+        invoice.status = calculatePaymentBalance(netTotal, invoice.payments) <= 0 ? "paid" : invoice.paidAmount > 0 ? "partially_paid" : "issued";
+        content.querySelector("#bill-edit-payment-error").textContent = "Le règlement corrigé est conservé, mais sa nouvelle écriture reste à générer : " + accountingResult.errors[0] + ". Fermez cette fenêtre puis utilisez « Comptabiliser » sur la facture après correction du problème.";
         saveBilling();
         return;
       }
@@ -478,7 +963,7 @@ function openPaymentManager(invoiceId) {
       currency: invoice.currency,
       exchangeRate: number(content.querySelector("#bill-payment-rate").value),
     };
-    const validation = validateBillingPayment(payment, invoice, invoice.payments);
+    const validation = validateBillingPayment(payment, {...invoice,totals:{...invoice.totals,ttc:netTotal}}, invoice.payments);
     if (!(payment.exchangeRate > 0) || !Number.isFinite(payment.exchangeRate)) validation.errors.push("Le taux de change du règlement doit être supérieur à zéro.");
     if (!validation.ok) { content.querySelector("#bill-payment-error").textContent = validation.errors.join(" "); return; }
     invoice.payments.push({ id: billing.nextPaymentId++, ...payment, createdAt: new Date().toISOString() });
@@ -541,7 +1026,8 @@ function openSettings() {
   const billingAccounts = [...new Map([...planAccounts, ...(companySettings.customAccounts || [])].map(account => [String(account.code), account])).values()];
   const accountSelect = (key, type, label) => {
     const selected = settings.accountingAccounts?.[key] || "";
-    const options = billingAccounts.filter(account => account.type === type)
+    const acceptedTypes = Array.isArray(type) ? type : [type];
+    const options = billingAccounts.filter(account => acceptedTypes.includes(account.type))
       .sort((a, b) => String(a.code).localeCompare(String(b.code), "fr", { numeric: true }))
       .map(account => `<option value="${esc(account.code)}" ${String(account.code) === String(selected) ? "selected" : ""}>${esc(account.code)} — ${esc(account.label)}</option>`).join("");
     return `<div><label for="bill-account-${key}">${label}</label><select id="bill-account-${key}"><option value="">— Choisir un compte —</option>${options}</select></div>`;
@@ -561,7 +1047,7 @@ function openSettings() {
     <div class="grid cols-2"><div><label>Préfixe des devis</label><input id="bill-prefix-quote" value="${esc(settings.prefixQuote)}"></div><div><label>Préfixe des factures</label><input id="bill-prefix-invoice" value="${esc(settings.prefixInvoice)}"></div></div>
     <label>Conditions de paiement par défaut</label><input id="bill-payment-terms" value="${esc(settings.paymentTerms || "")}">
     <h3>Comptabilisation automatique</h3>
-    <p class="muted">Choisissez les comptes de votre plan comptable. Une facture génère une écriture de vente ; chaque règlement génère une écriture de trésorerie. Le compte de taxe n'est exigé que si la facture comporte une taxe.</p>
+    <p class="muted">Choisissez les comptes de votre plan comptable. Les ventes et règlements sont comptabilisés automatiquement. En inventaire permanent, les sorties commerciales et les opérations manuelles admissibles sont comptabilisées à leur valeur réelle ; les écarts d’inventaire sont ventilés entre gains et pertes. En inventaire intermittent, les écritures par mouvement ne sont pas générées.</p>
     <div class="grid cols-2">
       ${accountSelect("customer", "asset", "Compte client (créance)")}
       ${accountSelect("revenue", "income", "Compte de ventes / produits")}
@@ -570,6 +1056,13 @@ function openSettings() {
       ${accountSelect("cash", "asset", "Compte de caisse")}
       ${accountSelect("fxGain", "income", "Compte de gains de change")}
       ${accountSelect("fxLoss", "expense", "Compte de pertes de change")}
+      ${accountSelect("inventory", "asset", "Compte de stock (actif — inventaire permanent et intermittent)")}
+      ${accountSelect("stockVariation", ["expense","income"], "Compte de variation des stocks (suggéré selon le plan comptable)") }
+      ${accountSelect("cogs", "expense", "Compte de coût des ventes / marchandises sorties (charge)") }
+      ${accountSelect("stockConsumption", "expense", "Compte de consommation interne du stock (charge)")}
+      ${accountSelect("stockLoss", "expense", "Compte de pertes, casse et vols de stock (charge)")}
+      ${accountSelect("stockAdjustmentGain", "income", "Compte de gains d’inventaire (produit)")}
+      ${accountSelect("stockAdjustmentLoss", "expense", "Compte de pertes d’inventaire (charge)") }
     </div>
     <p class="muted">Les comptes proposés par défaut sont des suggestions à vérifier selon le plan comptable, l'activité et les règles fiscales de votre entreprise. Les comptes de gains et pertes de change ne sont nécessaires que si le taux du règlement diffère de celui de la facture ; si aucun compte adapté n'est proposé par votre plan, créez ou sélectionnez un compte conforme à votre référentiel avant de saisir un taux différent.</p>
     <p class="muted">Les taux proposés sont des valeurs indicatives du profil pays. Vérifiez les règles fiscales applicables avant émission. Les paramètres n'attestent pas à eux seuls d'une conformité légale nationale.</p>
@@ -619,13 +1112,15 @@ function openSettings() {
     settings.prefixQuote = content.querySelector("#bill-prefix-quote").value.trim() || "DEV";
     settings.prefixInvoice = content.querySelector("#bill-prefix-invoice").value.trim() || "FAC";
     settings.paymentTerms = content.querySelector("#bill-payment-terms").value.trim();
-    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss"].map(key => [
+    settings.accountingAccounts = Object.fromEntries(["customer", "revenue", "tax", "bank", "cash", "fxGain", "fxLoss", "inventory", "cogs", "stockConsumption", "stockLoss", "stockAdjustmentGain", "stockAdjustmentLoss", "stockVariation"].map(key => [
       key, content.querySelector("#bill-account-" + key).value,
     ]));
     saveBilling();
     document.getElementById("modal").close();
     renderList();
     toast("Paramètres de facturation enregistrés.");
+    void retryPendingInvoiceStockOperations();
+    void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
   });
   document.getElementById("modal").showModal();
 }
@@ -633,4 +1128,6 @@ function openSettings() {
 export function viewBilling() {
   getBilling();
   renderList();
+  void retryPendingInvoiceStockOperations();
+  void retryPendingStockAccountingOperations(store,{readStock:readCloudStock,getRole:getCurrentCompanyRole,save:saveBilling,notify:toast});
 }

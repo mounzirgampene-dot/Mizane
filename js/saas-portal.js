@@ -1,10 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./supabase-config.js";
 import { syncAccounting, restoreAccountingFromCloud } from "./accounting-sync.js";
+import { bindCompanyStorage, getCompanyStorageStatus, getCompanySessionLock, lockCompanyStorage, unlockCompanyStorage } from "./company-storage.js";
 
 const root = document.querySelector("#portal");
 const toastNode = document.querySelector("#portal-toast");
 const ACTIVE_COMPANY_KEY = "mizane_active_company_v1";
+const ACTIVE_USER_KEY = "mizane_active_user_v1";
 let supabase;
 let session = null;
 let memberships = [];
@@ -52,7 +54,7 @@ function dashboardView(){
  ${!accountingCloudReady && ["admin","accountant"].includes(active.role) ? `<div class="actions"><button data-action="import-accounting">Préparer l'import initial de cette comptabilité</button></div>` : ""}
  ${!accountingCloudReady && active.role==="reader" ? `<p class="muted">Un administrateur ou un comptable doit effectuer le premier import.</p>` : ""}
  </section>
- ${active.role==="admin" ? `<div class="danger-zone"><h3>Zone de danger</h3><p class="muted">Supprimer cette entreprise effacera définitivement ses écritures, tiers, immobilisations, paramètres, invitations et accès des collaborateurs. Les autres entreprises et les comptes utilisateurs ne seront pas supprimés.</p><button class="danger" data-action="delete-company">Supprimer cette entreprise</button></div>` : ""}</section>`: ""}
+ ${active.role==="admin" ? `<div class="danger-zone"><h3>Zone de danger</h3><p class="muted">Supprimer cette entreprise effacera définitivement ses écritures, tiers, immobilisations, paramètres, invitations, justificatifs fiscaux et accès des collaborateurs. Les autres entreprises et les comptes utilisateurs ne seront pas supprimés.</p><button class="danger" data-action="delete-company">Supprimer cette entreprise</button></div>` : ""}</section>`: ""}
  <section class="panel"><h2>Accepter une invitation</h2><form id="accept-form"><div class="field"><label for="invite-token">Jeton d'invitation</label><input id="invite-token" autocomplete="off" minlength="64" maxlength="64" required placeholder="Coller le jeton reçu de l'administrateur"></div><button type="submit">Accepter l'invitation</button><p class="muted">Vous devez être connecté avec l'adresse e-mail à laquelle l'invitation a été envoyée.</p></form></section>
  <section id="create-panel" class="panel hidden"><h2>Créer une entreprise</h2><form id="create-form" class="form-grid">
  <div class="field full"><label for="legal-name">Raison sociale</label><input id="legal-name" required minlength="2" maxlength="180"></div>
@@ -124,7 +126,11 @@ async function importAccountingSnapshot(button){
   }
   if(data?.imported!==true)throw new Error("Le serveur n'a pas confirmé l'import comptable.");
   await refresh();
-  toast("Import initial terminé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+  // La première lecture cloud vérifie l'import et établit le shadow local.
+  const initialSync = await syncAccounting(supabase, activeCompanyId, active.role);
+  bindCompanyStorage(activeCompanyId, session.user.id);
+  toast("Import initial terminé et espace local associé : "+data.entries+" écriture(s), "+data.lines+" ligne(s), "+data.thirds+" tiers et "+data.assets+" immobilisation(s).");
+  return initialSync;
  }finally{busy(button,false)}
 }
 async function restoreCloudToThisDevice(button){
@@ -154,7 +160,11 @@ async function restoreCloudToThisDevice(button){
  busy(button,true);
  try{
   const result=await restoreAccountingFromCloud(supabase,activeCompanyId);
+  // L'appareil ne devient associé à l'entreprise qu'après une restauration cloud complète.
+  bindCompanyStorage(activeCompanyId,session.user.id);
   toast("Récupération terminée : "+result.entries+" écriture(s), "+result.thirds+" tiers, "+result.assets+" immobilisation(s) et "+result.customAccounts+" compte(s) personnalisé(s).");
+  // Revenir à l'application comptable après avoir établi l'association vérifiée.
+  window.location.assign("/index.html");
  }finally{busy(button,false)}
 }
 async function refresh(){
@@ -165,7 +175,28 @@ async function refresh(){
  if(ids.length){const result=await supabase.from("companies").select("id,legal_name,country_code,base_currency,accounting_standard,timezone").in("id",ids);if(result.error)throw result.error;companies=result.data||[]}
  const byId=new Map(companies.map(c=>[c.id,c]));
  memberships=(rows||[]).filter(m=>byId.has(m.company_id)).map(m=>({company:byId.get(m.company_id),role:m.role,status:m.status}));
- if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
+ const sessionLock=getCompanySessionLock();
+ if(sessionLock){
+  const lockedMembership=memberships.find(m=>m.company.id===sessionLock.companyId&&m.status==="active");
+  const canUnlock=!!lockedMembership&&["admin","accountant"].includes(lockedMembership.role);
+  // L'autorisation active sur cette entreprise suffit, même si un autre
+  // administrateur/comptable reprend le compte après la déconnexion.
+  if(!canUnlock||!unlockCompanyStorage(session.user.id,sessionLock.companyId,{authorizedCompanyMember:true})){
+   activeCompanyId="";
+   localStorage.removeItem(ACTIVE_COMPANY_KEY);
+   localStorage.removeItem(ACTIVE_USER_KEY);
+   // Un compte non autorisé ne doit jamais rester connecté sur l'écran verrouillé :
+   // on revient au formulaire de connexion pour permettre l'essai du compte administrateur.
+   await supabase.auth.signOut();
+   session=null;
+   memberships=[];
+   authView("login");
+   toast("Accès comptable verrouillé. Connectez-vous avec le compte administrateur ou comptable autorisé.");
+   return;
+  }
+  activeCompanyId=sessionLock.companyId;
+ }else if(!memberships.some(m=>m.company.id===activeCompanyId))activeCompanyId=memberships[0]?.company.id||"";
+ localStorage.setItem(ACTIVE_USER_KEY,session.user.id);
  if(activeCompanyId)localStorage.setItem(ACTIVE_COMPANY_KEY,activeCompanyId);else localStorage.removeItem(ACTIVE_COMPANY_KEY);
  accountingCloudReady = false;
  if(activeCompanyId){
@@ -271,13 +302,19 @@ root.addEventListener("click",async(e)=>{
   if(action==="show-work"){await loadWorkspace("work");return;}
   if(action==="show-history"){await loadWorkspace("history");return;}
   if(action==="forgot"){const email=root.querySelector("#email")?.value.trim();if(!email)throw new Error("Saisissez d'abord votre adresse e-mail.");const {error}=await supabase.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});if(error)throw error;toast("E-mail de réinitialisation envoyé si le compte existe.");}
-  if(action==="logout"){const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];authView();}
+  if(action==="logout"){lockCompanyStorage(session?.user?.id);const {error}=await supabase.auth.signOut();if(error)throw error;session=null;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView();}
   if(action==="show-create")root.querySelector("#create-panel").classList.remove("hidden");
   if(action==="hide-create")root.querySelector("#create-panel").classList.add("hidden");
   if(action==="show-invite")root.querySelector("#invite-panel").classList.remove("hidden");
-  if(action==="import-accounting"){await importAccountingSnapshot(button);return;}
+  if(action==="import-accounting"){
+   const localStatus=getCompanyStorageStatus();
+   if(localStatus.reason==="mismatch")throw new Error("Les données locales sont déjà associées à une autre entreprise ou à un autre compte. Récupérez d'abord les données cloud de l'entreprise sélectionnée ; l'import croisé est bloqué pour éviter tout mélange.");
+   await importAccountingSnapshot(button);return;
+  }
   if(action==="restore-cloud"){await restoreCloudToThisDevice(button);return;}
   if(action==="sync-accounting"){
+   const localStatus=getCompanyStorageStatus();
+   if(!localStatus.ok||localStatus.companyId!==activeCompanyId||localStatus.userId!==session.user.id)throw new Error("Cet appareil n'est pas encore associé de manière vérifiée à cette entreprise. Récupérez d'abord les données cloud sur cet appareil.");
    busy(button,true);
    try{
     const result=await syncAccounting(supabase,activeCompanyId,memberships.find(m=>m.company.id===activeCompanyId)?.role);
@@ -359,9 +396,11 @@ async function start(){
  if(!SUPABASE_URL.startsWith("https://")||SUPABASE_URL.includes("VOTRE-PROJET")||!SUPABASE_ANON_KEY||SUPABASE_ANON_KEY.includes("VOTRE_CLE")){configError();return}
  supabase=createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});
  supabase.auth.onAuthStateChange((event,next)=>{
+  const previousUserId=session?.user?.id;
+  if(!next&&previousUserId)lockCompanyStorage(previousUserId);
   session=next;
   if(event==="PASSWORD_RECOVERY" || (recoveryLinkDetected && next)){passwordRecoveryMode=true;recoveryView();return}
-  if(!session){passwordRecoveryMode=false;memberships=[];authView()}
+  if(!session){passwordRecoveryMode=false;memberships=[];localStorage.removeItem(ACTIVE_COMPANY_KEY);localStorage.removeItem(ACTIVE_USER_KEY);authView()}
  });
  const {data,error}=await supabase.auth.getSession();if(error)throw error;session=data.session;
  const hashParams=new URLSearchParams(location.hash.slice(1));

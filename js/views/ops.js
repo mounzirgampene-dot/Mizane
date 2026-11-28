@@ -1,14 +1,63 @@
 // MIZANE — Écran Outils : clôture d'exercice, immobilisations & amortissements, rapprochement bancaire.
 import { postEntry, validateEntry, toCSV } from "../accounting.js";
-import { AMORT_METHODS, amortizationSchedule, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
+import { AMORT_METHODS, dotationLines, parseBankCSV, matchBankLines, bankLineKey, reconcileBankLine, diagnoseBankLine, closingProposal } from "../finance.js";
 import { saveStore, downloadBlob } from "../db.js";
+import { buildFixedAssetSchedule, fixedAssetsSummary } from "../fixed-assets-core.js";
+import { buildAssetDisposal, summarizeAssetDisposals } from "../asset-disposals-core.js";
 import { store, planAccounts, $app, router, toast, esc, money, openModal, closeModal } from "../state.js";
 import { addClosedPeriod, removeClosedPeriod } from "../periods.js";
-import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady } from "../cloud-sync.js";
+import { syncCloudIfReady, manageCloudAccountingPeriod, assertCloudAccountingPeriodReady, hasActiveStockCompany, readCloudStockPeriodValuation } from "../cloud-sync.js";
+import { getStock } from "../stock-core.js";
+import { suggestStockAccounts } from "../billing-accounting.js";
+import { calculateLocalStockPeriodValuation, postPeriodicStockClosingJournalEntry } from "../stock-accounting.js";
+import { buildThirdPartyReconciliation, applyThirdPartyLettrage, reverseThirdPartyLettrage } from "../third-party-reconciliation.js";
+import { parseBankStatement } from "../bank-statement-import.js";
+import { analyzeBankLine, confirmBankMatchSuggestion, buildBankReconciliationReport, bankReconciliationReportHTML } from "../bank-reconciliation-advanced.js";
+
+
+async function retryStockPeriodRequest(operation,attempts=3) {
+  let lastError;
+  for(let attempt=0;attempt<attempts;attempt++){
+    try{return await operation();}
+    catch(error){
+      lastError=error;
+      if(attempt+1<attempts)await new Promise(resolve=>setTimeout(resolve,400*(2**attempt)));
+    }
+  }
+  throw lastError||new Error("Valorisation périodique du stock indisponible.");
+}
+
+async function postPeriodicStockAdjustment(startDate,endDate) {
+  const valuation=hasActiveStockCompany()
+    ? await retryStockPeriodRequest(()=>readCloudStockPeriodValuation(startDate,endDate))
+    : calculateLocalStockPeriodValuation(getStock(store),startDate,endDate);
+  if(!valuation?.ok)throw new Error(valuation?.errors?.join(" ")||"Valorisation du stock impossible.");
+  if((valuation.accounting_mode||"perpetual")!=="periodic")return {ok:true,skipped:true,reason:"perpetual"};
+  const accounts=[
+    ...(store.__accountCache?Object.entries(store.__accountCache).map(([code,account])=>({code,...account})):[]),
+    ...(store.settings.customAccounts||[]),
+  ];
+  const uniqueAccounts=[...new Map(accounts.map(account=>[String(account.code),account])).values()];
+  const defaults=suggestStockAccounts(store.settings.plan,uniqueAccounts);
+  store.billing ||= {documents:[],settings:{}};
+  store.billing.settings ||= {};
+  store.billing.settings.accountingAccounts ||= {};
+  const mapping=store.billing.settings.accountingAccounts;
+  const valid=(code,type)=>uniqueAccounts.some(account=>String(account.code)===String(code)&&account.type===type);
+  if(!valid(mapping.inventory,"asset"))mapping.inventory=defaults.inventory;
+  const variation=uniqueAccounts.find(account=>String(account.code)===String(mapping.stockVariation)&&["expense","income"].includes(account.type));
+  if(!variation)mapping.stockVariation=defaults.stockVariation;
+  if(!mapping.inventory||!mapping.stockVariation)throw new Error("Le plan comptable ne contient pas les comptes de stock et de variation nécessaires à la clôture automatique.");
+  const result=postPeriodicStockClosingJournalEntry(store,valuation,mapping);
+  if(!result.ok)throw new Error((result.errors||["Écriture de variation de stock impossible."]).join(" "));
+  saveStore(store);
+  return result;
+}
 
 export function viewTools() {
   const s = store.settings;
-  const assets = store.assets || [];
+  const assets = (store.assets || []).filter(asset => !asset.disposedAt && !asset.disposalId);
+  const assetSummary = fixedAssetsSummary(assets);
   const closedPeriods = Array.isArray(s.closedPeriods) ? s.closedPeriods.filter(period => period.status !== "open") : [];
   $app.innerHTML = `
     <h1>Outils comptables</h1>
@@ -43,6 +92,7 @@ export function viewTools() {
         <div><label>Méthode</label><select id="am-method">${Object.entries(AMORT_METHODS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></div>
         <div class="nogrow"><button id="am-add">Ajouter</button></div>
       </div>
+      <div class="grid cols-3" style="margin-top:10px"><section class="card kpi"><div class="value">${money(assetSummary.grossValue)}</div><div class="label">Valeur brute</div></section><section class="card kpi"><div class="value">${money(assetSummary.accumulated)}</div><div class="label">Amortissements cumulés</div></section><section class="card kpi"><div class="value">${money(assetSummary.netBookValue)}</div><div class="label">Valeur nette comptable</div></section></div>
       ${assets.length === 0 ? `<p class="muted">Aucune immobilisation enregistrée.</p>` : `
       <div class="table-wrap" style="margin-top:10px"><table>
         <thead><tr><th>Libellé</th><th>Compte</th><th>Valeur</th><th>Méthode</th><th>Durée</th><th class="num">Déjà amorti</th><th class="num">VNC</th><th></th></tr></thead>
@@ -58,8 +108,39 @@ export function viewTools() {
     </div>
 
     <div class="card">
+      <h2>📤 Sorties et cessions d'immobilisations</h2>
+      <p class="muted">Enregistrez une cession, une mise au rebut ou une destruction. Le calcul utilise les amortissements effectivement enregistrés dans le registre ; aucune écriture comptable n'est créée automatiquement.</p>
+      <div class="row">
+        <div><label for="asset-disposal-item">Immobilisation</label><select id="asset-disposal-item">${assets.map((asset,index) => '<option value="' + index + '">' + esc(asset.name) + ' — ' + esc(asset.account) + ' — ' + money(asset.amount) + '</option>').join("")}</select></div>
+        <div><label for="asset-disposal-date">Date de sortie</label><input type="date" id="asset-disposal-date" value="${esc(s.exerciceEnd || new Date().toISOString().slice(0,10))}"></div>
+        <div><label for="asset-disposal-type">Motif</label><select id="asset-disposal-type"><option value="cession">Cession</option><option value="mise_rebut">Mise au rebut</option><option value="destruction">Destruction</option></select></div>
+        <div><label for="asset-disposal-proceeds">Prix de cession</label><input type="number" id="asset-disposal-proceeds" min="0" step="0.01" value="0"></div>
+        <div class="nogrow"><button type="button" id="asset-disposal-save" ${assets.length ? "" : "disabled"}>Calculer la sortie</button></div>
+      </div>
+      <div id="asset-disposal-preview" class="muted" style="margin-top:8px"></div>
+      ${(() => { const summary = summarizeAssetDisposals(store.settings.assetDisposals || []); return '<div class="grid cols-3" style="margin-top:10px"><section class="card kpi"><div class="value">' + summary.count + '</div><div class="label">Sorties enregistrées</div></section><section class="card kpi"><div class="value">' + money(summary.gains) + '</div><div class="label">Plus-values cumulées</div></section><section class="card kpi"><div class="value">' + money(summary.losses) + '</div><div class="label">Moins-values cumulées</div></section></div>'; })()}
+      ${(store.settings.assetDisposals || []).length ? '<div class="table-wrap" style="margin-top:10px"><table><thead><tr><th>Date</th><th>Immobilisation</th><th>Motif</th><th class="num">VNC</th><th class="num">Produit</th><th class="num">Plus/moins-value</th></tr></thead><tbody>' + store.settings.assetDisposals.map(item => '<tr><td>' + esc(item.date) + '</td><td>' + esc(item.assetName) + '</td><td>' + (item.type === "cession" ? "Cession" : item.type === "mise_rebut" ? "Mise au rebut" : "Destruction") + '</td><td class="num">' + money(item.netBookValue) + '</td><td class="num">' + money(item.proceeds) + '</td><td class="num">' + money(item.gainLoss) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="muted">Aucune sortie d&#39;immobilisation enregistrée.</p>'}
+    </div>
+
+    <section class="card" id="third-party-lettrage">
+      <h2>Lettrage assisté des comptes de tiers</h2>
+      <p class="muted">Les propositions rapprochent les mouvements débiteurs et créditeurs du même compte, du même tiers et de la même devise. La validation crée une trace de lettrage dans les paramètres ; les écritures comptables d’origine restent inchangées.</p>
+      ${(() => {
+        const report = buildThirdPartyReconciliation(store);
+        const formatCurrencyTotals = values => Object.entries(values).sort(([a],[b]) => a.localeCompare(b)).map(([currency,amount]) => new Intl.NumberFormat(store.settings.locale || "fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + " " + esc(currency)).join("<br>") || "—";
+        return '<div class="grid cols-3"><div class="card kpi"><div class="value">' + report.totals.openItems + '</div><div class="label">Mouvements ouverts</div></div><div class="card kpi"><div class="value">' + formatCurrencyTotals(report.totals.openDebitByCurrency) + '</div><div class="label">Débits ouverts par devise</div></div><div class="card kpi"><div class="value">' + formatCurrencyTotals(report.totals.openCreditByCurrency) + '</div><div class="label">Crédits ouverts par devise</div></div></div>' +
+          (report.totals.staleLinkCount ? '<p class="warn">' + report.totals.staleLinkCount + ' ancien(s) lettrage(s) ne correspondent plus exactement aux lignes actuelles ; ils ne sont pas déduits des soldes.</p>' : '') +
+          (report.proposals.length ? '<div class="table-wrap"><table><thead><tr><th>Compte / tiers</th><th>Débit</th><th>Crédit</th><th class="num">Montant proposé</th><th>Type</th><th>Action</th></tr></thead><tbody>' + report.proposals.map((item,index) => '<tr><td>' + esc(item.account) + ' · ' + esc(item.third) + '<br><span class="muted">' + esc(item.currency) + '</span></td><td>#' + esc(item.debit.entryId) + ' · ' + esc(item.debit.date) + '<br>' + esc(item.debit.reference || item.debit.label || '—') + '</td><td>#' + esc(item.credit.entryId) + ' · ' + esc(item.credit.date) + '<br>' + esc(item.credit.reference || item.credit.label || '—') + '</td><td class="num">' + new Intl.NumberFormat(store.settings.locale || "fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.amount) + ' ' + esc(item.currency) + '</td><td>' + (item.partial ? 'Partiel' : 'Correspondance') + '</td><td><button class="small" data-third-lettrage="' + index + '">Valider le lettrage</button></td></tr>').join('') + '</tbody></table></div>' : '<p class="muted">Aucune correspondance proposée. Vérifiez que les lignes comportent un tiers renseigné et que le compte, le tiers et la devise concordent.</p>') +
+          ((store.settings.thirdPartyLettrage || []).filter(item => item.status === "active").length ? '<h3>Lettrages actifs</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Compte / tiers</th><th>Écritures</th><th class="num">Montant</th><th>Action</th></tr></thead><tbody>' + store.settings.thirdPartyLettrage.filter(item => item.status === "active").map(item => '<tr><td>' + esc((item.createdAt || '').slice(0,10)) + '</td><td>' + esc(item.account) + ' · ' + esc(item.third) + '</td><td>#' + esc(item.debit.entryId) + ' / #' + esc(item.credit.entryId) + '</td><td class="num">' + new Intl.NumberFormat(store.settings.locale || "fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(item.amount) + ' ' + esc(item.currency) + '</td><td><button class="secondary small" data-third-unlettrage="' + esc(item.id) + '">Défaire</button></td></tr>').join('') + '</tbody></table></div>' : '') +
+          '<p class="muted">Les lignes sans tiers, les devises différentes et les comptes différents ne sont pas compensés automatiquement. Les écritures contrepassées sont exclues.</p>';
+      })()}
+    </section>
+
+    <div class="card">
       <h2>🏦 Rapprochement bancaire</h2>
       <p class="muted">Collez votre relevé bancaire (une ligne par opération : <code>date;libellé;montant</code>). Dates acceptées : JJ/MM/AAAA ou AAAA-MM-JJ. Utilisez un montant positif pour un crédit bancaire et négatif pour un débit, selon le sens des écritures de trésorerie de votre comptabilité.</p>
+      <div class="row"><div><label for="bk-file">Importer un relevé CSV ou OFX</label><input id="bk-file" type="file" accept=".csv,.txt,.ofx,application/vnd.ms-excel,application/x-ofx,text/csv"></div><div class="nogrow"><button type="button" class="secondary" id="bk-import-file">Importer le fichier</button></div></div>
+      <p class="muted">Les CSV acceptent les colonnes Date, Libellé, Montant ou Débit/Crédit, Référence et Devise. Les fichiers OFX conservent l'identifiant bancaire FITID lorsqu'il existe.</p>
       <textarea id="bk-text" rows="6" placeholder="10/01/2025;Virement client;1000000&#10;12/01/2025;Fournisseur Diallo;-500000"></textarea>
       <div class="row">
         <div><label for="bk-days">Tolérance de date</label><select id="bk-days"><option value="0">Même jour</option><option value="2">± 2 jours</option><option value="4" selected>± 4 jours</option><option value="7">± 7 jours</option><option value="10">± 10 jours</option></select></div>
@@ -69,6 +150,27 @@ export function viewTools() {
     </div>
   `;
 
+  // ---- Lettrage assisté des tiers ----
+  $app.querySelectorAll("[data-third-lettrage]").forEach(button => button.addEventListener("click", () => {
+    const report = buildThirdPartyReconciliation(store);
+    const proposal = report.proposals[Number(button.dataset.thirdLettrage)];
+    if (!proposal) return toast("Cette proposition n'est plus disponible. Actualisez l'écran.");
+    try {
+      applyThirdPartyLettrage(store, proposal);
+      saveStore(store);
+      toast("Lettrage enregistré. Les écritures d'origine n'ont pas été modifiées.");
+      router.render();
+    } catch (error) { toast(error.message || "Lettrage impossible."); }
+  }));
+  $app.querySelectorAll("[data-third-unlettrage]").forEach(button => button.addEventListener("click", () => {
+    try {
+      reverseThirdPartyLettrage(store, button.dataset.thirdUnlettrage);
+      saveStore(store);
+      toast("Lettrage annulé. Les soldes ouverts ont été recalculés.");
+      router.render();
+    } catch (error) { toast(error.message || "Annulation impossible."); }
+  }));
+
   document.getElementById("am-amount-calc")?.addEventListener("click", () => openCalculator(document.getElementById("am-amount")));
 
   // ---- Clôture ----
@@ -77,9 +179,9 @@ export function viewTools() {
     const newEnd = document.getElementById("cl-end").value;
     if (!newStart || !newEnd) return toast("Renseignez les dates du nouvel exercice.");
     if (newStart <= s.exerciceEnd || newEnd < newStart) return toast("Le nouvel exercice doit commencer après la fin de l’exercice clôturé et se terminer après sa date de début.");
-    const { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
+    let { closing, anew, resultat } = closingProposal(store, s.exerciceStart, s.exerciceEnd, newStart);
     const out = document.getElementById("cl-result");
-    if (!closing && !anew) { out.innerHTML = `<p class="muted">Rien à clôturer : aucune écriture sur cet exercice.</p>`; return; }
+    if (!closing && !anew) out.innerHTML = `<p class="muted">Aucune écriture générale à solder. Le système vérifiera néanmoins le stock si l’inventaire intermittent est activé.</p>`;
     const checks = [closing, anew].filter(Boolean).map((e) => ({ e, v: validateEntry(store, e) }));
     if (checks.some((c) => !c.v.ok)) {
       out.innerHTML = `<ul class="errors">${checks.flatMap((c) => c.v.errors).map((e) => `<li>${esc(e)}</li>`).join("")}</ul>`;
@@ -97,6 +199,10 @@ export function viewTools() {
       button.disabled = true;
       try {
         assertCloudAccountingPeriodReady();
+        const stockAdjustment=await postPeriodicStockAdjustment(s.exerciceStart,s.exerciceEnd);
+        ({ closing, anew, resultat } = closingProposal(store,s.exerciceStart,s.exerciceEnd,newStart));
+        const finalChecks=[closing,anew].filter(Boolean).map(entry=>({entry,validation:validateEntry(store,entry)}));
+        if(finalChecks.some(item=>!item.validation.ok))throw new Error(finalChecks.flatMap(item=>item.validation.errors).join(" "));
         for (const entry of [closing, anew]) {
           if (!entry) continue;
           const exists = (store.entries || []).some(item => item.date === entry.date && item.reference === entry.reference);
@@ -104,7 +210,7 @@ export function viewTools() {
           const posted = postEntry(store, entry);
           if (!posted.ok) throw new Error(posted.errors[0] || "Écriture de clôture invalide.");
         }
-        // Envoyer d'abord les écritures de clôture et d'à-nouveaux, avant d'activer le verrou serveur.
+        // La variation du stock est intégrée avant le résultat et les à-nouveaux ; tout est synchronisé avant le verrou serveur.
         saveStore(store);
         await syncCloudIfReady();
         await manageCloudAccountingPeriod({ startDate: s.exerciceStart, endDate: s.exerciceEnd, action: "close" });
@@ -116,7 +222,7 @@ export function viewTools() {
         saveStore(store);
         try { await syncCloudIfReady(); }
         catch (syncError) { toast("Période clôturée, mais la synchronisation des paramètres sera à relancer : " + (syncError.message || "erreur inconnue"), 6000); }
-        toast("✓ Exercice clôturé et période verrouillée. À-nouveaux générés pour " + newStart + ".");
+        toast("✓ Exercice clôturé. Inventaire périodique " + (stockAdjustment.skipped?"sans variation à comptabiliser":"comptabilisé") + " ; à-nouveaux générés pour " + newStart + ".");
         router.go("entries");
       } catch (error) {
         button.disabled = false;
@@ -206,7 +312,7 @@ export function viewTools() {
   }));
   $app.querySelectorAll("[data-sched]").forEach((b) => b.addEventListener("click", () => {
     const a = store.assets[Number(b.dataset.sched)];
-    const sched = amortizationSchedule(a.amount, a.years, a.method);
+    const sched = buildFixedAssetSchedule({ ...a, residualValue: Number(a.residualValue) || 0 }).rows;
     openModal(`
       <h2>Plan d'amortissement — ${esc(a.name)}</h2>
       <table><thead><tr><th>Année</th><th class="num">Taux</th><th class="num">Annuité</th><th class="num">Cumul</th><th class="num">VNC</th></tr></thead>
@@ -215,7 +321,7 @@ export function viewTools() {
   }));
 
   document.getElementById("am-dotation")?.addEventListener("click", () => {
-    const lines = dotationLines(store.assets);
+    const lines = dotationLines((store.assets || []).filter(asset => !asset.disposedAt && !asset.disposalId));
     if (lines.length < 2) return toast("Toutes les immobilisations sont déjà amorties.");
     const entry = { date: s.exerciceEnd, journal: "OD", reference: "Dotations " + s.exerciceEnd.slice(0, 4), lines };
     const v = validateEntry(store, entry);
@@ -239,6 +345,38 @@ export function viewTools() {
     });
   });
 
+  document.getElementById("asset-disposal-type")?.addEventListener("change", event => {
+    const proceeds = document.getElementById("asset-disposal-proceeds");
+    if (event.target.value === "destruction") proceeds.value = "0";
+  });
+  document.getElementById("asset-disposal-save")?.addEventListener("click", () => {
+    const index = Number(document.getElementById("asset-disposal-item")?.value);
+    const asset = assets[index];
+    if (!asset) return toast("Sélectionnez une immobilisation encore active.");
+    const input = { date: document.getElementById("asset-disposal-date")?.value, type: document.getElementById("asset-disposal-type")?.value, proceeds: document.getElementById("asset-disposal-proceeds")?.value };
+    const result = buildAssetDisposal(asset, input);
+    if (!result.ok) return toast(result.errors[0]);
+    const disposal = result.disposal;
+    const label = disposal.gainLoss > 0 ? "plus-value" : disposal.gainLoss < 0 ? "moins-value" : "aucun écart";
+    const preview = document.getElementById("asset-disposal-preview");
+    preview.innerHTML = "<p>Valeur brute : <strong>" + money(disposal.grossValue) + "</strong> · Amortissements cumulés : <strong>" + money(disposal.accumulated) + "</strong> · VNC : <strong>" + money(disposal.netBookValue) + "</strong> · Produit : <strong>" + money(disposal.proceeds) + "</strong> · Résultat : <strong>" + label + " de " + money(Math.abs(disposal.gainLoss)) + "</strong>.</p><p>Confirmez l'enregistrement pour retirer l'immobilisation de la liste active. Aucune écriture comptable ne sera passée.</p>";
+    const confirm = document.createElement("button");
+    confirm.type = "button"; confirm.textContent = "Confirmer la sortie"; confirm.id = "asset-disposal-confirm";
+    preview.appendChild(confirm);
+    confirm.addEventListener("click", () => {
+      if (asset.disposedAt || asset.disposalId) return toast("Cette immobilisation est déjà sortie.");
+      store.settings.assetDisposals ||= [];
+      if (store.settings.assetDisposals.some(item => item.assetKey === disposal.assetKey)) return toast("Une sortie existe déjà pour cette immobilisation.");
+      disposal.id = globalThis.crypto?.randomUUID?.() || "disposal-" + Date.now();
+      asset.disposedAt = disposal.date;
+      asset.disposalId = disposal.id;
+      store.settings.assetDisposals.unshift(disposal);
+      saveStore(store);
+      toast("Sortie d'immobilisation enregistrée. Aucune écriture comptable créée.");
+      router.render();
+    });
+  });
+
   // ---- Rapprochement bancaire ----
   const renderBankResult = (session) => {
     const out = document.getElementById("bk-result");
@@ -246,19 +384,35 @@ export function viewTools() {
     const lines = session.lines || [];
     const ok = lines.filter(m => m.status === "matched").length;
     const pending = lines.length - ok;
-    const totalBank = lines.reduce((sum,line) => sum + Number(line.amount || 0),0);
-    const totalMatched = lines.filter(line => line.status === "matched").reduce((sum,line) => sum + Number(line.amount || 0),0);
+    const totalsByCurrency = rows => rows.reduce((totals,line) => {
+      const currency = String(line.currency || store.settings.currency || "").toUpperCase() || "—";
+      totals[currency] = Math.round(((totals[currency] || 0) + Number(line.amount || 0) + Number.EPSILON) * 100) / 100;
+      return totals;
+    }, {});
+    const formatBankTotals = totals => Object.entries(totals).sort(([a],[b]) => a.localeCompare(b))
+      .map(([currency,amount]) => money(amount) + (currency === "—" ? "" : " " + esc(currency))).join(" · ") || "—";
+    const totalBank = formatBankTotals(totalsByCurrency(lines));
+    const totalMatched = formatBankTotals(totalsByCurrency(lines.filter(line => line.status === "matched")));
+    const suggestionsMarkup = lines.map((line,index) => {
+      if(line.status==="matched")return "";
+      const analysis=analyzeBankLine(line,store,session.days||4,session);
+      const proposals=analysis.suggestions.slice(0,3).map((suggestion,suggestionIndex) =>
+        '<div class="muted" style="margin:6px 0">'+esc(suggestion.reason)+' <strong>'+suggestion.confidence+'%</strong> · '+suggestion.allocations.map(item=>'#'+Number(item.entryId)+' ('+money(item.amount)+')').join(' + ')+' <button type="button" class="secondary small" data-bk-suggest-line="'+index+'" data-bk-suggestion="'+suggestionIndex+'">Valider cette proposition</button></div>'
+      ).join("");
+      const differences=analysis.discrepancies.length?'<p class="muted">Écarts candidats : '+analysis.discrepancies.map(item=>'#'+item.entryId+' : '+money(item.difference)+' '+esc(item.currency)).join(" · ")+'</p>':"";
+      return '<div class="card" style="margin:8px 0"><strong>'+esc(line.date)+' · '+esc(line.label)+'</strong><p class="muted">'+esc(analysis.diagnosis.label)+' — '+esc(analysis.diagnosis.hint)+(analysis.feeCandidate?' · Frais probables à vérifier':'')+'</p>'+differences+(proposals||'<p class="muted">Aucune combinaison fiable trouvée automatiquement.</p>')+'</div>';
+    }).join("");
     out.innerHTML = `
       <div class="grid cols-2">
         <div class="card kpi"><div class="value">${ok} / ${lines.length}</div><div class="label">Opérations rapprochées</div></div>
         <div class="card kpi"><div class="value">${pending}</div><div class="label">À vérifier</div></div>
       </div>
-      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · Tolérance : ±${session.days} jour(s). Total relevé : ${money(totalBank)} ; total rapproché : ${money(totalMatched)}. Les règlements partiels sont cumulés sans dépasser le montant de chaque écriture.</p>
+      <p class="muted">Relevé du ${esc(session.createdAt.slice(0,10))} · ${esc(session.sourceFile || "Saisie manuelle")} · ${esc(String(session.sourceFormat || "—").toUpperCase())} · Tolérance : ±${session.days} jour(s). Total relevé : ${totalBank} ; total rapproché : ${totalMatched}. Les règlements partiels sont cumulés sans dépasser le montant de chaque écriture.</p>
       <div class="row" style="margin:10px 0"><label><input type="checkbox" id="bk-unmatched-only"> Afficher uniquement les opérations à vérifier</label></div>
       <div class="table-wrap"><table><thead><tr><th>Date</th><th>Libellé</th><th class="num">Montant</th><th>Écriture</th><th>Compte</th><th>Action / état</th></tr></thead>
       <tbody>${lines.map((m,index) => {
         const options = (m.candidates || []).map(id => `<option value="${Number(id)}" ${Number(id)===Number(m.match)?"selected":""}>Écriture #${Number(id)}</option>`).join("");
-        return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)}</td>
+        return `<tr data-bk-row data-bk-status="${m.status}"><td>${esc(m.date)}</td><td>${esc(m.label)}</td><td class="num">${money(m.amount)} ${esc(m.currency || store.settings.currency || "")}</td>
           <td>${m.matches?.length ? m.matches.map(item => `#${item.entryId} (${money(item.amount)})`).join(", ") : (m.match ? `#${m.match} · ${esc(m.matchDate || "")}` : (m.candidates.length ? `Possibles : #${m.candidates.join(", #")}` : "Aucune correspondance"))}${m.partial ? `<p class="muted">Règlement partiel · reste sur les écritures : ${money(m.partialRemaining)}</p>` : ""}${m.amountCandidates?.length ? `<p class="muted">Écart à examiner : ${m.amountCandidates.map(item => `#${item.entryId} : ${money(item.difference)}`).join(" · ")}</p>` : ""}</td>
           <td>${m.matchAccount ? esc(m.matchAccount) : "—"}</td>
           <td>${m.match ? `<span class="ok-msg">✓ ${m.partial ? "Rapprochée partiellement" : (m.manuallyMatched ? "Validée manuellement" : "Rapprochée")}</span>` : `<span class="warn">À vérifier</span>`}
@@ -266,11 +420,23 @@ export function viewTools() {
           ${m.status !== "matched" ? (() => { const d = diagnoseBankLine(m); return `<p class="muted">${esc(d.label)} — ${esc(d.hint)}</p><button class="secondary small" data-bk-adjust="${index}">Préparer une écriture</button>`; })() : ""}
           ${m.status === "matched" ? `<button class="secondary small" data-bk-unmatch="${index}">Défaire</button>` : ""}</td></tr>`;
       }).join("")}</tbody></table></div>
-      <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button></div>
+      <section class="card"><h3>Suggestions avancées et écarts à examiner</h3>${suggestionsMarkup || '<p class="muted">Aucune opération en attente.</p>'}</section>
+      <div class="actions"><button class="secondary" id="bk-csv">⬇ Exporter le rapport CSV</button><button class="secondary" id="bk-xls">Exporter Excel</button><button class="secondary" id="bk-print">Imprimer / PDF</button></div>
       <p class="muted">Les rapprochements et écritures de régularisation sont enregistrés dans les données synchronisées de l’entreprise. Vérifiez toujours les comptes proposés avant de comptabiliser ; la TVA n’est pas calculée automatiquement.</p>`;
     document.getElementById("bk-unmatched-only")?.addEventListener("change", event => {
       out.querySelectorAll("[data-bk-row]").forEach(row => { row.hidden = event.target.checked && row.dataset.bkStatus !== "unmatched"; });
     });
+    out.querySelectorAll("[data-bk-suggest-line]").forEach(button => button.addEventListener("click", () => {
+      const index=Number(button.dataset.bkSuggestLine);
+      try {
+        const analysis=analyzeBankLine(session.lines[index],store,session.days||4,session);
+        const suggestion=analysis.suggestions[Number(button.dataset.bkSuggestion)];
+        session.lines[index]=confirmBankMatchSuggestion(session.lines[index],suggestion,session,store);
+        saveStore(store);
+        renderBankResult(session);
+        toast("Proposition de rapprochement validée. Aucune écriture comptable modifiée.");
+      } catch(error) { toast(error.message || "Validation impossible."); }
+    }));
     out.querySelectorAll("[data-bk-match]").forEach(button => button.addEventListener("click", () => {
       const index = Number(button.dataset.bkMatch);
       const selected = out.querySelector(`[data-bk-choice="${index}"]`)?.value;
@@ -334,12 +500,59 @@ export function viewTools() {
       saveStore(store); renderBankResult(session);
     }));
     document.getElementById("bk-csv")?.addEventListener("click", () => {
-      downloadBlob(new Blob(["\ufeff" + toCSV(lines.map(m => ({
-        date:m.date,libelle:m.label,montant:m.amount,ecriture:m.match||"",compte:m.matchAccount||"",
-        etat:m.status==="matched"?"Rapprochée":"À vérifier",validation:m.manuallyMatched?"Manuelle":"Automatique"
-      })))],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
+      const report=buildBankReconciliationReport(session,store);
+      downloadBlob(new Blob(["\ufeff"+toCSV(report.details)],{type:"text/csv;charset=utf-8"}),"mizane-rapprochement.csv");
+    });
+    document.getElementById("bk-xls")?.addEventListener("click", () => {
+      const report=buildBankReconciliationReport(session,store);
+      downloadBlob(new Blob([bankReconciliationReportHTML(report)],{type:"application/vnd.ms-excel;charset=utf-8"}),"mizane-rapprochement.xls");
+    });
+    document.getElementById("bk-print")?.addEventListener("click", () => {
+      const report=buildBankReconciliationReport(session,store),printWindow=window.open("","_blank");
+      if(!printWindow)return toast("Autorisez l'ouverture de la fenêtre pour imprimer le rapport PDF.");
+      printWindow.document.open();
+      printWindow.document.write(bankReconciliationReportHTML(report).replace("</body>","<script>window.addEventListener('load',()=>window.print());</script></body>"));
+      printWindow.document.close();
     });
   };
+
+  document.getElementById("bk-import-file")?.addEventListener("click", async () => {
+    const file = document.getElementById("bk-file")?.files?.[0];
+    if (!file) return toast("Sélectionnez un fichier CSV ou OFX.");
+    if (file.size > 10 * 1024 * 1024) return toast("Le fichier dépasse la limite de 10 Mo.");
+    try {
+      const parsed = parseBankStatement(await file.text(), "auto");
+      const out = document.getElementById("bk-result");
+      if (!parsed.lines.length) {
+        out.innerHTML = '<p class="errors">' + esc(parsed.errors.join(" ")) + '</p>';
+        return;
+      }
+      const priorKeys = new Set((store.settings.bankReconciliations || []).flatMap(session => (session.lines || []).map(line => line.importKey || bankLineKey(line))));
+      const inFileKeys = new Set();
+      const unique = [];
+      let duplicates = parsed.duplicates.length;
+      for (const line of parsed.lines) {
+        const key = line.fitId ? "FITID:" + line.fitId : bankLineKey(line);
+        if (priorKeys.has(key) || inFileKeys.has(key)) { duplicates++; continue; }
+        inFileKeys.add(key);
+        unique.push({ ...line, importKey: key });
+      }
+      if (!unique.length) {
+        out.innerHTML = '<p class="warn">Toutes les opérations du fichier sont déjà présentes dans l’historique ou répétées dans le relevé. Aucun doublon importé.</p>';
+        return;
+      }
+      const days = Number(document.getElementById("bk-days").value) || 0;
+      const matched = matchBankLines(store, unique, days);
+      const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, sourceFile:file.name, sourceFormat:parsed.format, importedRows:unique.length, duplicateRows:duplicates, parseWarnings:parsed.errors, lines:matched };
+      store.settings.bankReconciliations ||= [];
+      store.settings.bankReconciliations.unshift(session);
+      store.settings.bankReconciliations = store.settings.bankReconciliations.slice(0,50);
+      saveStore(store);
+      document.getElementById("bk-text").value = "";
+      renderBankResult(session);
+      toast(unique.length + " opération(s) importée(s), " + duplicates + " doublon(s) ignoré(s)." + (parsed.errors.length ? " " + parsed.errors.length + " ligne(s) à vérifier." : ""));
+    } catch (error) { toast("Import impossible : " + (error.message || "fichier illisible")); }
+  });
 
   document.getElementById("bk-run").addEventListener("click", () => {
     const lines = parseBankCSV(document.getElementById("bk-text").value);
@@ -350,7 +563,7 @@ export function viewTools() {
     if (!unique.length) { out.innerHTML = '<p class="warn">Toutes les opérations de ce relevé ont déjà été importées. Aucun doublon créé.</p>'; return; }
     const days = Number(document.getElementById("bk-days").value) || 0;
     const matched = matchBankLines(store, unique, days);
-    const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, lines:matched };
+    const session = { id: globalThis.crypto?.randomUUID?.() || "bk-" + Date.now(), createdAt:new Date().toISOString(), days, sourceFormat:"collage", importedRows:unique.length, duplicateRows:lines.length-unique.length, lines:matched };
     if (!Array.isArray(store.settings.bankReconciliations)) store.settings.bankReconciliations = [];
     store.settings.bankReconciliations.unshift(session);
     store.settings.bankReconciliations = store.settings.bankReconciliations.slice(0,50);

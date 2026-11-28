@@ -1,17 +1,90 @@
 // MIZANE — Écrans : assistant IA (photo, import de texte, audit) et paramètres.
 import { validateEntry, postEntry, checkAnomalies } from "../accounting.js";
-import { PLANS, getPlan, ACCOUNT_TYPES } from "../plans.js";
+import { PLANS, getPlan, allAccounts, ACCOUNT_TYPES } from "../plans.js";
+import { getCountryAccountingFramework } from "../plans/frameworks.js";
 import { COUNTRIES, getCountry } from "../countries.js";
 import {
-  aiConfigured, chat, chatWithImage, aiAudit, localAssist, localAuditSummary,
-  imageFileToDataUrl, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
+  aiConfigured, chat, chatWithImage, aiAudit, buildAiAuditSnapshot, localAssist, localAuditSummary,
+  imageFileToDataUrl, suggestEntry, importEntriesFromText, parseEntriesFromTextLocal, PROVIDERS, providerOf,
   configureCompanyAI, deleteCompanyAI, refreshCompanyAIStatus,
 } from "../ai.js";
-import { saveStore, exportJSON, importJSON, resetStore, demoData } from "../db.js";
+import { saveStore, exportJSON, importJSON, resetStore, demoData, downloadBlob } from "../db.js";
+import { validateCustomPlan, createCustomPlan } from "../plans/custom.js";
+import { validatePlanMapping, dryRunPlanMigration } from "../plans/mapping.js";
+import { suggestAccountMatches, buildConversionRules } from "../plans/conversion-assistant.js";
+import { applyPlanMigration, undoPlanMigration } from "../plans/migration.js";
+import { migrationAuditRows } from "../plans/migration-audit.js";
 import { LANGS } from "../i18n.js";
+import { extractPdfDocument, isSupportedDocumentFile, documentFactsFromProposal, matchDocumentToRecords } from "../ai-documents.js";
+import { putLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
+import { uploadCloudAccountingDocument } from "../accounting-documents-cloud.js";
+import { resolveDocumentStorageScope } from "../document-storage-scope.js";
+import { inspectLegacyDocumentVaults, recoverLegacyAccountingDocuments, recoverLegacyTaxEvidence } from "../document-vault-recovery.js";
+import { syncCloudIfReady } from "../cloud-sync.js";
 import { store, planAccounts, aiHistory, $app, router, toast, esc, refreshPlan, initStore } from "../state.js";
 
+function draftLineMarkup(line, index) {
+  return '<tr class="draft-line" data-line-index="' + index + '">' +
+    '<td><input aria-label="Compte" data-line-field="account" maxlength="20" value="' + esc(line.account || '') + '" placeholder="Compte"></td>' +
+    '<td><input aria-label="Libellé" data-line-field="label" maxlength="180" value="' + esc(line.label || '') + '" placeholder="Libellé"></td>' +
+    '<td><input aria-label="Débit" data-line-field="debit" type="number" min="0" step="0.01" value="' + (line.debit ? esc(line.debit) : '') + '"></td>' +
+    '<td><input aria-label="Crédit" data-line-field="credit" type="number" min="0" step="0.01" value="' + (line.credit ? esc(line.credit) : '') + '"></td>' +
+    '<td><button type="button" class="danger small" data-draft-action="remove-line" aria-label="Supprimer la ligne">×</button></td></tr>';
+}
+function draftCardMarkup(entry, index, title) {
+  const lines = Array.isArray(entry.lines) ? entry.lines : [];
+  const facts = entry.aiReview && Array.isArray(entry.aiReview.sourceFacts) ? entry.aiReview.sourceFacts : [];
+  const uncertainties = entry.aiReview && Array.isArray(entry.aiReview.uncertainties) ? entry.aiReview.uncertainties : [];
+  return '<section class="card ai-draft-card" data-draft-card="' + index + '" style="margin:12px 0">' +
+    '<h3>' + esc(title || ('Écriture proposée ' + (index + 1))) + '</h3>' +
+    (facts.length ? '<p class="muted"><strong>Éléments relevés :</strong> ' + esc(facts.join(' · ')) + '</p>' : '') +
+    (uncertainties.length ? '<p class="warn"><strong>À vérifier :</strong> ' + esc(uncertainties.join(' · ')) + '</p>' : '') +
+    '<div class="row"><div><label>Date</label><input type="date" data-header="date" value="' + esc(entry.date || '') + '"></div>' +
+    '<div><label>Journal</label><select data-header="journal">' + ['ACH','VTE','BAN','CAI','OD'].map(j => '<option value="' + j + '"' + (entry.journal === j ? ' selected' : '') + '>' + j + '</option>').join('') + '</select></div>' +
+    '<div><label>Référence</label><input data-header="reference" maxlength="120" value="' + esc(entry.reference || '') + '"></div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th><th></th></tr></thead><tbody data-draft-lines>' + lines.map((line,i) => draftLineMarkup(line,i)).join('') + '</tbody></table></div>' +
+    '<div class="actions"><button type="button" class="secondary small" data-draft-action="add-line">+ Ajouter une ligne</button></div>' +
+    '<div class="draft-validation muted" aria-live="polite"></div></section>';
+}
+function readDraftCard(card) {
+  return { date: card.querySelector('[data-header="date"]').value, journal: card.querySelector('[data-header="journal"]').value, reference: card.querySelector('[data-header="reference"]').value.trim(),
+    lines: Array.from(card.querySelectorAll('.draft-line')).map(row => ({ account: row.querySelector('[data-line-field="account"]').value.trim(), label: row.querySelector('[data-line-field="label"]').value.trim(), debit: row.querySelector('[data-line-field="debit"]').value, credit: row.querySelector('[data-line-field="credit"]').value })) };
+}
+function bindDraftEditors(root, onSave) {
+  const refresh = card => { const result = validateEntry(store, readDraftCard(card)); const target = card.querySelector('.draft-validation'); target.innerHTML = result.ok ? '<span class="ok-msg">Contrôle technique réussi : écriture équilibrée et comptes reconnus.</span>' : '<span class="errors">' + esc(result.errors.join(' · ')) + '</span>'; return result; };
+  root.addEventListener('input', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('change', event => { const card = event.target.closest('[data-draft-card]'); if (card) refresh(card); });
+  root.addEventListener('click', event => {
+    const action = event.target.closest('[data-draft-action]');
+    if (action) { const card = action.closest('[data-draft-card]'); if (!card) return; if (action.dataset.draftAction === 'add-line') { const body = card.querySelector('[data-draft-lines]'); body.insertAdjacentHTML('beforeend', draftLineMarkup({}, body.querySelectorAll('.draft-line').length)); refresh(card); } else if (action.dataset.draftAction === 'remove-line') { action.closest('.draft-line').remove(); refresh(card); } return; }
+    if (!event.target.closest('[data-draft-save]')) return;
+    const cards = Array.from(root.querySelectorAll('[data-draft-card]')); const drafts = cards.map(readDraftCard); const checks = cards.map(refresh);
+    if (!cards.length || checks.some(check => !check.ok)) { toast('Corrigez toutes les écritures avant l’enregistrement. Aucune n’a été enregistrée.'); return; }
+    const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => period && period.status !== "open" && draft.date >= period.startDate && draft.date <= period.endDate));
+    if (closed) { toast('Au moins une écriture concerne une période clôturée. Aucun enregistrement effectué.'); return; }
+    onSave(drafts);
+  });
+}
+
+function documentMatchesMarkup(facts, store) {
+  const matches = matchDocumentToRecords(facts, store);
+  const entryRows = matches.entryMatches.map(item => '<li><strong>Écriture #' + esc(item.entryId) + '</strong> · ' + esc(item.date) + ' · ' + esc(item.amount == null ? "Montant non déterminé" : item.amount.toFixed(2) + " " + item.currency) + ' · confiance indicative ' + item.confidence + '%<br><span class="muted">' + esc(item.reason) + '</span></li>').join("");
+  const bankRows = matches.bankMatches.map(item => '<li><strong>' + esc(item.sourceFile) + '</strong> · ' + esc(item.date) + ' · ' + esc(item.label) + ' · ' + esc(item.amount.toFixed(2) + " " + item.currency) + ' · ' + (item.status === "matched" ? "déjà rapprochée" : "à rapprocher") + ' · ' + item.confidence + '%<br><span class="muted">' + esc(item.reason) + (item.matchedEntryIds.length ? " · écriture(s) #" + item.matchedEntryIds.map(esc).join(", #") : "") + '</span></li>').join("");
+  return '<section class="card" style="margin:12px 0"><h3>Rapprochements possibles avec les données existantes</h3>' +
+    '<p class="muted">Suggestions calculées à partir du montant, de la devise, de la date, de la référence et du tiers lorsque ces informations sont disponibles. Elles ne sont ni validées ni enregistrées automatiquement.</p>' +
+    '<h4>Écritures comptables</h4>' + (entryRows ? '<ul>' + entryRows + '</ul>' : '<p class="muted">Aucune écriture suffisamment proche détectée.</p>') +
+    '<h4>Opérations des relevés bancaires importés</h4>' + (bankRows ? '<ul>' + bankRows + '</ul>' : '<p class="muted">Aucune opération bancaire suffisamment proche détectée.</p>') +
+    '</section>';
+}
+
+let assistantHistoryCompanyId = "";
+
 export function viewAssistant() {
+  const currentCompanyId = localStorage.getItem("mizane_active_company_v1") || "";
+  if (currentCompanyId !== assistantHistoryCompanyId) {
+    aiHistory.splice(0, aiHistory.length);
+    assistantHistoryCompanyId = currentCompanyId;
+  }
   const audit = localAuditSummary(store);
   const configured = aiConfigured(store);
   refreshCompanyAIStatus(providerOf(store)).then(() => { if (aiConfigured(store) !== configured) router.render(); }).catch(() => {});
@@ -33,7 +106,17 @@ export function viewAssistant() {
       <div id="import-result" style="margin-top:10px"></div>
     </div>
     <div class="card">
-      <h2>💬 Conversation</h2>
+      <h2>🧠 Copilote comptable — analyser un justificatif</h2>
+      <p class="muted">Joignez une photo ou un PDF multipage (jusqu’à 20 pages). Le copilote extrait les faits, signale les incertitudes, prépare les écritures et recherche des correspondances possibles. Après validation, le fichier original est archivé sur cet appareil et, si l’entreprise est synchronisée, dans son coffre documentaire privé.</p>
+      <div class="row">
+        <div><label>Photo ou document PDF</label><input type="file" id="invoice-photo" accept="image/jpeg,image/png,image/webp,application/pdf,.pdf"></div>
+        <div><label>Contexte de l’opération (facultatif)</label><input id="invoice-note" maxlength="1000" placeholder="Ex. : paiement par virement, achat de fournitures"></div>
+      </div>
+      <div class="actions"><button id="invoice-analyze" ${configured ? "" : "disabled"}>${configured ? "Analyser le justificatif" : "Configurez une clé IA pour activer la lecture"}</button></div>
+      <div id="invoice-result" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h2>💬 Conversation</h2>\n      <p class="muted">Mémoire de conversation temporaire, limitée à cette session et réinitialisée lors d’un changement d’entreprise. Aucun historique de conversation n’est partagé entre entreprises.</p>
       <div class="chat-box" id="chat-box">
         <div class="chat-msg ai">Bonjour ! Je suis l'assistant comptable MIZANE${configured ? " (IA connectée)" : " (mode local)"}. Posez vos questions, ou joignez la photo d'une facture ou d'un reçu pour que je la lise.</div>
         ${aiHistory.map((m) => `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}</div>`).join("")}
@@ -48,13 +131,86 @@ export function viewAssistant() {
     </div>
     <div class="card">
       <h2>🔎 Audit intelligent</h2>
-      <p class="muted">Analyse complète des écritures : erreurs, TVA oubliée, comptes suspects, recommandations.</p>
+      <p class="muted">Audit des anomalies comptables, soldes inhabituels et cohérence des données fiscales explicitement saisies. Le contrôle fiscal compare uniquement les informations présentes à un référentiel officiel actif ; il ne déduit aucun taux et ne certifie pas la conformité.</p>
       <button id="audit-run">${configured ? "Lancer l'audit IA" : "Lancer le contrôle local"}</button>
       <div id="audit-result" style="margin-top:10px"></div>
     </div>
   `;
 
   // ---- Import de texte -> écritures ----
+
+  // ---- Photo ou PDF -> extraction, rapprochements indicatifs et écritures contrôlées ----
+  document.getElementById("invoice-analyze").addEventListener("click", async () => {
+    const file = document.getElementById("invoice-photo").files[0];
+    const out = document.getElementById("invoice-result");
+    if (!configured || !aiConfigured(store)) { toast("Configurez d'abord une clé IA dans Paramètres."); return; }
+    if (!file) { toast("Sélectionnez une photo ou un PDF."); return; }
+    if (!isSupportedDocumentFile(file)) { toast("Formats acceptés : JPEG, PNG, WebP ou PDF."); return; }
+    const isPdf = file.type === "application/pdf" || String(file.name || "").toLowerCase().endsWith(".pdf");
+    if (file.size > (isPdf ? 20 : 15) * 1024 * 1024) { toast("Le fichier dépasse la limite autorisée (" + (isPdf ? "20" : "15") + " Mo)."); return; }
+    out.innerHTML = '<p class="muted">Lecture et analyse du justificatif en cours…</p>';
+    try {
+      const note = document.getElementById("invoice-note").value.trim();
+      let proposals = [];
+      let pdfInfo = null;
+      if (isPdf) {
+        pdfInfo = await extractPdfDocument(file);
+        const documentText = [note, pdfInfo.text].filter(Boolean).join("\n\n");
+        if (pdfInfo.images.length) proposals = [await suggestEntry(store, documentText, pdfInfo.images)];
+        else proposals = await importEntriesFromText(store, documentText);
+      } else {
+        const imageData = await imageFileToDataUrl(file);
+        proposals = [await suggestEntry(store, note, imageData)];
+      }
+      if (!proposals.length) throw new Error("Aucune écriture exploitable n’a été extraite du document.");
+      const facts = documentFactsFromProposal(proposals[0]);
+      const warnings = [];
+      if (pdfInfo?.omittedPages) warnings.push(pdfInfo.omittedPages + " page(s) au-delà de la limite de lecture n’ont pas été analysées.");
+      if (pdfInfo?.omittedScannedPages) warnings.push(pdfInfo.omittedScannedPages + " page(s) numérisée(s) supplémentaires n’ont pas pu être transmises au modèle vision (limite de 4 images par document).");
+      if (pdfInfo?.truncatedText) warnings.push("Le texte extrait a été tronqué pour respecter la limite de traitement.");
+      out.innerHTML = '<p><strong>' + proposals.length + ' écriture(s) proposée(s) — champs modifiables</strong></p>' +
+        '<p class="muted">Vérifiez chaque page et chaque montant sur le document original. L’IA sépare les faits visibles des incertitudes. Les contrôles techniques ne certifient ni l’authenticité ni la conformité fiscale ou juridique.</p>' +
+        (warnings.length ? '<p class="warn">' + warnings.map(esc).join('<br>') + '</p>' : '') +
+        proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Écriture issue du justificatif ' + (index + 1))).join('') +
+        documentMatchesMarkup(facts, store) +
+        '<section class="card" id="document-classification"><h4>Classement de la pièce justificative</h4><div class="row"><div><label>Type de document</label><select id="document-type"><option value="other" selected>Autre document</option><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option></select></div><div><label>Date du document</label><input id="document-date" type="date" value="' + esc(facts.date) + '"></div><div><label>Journal associé</label><input id="document-journal" maxlength="12" value="' + esc(proposals[0].journal || "ACH") + '"></div></div><div class="row"><div><label>Fournisseur / client / tiers</label><input id="document-counterparty" maxlength="160" value="' + esc(facts.counterparty) + '" placeholder="Nom du tiers"></div><div><label>Référence du document</label><input id="document-reference" maxlength="120" value="' + esc(facts.reference) + '" placeholder="Numéro de facture ou référence"></div></div><label>Note de classement</label><input id="document-notes" maxlength="500" placeholder="Information complémentaire facultative"><p class="muted">Les informations extraites par l’IA sont proposées comme aide au classement. Vérifiez-les avant validation.</p></section>' +
+        '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écriture(s)</button></div>';
+      bindDraftEditors(out, async drafts => {
+        const posted = [];
+        if (drafts.length === 1) {
+          const result = postEntry(store, drafts[0]);
+          if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+          posted.push(result.entry);
+        } else {
+          for (const draft of drafts) {
+            const result = postEntry(store, draft);
+            if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+            posted.push(result.entry);
+          }
+        }
+        saveStore(store);
+        const documentId = globalThis.crypto?.randomUUID?.() || ("doc-" + Date.now() + "-" + Math.random().toString(16).slice(2));
+        const entryLocalIds = posted.map(entry => Number(entry.id));
+        const documentMetadata = { type:document.getElementById("document-type")?.value || "other", documentDate:document.getElementById("document-date")?.value || "", counterparty:document.getElementById("document-counterparty")?.value || "", reference:document.getElementById("document-reference")?.value || "", journal:document.getElementById("document-journal")?.value || "", notes:document.getElementById("document-notes")?.value || "" };
+        let localArchived = false, cloudArchived = false, archiveWarning = "";
+        try { await putLocalAccountingDocument({ id:documentId, file, entryIds:entryLocalIds, metadata:documentMetadata }); localArchived = true; }
+        catch (error) { archiveWarning = "Archive locale indisponible : " + (error?.message || "stockage non disponible") + ". "; }
+        try {
+          const syncResult = await syncCloudIfReady();
+          if (syncResult?.skipped && syncResult.reason !== "no-company") throw new Error("Effectuez la synchronisation initiale de l’entreprise avant d’archiver ses pièces dans le coffre partagé.");
+          const cloudDocument = await uploadCloudAccountingDocument({ file, entryLocalIds, metadata:documentMetadata });
+          if (cloudDocument) { cloudArchived = true; if (localArchived) await deleteLocalAccountingDocument(documentId); }
+        } catch (error) { archiveWarning += "Coffre partagé non mis à jour : " + (error?.message || "connexion indisponible") + ". Le fichier reste sur cet appareil si l’archive locale a réussi."; }
+        const archiveMessage = cloudArchived ? "Justificatif archivé dans le coffre privé de l’entreprise." : localArchived ? "Justificatif conservé sur cet appareil uniquement." : "Attention : le justificatif n’a pas pu être archivé. Conservez le fichier original.";
+        toast(posted.length + ' écriture(s) enregistrée(s). ' + archiveMessage + (archiveWarning ? " " + archiveWarning : ""));
+        router.go('entries');
+      });
+    } catch (err) {
+      out.innerHTML = '<p class="errors">' + esc(err.message || "Lecture du justificatif impossible.") + '</p>';
+    }
+  });
+
+
   document.getElementById("import-run").addEventListener("click", async () => {
     const text = document.getElementById("import-text").value.trim();
     if (!text) return toast("Collez d'abord un texte.");
@@ -68,24 +224,23 @@ export function viewAssistant() {
       return;
     }
     if (!proposals.length) { out.innerHTML = `<p class="errors">Aucune opération reconnue dans ce texte.</p>`; return; }
-    const checked = proposals.map((p) => ({ p, v: validateEntry(store, p) }));
-    const valid = checked.filter((c) => c.v.ok);
-    out.innerHTML = `
-      <p>${checked.length} écriture(s) proposée(s) — ${valid.length} valide(s), ${checked.length - valid.length} à corriger.</p>
-      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Journal</th><th>Détail</th><th>Contrôle</th></tr></thead>
-      <tbody>${checked.map((c) => `<tr><td>${esc(c.p.date)}</td><td>${esc(c.p.journal)}</td>
-        <td class="muted">${esc(c.p.lines.map((l) => `${l.account} ${l.debit ? "D" + l.debit : "C" + l.credit}`).join(" · "))}</td>
-        <td>${c.v.ok ? `<span class="ok-msg">✓ équilibrée</span>` : `<span class="errors">✗ ${esc(c.v.errors[0] || "invalide")}</span>`}</td></tr>`).join("")}</tbody></table></div>
-      ${valid.length ? `<div class="actions"><button id="import-save">Enregistrer les ${valid.length} écriture(s) valide(s)</button></div>` : ""}`;
-    if (valid.length) {
-      document.getElementById("import-save").addEventListener("click", () => {
-        let n = 0;
-        for (const c of valid) { const r = postEntry(store, c.p); if (r.ok) n++; }
-        saveStore(store);
-        toast(`✓ ${n} écriture(s) enregistrée(s) : grand livre, balance, bilan et résultat mis à jour.`);
-        router.go("entries");
-      });
-    }
+    out.innerHTML = '<p><strong>' + proposals.length + ' écriture(s) extraites.</strong> Modifiez les dates, journaux, comptes, libellés et montants ; ajoutez ou retirez des lignes. L’enregistrement est global : si une seule écriture est invalide, aucune ne sera enregistrée.</p>' +
+      proposals.map((proposal, index) => draftCardMarkup(proposal, index, 'Opération ' + (index + 1))).join('') +
+      '<p class="muted">Les dates absentes restent vides. Les informations incertaines doivent être vérifiées sur les pièces originales.</p>' +
+      '<div class="actions"><button type="button" data-draft-save>Valider et enregistrer les ' + proposals.length + ' écritures</button></div>';
+    bindDraftEditors(out, drafts => {
+      const closed = drafts.find(draft => (store.settings.closedPeriods || []).some(period => draft.date >= period.start && draft.date <= period.end));
+      if (closed) { toast('Période clôturée : aucune écriture enregistrée.'); return; }
+      const posted = [];
+      for (const draft of drafts) {
+        const result = postEntry(store, draft);
+        if (!result.ok) { toast('Enregistrement interrompu : ' + result.errors.join(' · ')); return; }
+        posted.push(result.entry);
+      }
+      saveStore(store);
+      toast(posted.length + ' écriture(s) enregistrée(s) après validation.');
+      router.go('entries');
+    });
   });
 
   // ---- Conversation avec photo ----
@@ -136,10 +291,13 @@ export function viewAssistant() {
   document.getElementById("audit-run").addEventListener("click", async () => {
     const out = document.getElementById("audit-result");
     out.innerHTML = `<p class="muted">⏳ Analyse en cours…</p>`;
+    const snapshot = buildAiAuditSnapshot(store);
     const anomalies = checkAnomalies(store);
+    const taxFindings = snapshot.tax.findings;
     let html = anomalies.length
       ? `<ul class="errors">${anomalies.slice(0, 15).map((a) => `<li>${esc(a.message)}</li>`).join("")}</ul>`
       : `<p class="ok-msg">✓ Aucune anomalie détectée par le moteur local.</p>`;
+    html += `<h3>Vigilance fiscale</h3>` + (taxFindings.length ? `<ul class="errors">${taxFindings.map(item => `<li>${esc(item.message)} (écriture ${esc(item.entryId ?? "—")}, ligne ${esc(item.line)})</li>`).join("")}</ul>` : `<p class="muted">${esc(snapshot.tax.note || "Aucune incohérence fiscale explicite détectée par les contrôles déterministes.")}</p>`) + (snapshot.tax.referenceStatus === "active" ? `<p class="muted">Référentiel actif : ${esc(snapshot.tax.countryName)} (${esc(snapshot.tax.rulesVersion || "version non précisée")}).</p>` : `<p class="warn">Référentiel fiscal non actif pour ce pays : aucune validation des taux n’est effectuée.</p>`);
     if (aiConfigured(store)) {
       try { html += `<div class="chat-msg ai" style="max-width:100%">${esc(await aiAudit(store))}</div>`; }
       catch (err) { html += `<p class="errors">${esc(err.message)}</p>`; }
@@ -150,8 +308,47 @@ export function viewAssistant() {
 
 export function viewSettings() {
   const s = store.settings;
-  const plan = getPlan(s.plan);
+  const plan = getPlan(s.plan, s.customPlans);
+  const customPlan = (s.customPlans || []).find((item) => item.id === s.plan) || null;
   const pid = providerOf(store);
+  const basePlanOptions = Object.values(PLANS).map((p) => '<option value="' + esc(p.id) + '"' + (p.id === s.plan ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
+  const customPlanOptions = (s.customPlans || []).map((p) => '<option value="' + esc(p.id) + '"' + (p.id === s.plan ? ' selected' : '') + '>' + esc(p.name) + '</option>').join("");
+  const customPlanRows = (s.customPlans || []).map((p) => '<tr><td>' + esc(p.name) + (p.id === s.plan ? ' <span class="ok-msg">Actif</span>' : '') + '</td><td>' + p.accounts.length + '</td><td><div class="actions"><button class="small secondary" data-cp-activate="' + esc(p.id) + '">Activer</button><button class="small secondary" data-cp-export="' + esc(p.id) + '">Exporter</button><button class="small danger" data-cp-delete="' + esc(p.id) + '">Supprimer</button></div></td></tr>').join("");
+  const customPlanEditor = customPlan ? '<div class="custom-plan-editor" style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px"><h3>Modifier : ' + esc(customPlan.name) + '</h3><div class="row"><div><label>Nom du plan</label><input id="cp-edit-name" maxlength="100" value="' + esc(customPlan.name) + '"></div><div><label>Description</label><input id="cp-edit-description" maxlength="500" value="' + esc(customPlan.description || "") + '"></div><div class="nogrow"><button id="cp-save-meta">Enregistrer</button></div></div><h3>Ajouter un compte</h3><div class="row"><div><label>Numéro</label><input id="cp-account-code" maxlength="20" placeholder="Ex. 7085"></div><div><label>Libellé</label><input id="cp-account-label" maxlength="180" placeholder="Libellé du compte"></div><div><label>Type</label><select id="cp-account-type">' + Object.entries(ACCOUNT_TYPES).map(([k,v]) => '<option value="' + k + '">' + v + '</option>').join("") + '</select></div><div class="nogrow"><button id="cp-add-account">Ajouter</button></div></div><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Type</th><th>Action</th></tr></thead><tbody>' + customPlan.accounts.map(([code,label,type]) => '<tr><td>' + esc(code) + '</td><td>' + esc(label) + '</td><td>' + esc(ACCOUNT_TYPES[type] || type) + '</td><td><button class="small danger" data-cp-remove-account="' + esc(code) + '">Retirer</button></td></tr>').join("") + '</tbody></table></div></div>' : "";
+  const customPlansCard = '<div class="card" id="custom-plans-card"><h2>Plans comptables personnalisés</h2><p class="muted">Créez une copie indépendante d’un référentiel ou d’un modèle, puis adaptez ses comptes. Les plans sont sauvegardés sur cet appareil et inclus dans la sauvegarde JSON MIZANE. Ils ne modifient jamais les référentiels officiels.</p><div class="row"><div><label>Nom du nouveau plan</label><input id="cp-new-name" maxlength="100" placeholder="Ex. Plan de la société"></div><div><label>Base à copier</label><select id="cp-new-base">' + basePlanOptions + customPlanOptions + '</select></div><div class="nogrow"><button id="cp-create">Créer une copie</button></div></div><div class="row"><div><label>Importer un plan personnalisé (.json)</label><input type="file" id="cp-import-file" accept=".json,application/json"></div><div class="nogrow"><button class="secondary" id="cp-import">Importer le plan</button></div></div>' + ((s.customPlans || []).length ? '<h3>Plans enregistrés</h3><div class="table-wrap"><table><thead><tr><th>Plan</th><th>Comptes</th><th>Actions</th></tr></thead><tbody>' + customPlanRows + '</tbody></table></div>' : '<p class="muted">Aucun plan personnalisé enregistré pour le moment.</p>') + customPlanEditor + '</div>';
+  const conversionPlans = [...Object.values(PLANS), ...(s.customPlans || [])];
+  const defaultConversionSource = conversionPlans.some((p) => p.id === s.plan) ? s.plan : (conversionPlans[0]?.id || "");
+  const defaultConversionTarget = conversionPlans.find((p) => p.id !== defaultConversionSource)?.id || "";
+  const conversionOptions = conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionSource ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("");
+  const conversionMappings = (s.planMappings || []).map((m) => '<option value="' + esc(m.id) + '">' + esc(m.label) + ' — ' + esc(m.sourcePlanId) + ' → ' + esc(m.targetPlanId) + ' (' + esc(m.status) + ')</option>').join("");
+  const migrationRecords = [...(s.planMigrationHistory || [])].reverse();
+  const activePlanMigration = migrationRecords.find((item) => item.status === "applied");
+  const migrationHistoryHtml = migrationRecords.length
+    ? '<section class="card" style="margin-top:12px"><h3>Historique et audit des migrations</h3><p class="muted">Comparaison des soldes attendus selon le rapprochement et des soldes réellement enregistrés dans le plan cible. Cette comparaison technique ne certifie pas une équivalence juridique ou comptable des référentiels.</p>' +
+      migrationRecords.map((record) => {
+        const report = record.auditReport;
+        const rows = report ? migrationAuditRows(report) : [];
+        const events = (record.events || []).map((event) => esc(event.type) + ' · ' + esc(event.at) + ' · acteur : ' + esc(event.actor || 'non renseigné')).join('<br>');
+        const reportRows = rows.map((row) => '<tr>' + Object.values(row).map((value) => '<td>' + esc(value) + '</td>').join('') + '</tr>').join('');
+        const reportTable = report
+          ? '<p><strong>Contrôle :</strong> ' + esc(report.status) + ' · ' + report.differenceCount + ' écart(s) · ' + report.unmapped.length + ' compte(s) non rapproché(s) · ' + report.entryIssues.length + ' écriture(s) déséquilibrée(s)</p>' +
+            '<p class="muted">Avant : débit ' + report.beforeTotals.debit + ' / crédit ' + report.beforeTotals.credit + ' — Après : débit ' + report.afterTotals.debit + ' / crédit ' + report.afterTotals.credit + ' — Écart global débit ' + report.totalsDifference.debit + ', crédit ' + report.totalsDifference.credit + '.</p>' +
+            '<details><summary>Détail des soldes par compte (' + rows.length + ')</summary><div class="table-wrap"><table><thead><tr><th>Compte</th><th>Libellé</th><th>Débit attendu</th><th>Débit après</th><th>Écart débit</th><th>Crédit attendu</th><th>Crédit après</th><th>Écart crédit</th><th>Solde attendu</th><th>Solde après</th><th>Écart solde</th><th>Cible absente</th></tr></thead><tbody>' + reportRows + '</tbody></table></div></details>' +
+            (report.accountsTruncated ? '<p class="muted">Rapport volumineux : affichage limité aux comptes présentant un écart (' + report.accounts.length + ' sur ' + report.accountRowsTotal + '). Les totaux globaux restent complets.</p>' : '') +
+            (report.unmapped.length ? '<p class="errors">Comptes non rapprochés : ' + esc(report.unmapped.map((item) => item.account).join(', ')) + '</p>' : '') +
+            (report.entryIssues.length ? '<p class="errors">Écritures déséquilibrées : ' + report.entryIssues.length + '</p>' : '')
+          : '<p class="muted">Rapport détaillé indisponible pour cette ancienne migration.</p>';
+        return '<article class="card" style="margin-top:10px"><strong>' + esc(record.mappingLabel || 'Migration') + '</strong> — <span>' + esc(record.status) + '</span>' +
+          '<p class="muted">' + esc(record.sourcePlanId) + ' → ' + esc(record.targetPlanId) + ' · ' + Number(record.entryCount || 0) + ' écriture(s) · appliquée le ' + esc(record.appliedAt || '') +
+          (record.undoneAt ? ' · annulée le ' + esc(record.undoneAt) : '') + '</p>' +
+          '<p class="muted">Approbateur : ' + esc(record.approvedBy || 'non renseigné') + ' · ' + (record.approvedAt ? 'approbation : ' + esc(record.approvedAt) : 'date d’approbation non renseignée') + '</p>' +
+          '<p class="muted">' + events + '</p>' + reportTable +
+          '<div class="actions"><button class="small secondary" data-migration-excel="' + esc(record.id) + '">Exporter Excel</button><button class="small secondary" data-migration-pdf="' + esc(record.id) + '">Imprimer / PDF</button>' +
+          (record.status === "applied" ? '<button class="small danger" data-migration-undo="' + esc(record.id) + '">Restaurer cette migration</button>' : '') + '</div></article>';
+      }).join('') + '</section>'
+    : '<p class="muted" style="margin-top:12px">Aucune migration enregistrée.</p>';
+  const conversionCard = '<div class="card" id="accounting-conversion-card"><h2>Assistant de conversion entre référentiels</h2><p class="muted">Préparez un rapprochement entre deux plans. Les suggestions reposent sur le code, le libellé et le type comptable ; elles ne constituent pas une équivalence juridique ou comptable certifiée. Toute règle doit être vérifiée et approuvée explicitement.</p><div class="row"><div><label>Plan source</label><select id="conversion-source">' + conversionOptions + '</select></div><div><label>Plan cible</label><select id="conversion-target">' + conversionPlans.map((p) => '<option value="' + esc(p.id) + '"' + (p.id === defaultConversionTarget ? ' selected' : '') + '>' + esc(p.name) + (p.official === false ? ' — personnalisé/indicatif' : '') + '</option>').join("") + '</select></div><div class="nogrow"><button id="conversion-prepare">Analyser les comptes</button></div></div><div id="conversion-suggestions" style="margin-top:12px"></div><div class="row" style="margin-top:14px"><div><label>Nom du rapprochement</label><input id="conversion-label" maxlength="120" placeholder="Ex. SYSCOHADA vers PCG"></div><div class="nogrow"><button id="conversion-save" disabled>Enregistrer en brouillon</button></div></div><hr><h3>Rapprochements enregistrés</h3><div class="row"><div><label>Rapprochement</label><select id="conversion-mapping">' + conversionMappings + '</select></div><div class="nogrow"><button class="secondary" id="conversion-approve">Approuver les règles</button></div><div class="nogrow"><button id="conversion-preview">Simuler la conversion</button></div></div><div id="conversion-result" style="margin-top:12px"></div>' + migrationHistoryHtml + '</div>';
+
   $app.innerHTML = `
     <h1>Paramètres</h1>
     <div class="card">
@@ -164,7 +361,13 @@ export function viewSettings() {
       </div>
       <div class="row">
         <div><label>Plan comptable</label>
-          <select id="s-plan">${Object.values(PLANS).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select>
+          <select id="s-plan">
+            <optgroup label="Référentiels nationaux et régionaux">${Object.values(PLANS).filter((p) => p.category !== "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+            <optgroup label="Modèles sectoriels indicatifs">${Object.values(PLANS).filter((p) => p.category === "sectoral-template").map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+            <optgroup label="Mes plans personnalisés">${(s.customPlans || []).map((p) => `<option value="${p.id}" ${p.id === s.plan ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</optgroup>
+          </select>
+          <p class="muted" id="plan-description">${esc(plan.description || (plan.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE."))}</p>
+          <div class="muted" id="country-framework-info" style="margin-top:8px"></div>
         </div>
         <div><label>Devise</label><input id="s-currency" value="${esc(s.currency)}" maxlength="3"></div>
         <div><label>Langue</label>
@@ -204,6 +407,19 @@ export function viewSettings() {
       </details>
     </div>
 
+
+    ${customPlansCard}
+    ${conversionCard}
+
+    <section class="card" id="legacy-document-recovery">
+      <h2>Récupération des anciens justificatifs</h2>
+      <p class="muted">Inventoriez les anciens coffres de cet appareil. Les fichiers historiques ne sont jamais attribués automatiquement à une entreprise. Sélectionnez uniquement les pièces dont vous confirmez l’appartenance à l’espace actif. Les bases sources resteront intactes.</p>
+      <div class="actions"><button type="button" class="secondary" id="legacy-vault-scan">Analyser les anciens coffres</button></div>
+      <p id="legacy-vault-status" class="muted" aria-live="polite">Aucun inventaire effectué.</p>
+      <div id="legacy-vault-results"></div>
+      <div class="actions"><button type="button" id="legacy-import-accounting" disabled>Récupérer les justificatifs comptables sélectionnés</button><button type="button" class="secondary" id="legacy-import-tax" disabled>Récupérer les justificatifs fiscaux sélectionnés</button></div>
+    </section>
+
     <div class="card">
       <h2>💾 Données</h2>
       <div class="actions">
@@ -216,23 +432,274 @@ export function viewSettings() {
     </div>
   `;
 
+
+  let legacyInventory = null;
+  const legacyStatus = document.getElementById("legacy-vault-status");
+  const legacyResults = document.getElementById("legacy-vault-results");
+  const renderLegacyInventory = (inventory) => {
+    const renderRows = (rows, kind, label) => {
+      if (!rows.length) return '<p class="muted">Aucun fichier ancien détecté dans le coffre ' + label + '.</p>';
+      return '<h3>' + label + ' (' + rows.length + ')</h3><div class="table-wrap"><table><thead><tr><th>Sélection</th><th>Fichier</th><th>Taille</th><th>Liens / catégorie</th><th>État</th></tr></thead><tbody>' +
+        rows.map((row) => '<tr><td><input type="checkbox" data-legacy-kind="' + kind + '" value="' + esc(row.id) + '"' + (row.hasBlob && row.id ? '' : ' disabled') + '></td><td>' + esc(row.fileName) + '</td><td>' + Math.ceil(row.size / 1024) + ' Ko</td><td>' + esc(kind === 'accounting' ? (row.entryIds.join(', ') || 'Aucune écriture') : [row.declarationId, row.category].filter(Boolean).join(' · ') || 'Métadonnées limitées') + '</td><td>' + (row.hasBlob ? '<span class="ok-msg">Fichier présent</span>' : '<span class="errors">Fichier absent</span>') + '</td></tr>').join('') +
+        '</tbody></table></div>';
+    };
+    legacyResults.innerHTML = renderRows(inventory.accounting, 'accounting', 'Comptabilité') + renderRows(inventory.tax, 'tax', 'Fiscalité');
+    const updateButtons = () => {
+      document.getElementById("legacy-import-accounting").disabled = !legacyResults.querySelector('[data-legacy-kind="accounting"]:checked');
+      document.getElementById("legacy-import-tax").disabled = !legacyResults.querySelector('[data-legacy-kind="tax"]:checked');
+    };
+    legacyResults.querySelectorAll('input[data-legacy-kind]').forEach((input) => input.addEventListener('change', updateButtons));
+    updateButtons();
+  };
+  document.getElementById("legacy-vault-scan").addEventListener("click", async () => {
+    legacyStatus.textContent = "Lecture en cours, sans modification des anciennes bases…";
+    legacyResults.innerHTML = "";
+    try {
+      legacyInventory = await inspectLegacyDocumentVaults();
+      const scope = resolveDocumentStorageScope();
+      renderLegacyInventory(legacyInventory);
+      legacyStatus.textContent = "Inventaire terminé. Destination actuelle : " + (scope.mode === "company" ? "entreprise " + scope.companyId : "profil local") + ". Les anciens coffres n’ont pas été modifiés.";
+    } catch (error) {
+      legacyStatus.textContent = "Inventaire impossible : " + (error?.message || error);
+    }
+  });
+  document.getElementById("legacy-import-accounting").addEventListener("click", async () => {
+    const selectedIds = [...legacyResults.querySelectorAll('[data-legacy-kind="accounting"]:checked')].map((input) => input.value);
+    if (!selectedIds.length) return;
+    try {
+      const scope = resolveDocumentStorageScope();
+      const destination = scope.mode === "company" ? "l’entreprise " + scope.companyId : "le profil local " + scope.userId;
+      if (!confirm("Confirmez-vous que chacun des " + selectedIds.length + " justificatif(s) comptable(s) sélectionné(s) appartient à " + destination + " ? Les anciens fichiers resteront conservés.")) return;
+      const result = await recoverLegacyAccountingDocuments({
+        selectedIds,
+        confirmation: { confirmed: true, databaseSuffix: scope.databaseSuffix },
+        existingEntryIds: (store.entries || []).map((entry) => entry.id),
+      });
+      legacyStatus.textContent = result.imported.length + " justificatif(s) comptable(s) récupéré(s), " + result.skipped.length + " ignoré(s). Ancien coffre conservé.";
+      document.getElementById("legacy-vault-scan").click();
+      toast("Récupération comptable terminée.");
+    } catch (error) {
+      legacyStatus.textContent = "Récupération impossible : " + (error?.message || error);
+    }
+  });
+  document.getElementById("legacy-import-tax").addEventListener("click", async () => {
+    const selectedIds = [...legacyResults.querySelectorAll('[data-legacy-kind="tax"]:checked')].map((input) => input.value);
+    if (!selectedIds.length) return;
+    try {
+      const scope = resolveDocumentStorageScope();
+      const destination = scope.mode === "company" ? "l’entreprise " + scope.companyId : "le profil local " + scope.userId;
+      if (!confirm("Confirmez-vous que chacun des " + selectedIds.length + " justificatif(s) fiscal(aux) sélectionné(s) appartient à " + destination + " ? Les anciens fichiers resteront conservés.")) return;
+      const result = await recoverLegacyTaxEvidence({
+        selectedIds,
+        confirmation: { confirmed: true, databaseSuffix: scope.databaseSuffix },
+      });
+      legacyStatus.textContent = result.imported.length + " justificatif(s) fiscal(aux) récupéré(s), " + result.skipped.length + " ignoré(s). Ancien coffre conservé.";
+      document.getElementById("legacy-vault-scan").click();
+      toast("Récupération fiscale terminée.");
+    } catch (error) {
+      legacyStatus.textContent = "Récupération impossible : " + (error?.message || error);
+    }
+  });
+
+  let conversionSuggestions = [];
+  const getConversionPlan = (id) => {
+    const item = conversionPlans.find((p) => p.id === id);
+    if (!item) return null;
+    return { id: item.id, name: item.name, accounts: item.accounts || [] };
+  };
+  const conversionCatalog = () => ({ ...PLANS, ...Object.fromEntries((s.customPlans || []).map((p) => [p.id, p])) });
+  const conversionVersions = () => Array.isArray(s.planVersions) ? s.planVersions : [];
+  const prepareConversion = () => {
+    const sourceId = document.getElementById("conversion-source").value;
+    const targetId = document.getElementById("conversion-target").value;
+    try {
+      const source = getConversionPlan(sourceId), target = getConversionPlan(targetId);
+      conversionSuggestions = suggestAccountMatches(source, target);
+      document.getElementById("conversion-suggestions").innerHTML = '<p>' + conversionSuggestions.length + ' compte(s) source analysé(s). Les propositions sont préremplies mais restent à confirmer.</p><div class="table-wrap"><table><thead><tr><th>Compte source</th><th>Suggestion</th><th>Confiance indicative</th><th>Décision</th></tr></thead><tbody>' + conversionSuggestions.map((item) => '<tr><td><strong>' + esc(item.source.code) + '</strong> — ' + esc(item.source.label) + '<br><small>' + esc(ACCOUNT_TYPES[item.source.type] || item.source.type) + '</small></td><td>' + (item.suggestion ? esc(item.suggestion.code + ' — ' + item.suggestion.label) : '<span class="muted">Aucune proposition fiable</span>') + (item.ambiguous ? '<br><span class="warn">Plusieurs candidats proches</span>' : '') + '</td><td>' + (item.suggestion ? item.confidence + ' %' : '—') + '</td><td><select data-conversion-source="' + esc(item.source.code) + '"><option value="">Non rapproché</option>' + item.candidates.map((candidate) => '<option value="' + esc(candidate.code) + '"' + (item.suggestion && item.suggestion.code === candidate.code ? ' selected' : '') + '>' + esc(candidate.code + ' — ' + candidate.label) + '</option>').join("") + '</select></td></tr>').join("") + '</tbody></table></div><p class="muted">Les comptes sans sélection resteront non rapprochés. Les types différents sont exclus des propositions.</p>';
+      document.getElementById("conversion-save").disabled = false;
+      document.getElementById("conversion-label").value = "Conversion " + source.name + " vers " + target.name;
+    } catch (error) {
+      conversionSuggestions = [];
+      document.getElementById("conversion-suggestions").innerHTML = '<p class="errors">' + esc(error.message) + '</p>';
+      document.getElementById("conversion-save").disabled = true;
+    }
+  };
+  document.getElementById("conversion-prepare").addEventListener("click", prepareConversion);
+  document.getElementById("conversion-save").addEventListener("click", () => {
+    if (!conversionSuggestions.length) return toast("Analysez d'abord les comptes.");
+    const sourceId = document.getElementById("conversion-source").value, targetId = document.getElementById("conversion-target").value;
+    const selections = Object.fromEntries([...document.querySelectorAll("[data-conversion-source]")].map((select) => [select.dataset.conversionSource, select.value]));
+    try {
+      const rules = buildConversionRules(conversionSuggestions, selections);
+      if (!rules.length) return toast("Aucun rapprochement sélectionné.");
+      const groupedRules = rules.filter((rule) => rule.relation === "many-to-one").length;
+      if (groupedRules && !confirm(groupedRules + " regroupement(s) plusieurs-vers-un détecté(s). Vérifiez que ces comptes peuvent légalement et comptablement être fusionnés. Continuer en brouillon ?")) return;
+      const mapping = validatePlanMapping({ id: "conversion-" + Date.now().toString(36), sourcePlanId: sourceId, targetPlanId: targetId, label: document.getElementById("conversion-label").value.trim() || ("Conversion " + sourceId + " vers " + targetId), status: "draft", rules }, conversionCatalog(), conversionVersions());
+      s.planMappings = [...(s.planMappings || []), mapping];
+      saveStore(store);
+      toast("Rapprochement enregistré en brouillon. Aucune règle n'est encore active.");
+      router.render();
+    } catch (error) { toast(error.message); }
+  });
+  document.getElementById("conversion-approve").addEventListener("click", () => {
+    const id = document.getElementById("conversion-mapping").value;
+    const current = (s.planMappings || []).find((item) => item.id === id);
+    if (!current) return toast("Sélectionnez un rapprochement enregistré.");
+    if (!confirm("Approuver toutes les règles de ce rapprochement ? Vérifiez les comptes et les équivalences avant de confirmer.")) return;
+    try {
+      const approvedAt = new Date().toISOString();
+      const validated = validatePlanMapping({ ...current, status: "approved", rules: current.rules.map((rule) => ({ ...rule, status: "approved" })), updatedAt: approvedAt }, conversionCatalog(), conversionVersions());
+      const updated = { ...validated, approvedAt, approvedBy: current.approvedBy || null, approvalEvents: [...(current.approvalEvents || []), { at: approvedAt, actor: current.approvedBy || null }] };
+      s.planMappings = s.planMappings.map((item) => item.id === id ? updated : item);
+      saveStore(store); toast("Rapprochement approuvé. Vous pouvez lancer une simulation.");
+      router.render();
+    } catch (error) { toast(error.message); }
+  });
+  document.getElementById("conversion-preview").addEventListener("click", () => {
+    const id = document.getElementById("conversion-mapping").value;
+    const mapping = (s.planMappings || []).find((item) => item.id === id);
+    if (!mapping) return toast("Sélectionnez un rapprochement enregistré.");
+    try {
+      if (String(s.plan) !== String(mapping.sourcePlanId)) throw new Error("Le plan actif doit être le plan source du rapprochement pour simuler les écritures de cette société.");
+      const source = getConversionPlan(mapping.sourcePlanId), target = getConversionPlan(mapping.targetPlanId);
+      const result = dryRunPlanMigration({ entries: store.entries || [], sourcePlan: source, targetPlan: target, mapping });
+      const report = { mapping: mapping.label, generatedAt: new Date().toISOString(), sourceEntries: result.sourceEntryCount, migratedEntries: result.migratedEntryCount, blockedEntries: result.blockedEntryCount, canApply: result.canApply, errors: result.errors, warnings: result.warnings, unmapped: result.unmapped, entries: result.entries };
+      document.getElementById("conversion-result").innerHTML = '<p><strong>Résultat de la simulation</strong> — ' + result.migratedEntryCount + ' écriture(s) simulée(s), ' + result.blockedEntryCount + ' bloquée(s), ' + result.unmapped.length + ' compte(s) non rapproché(s).</p>' + (result.canApply ? '<p class="ok-msg">Contrôles réussis : toutes les écritures sont équilibrées. Aucune modification n’a encore été appliquée.</p><button id="conversion-apply">Appliquer la migration en toute sécurité</button>' : '<p class="warn">Conversion incomplète : aucune migration possible. Corrigez les règles et les anomalies ci-dessous.</p>') + (result.errors.length ? '<ul class="errors">' + result.errors.slice(0, 30).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + (result.warnings.length ? '<ul class="muted">' + result.warnings.slice(0, 20).map((message) => '<li>' + esc(message) + '</li>').join("") + '</ul>' : '') + '<div class="actions"><button class="secondary" id="conversion-export-report">Exporter le rapport JSON</button></div>';
+      document.getElementById("conversion-export-report").addEventListener("click", () => downloadBlob(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }), "mizane-simulation-conversion.json"));
+      const applyButton = document.getElementById("conversion-apply");
+      if (applyButton) applyButton.addEventListener("click", () => {
+        if (!confirm("CONFIRMATION DE MIGRATION\n\nLes " + result.sourceEntries + " écritures seront converties vers " + target.name + ". Une sauvegarde de restauration sera conservée dans l'historique. Les écritures cloud seront mises à jour lors de la prochaine synchronisation. Continuer ?")) return;
+        const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+        try {
+          const applied = applyPlanMigration(store, { sourcePlan: source, targetPlan: target, mapping });
+          if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : la migration a été annulée en mémoire. Libérez de l'espace et exportez vos données.");
+          refreshPlan();
+          toast("Migration appliquée : " + applied.migratedEntryCount + " écriture(s) convertie(s).");
+          router.render();
+        } catch (error) {
+          store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan();
+          document.getElementById("conversion-result").insertAdjacentHTML("beforeend", '<p class="errors">' + esc(error.message) + '</p>');
+        }
+      });
+    } catch (error) { document.getElementById("conversion-result").innerHTML = '<p class="errors">' + esc(error.message) + '</p>'; }
+  });
+
+  const undoMigrationButton = document.getElementById("conversion-undo");
+  if (undoMigrationButton) undoMigrationButton.addEventListener("click", () => {
+    if (!activePlanMigration) return;
+    if (!confirm("Annuler la migration " + activePlanMigration.mappingLabel + " et restaurer exactement les écritures d'origine ? Cette action est possible uniquement si les écritures n'ont pas changé depuis la migration.")) return;
+    const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+    try {
+      const undone = undoPlanMigration(store, activePlanMigration.id);
+      if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : le retour arrière a été annulé.");
+      refreshPlan();
+      toast("Retour arrière effectué : " + undone.restoredEntryCount + " écriture(s) restaurée(s).");
+      router.render();
+    } catch (error) {
+      store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan();
+      toast(error.message);
+    }
+  });
+  document.querySelectorAll("[data-migration-excel]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationExcel);
+    if (!record?.auditReport) return toast("Rapport détaillé indisponible.");
+    const rows = migrationAuditRows(record.auditReport);
+    const headers = Object.keys(rows[0] || {});
+    const html = '<html><head><meta charset="utf-8"><style>body{font-family:Arial}table{border-collapse:collapse}th,td{border:1px solid #999;padding:5px}th{background:#eee}</style></head><body><h1>Audit de migration MIZANE</h1><p>' + esc(record.mappingLabel) + ' — ' + esc(record.sourcePlanId) + ' vers ' + esc(record.targetPlanId) + '</p><p>Comparaison technique selon le rapprochement approuvé ; ne vaut pas certification d’équivalence.</p><table><thead><tr>' + headers.map((key) => '<th>' + esc(key) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr>' + headers.map((key) => '<td>' + esc(row[key]) + '</td>').join('') + '</tr>').join('') + '</tbody></table></body></html>';
+    downloadBlob(new Blob(["\ufeff" + html], { type: "application/vnd.ms-excel;charset=utf-8" }), "mizane-audit-migration-" + record.id + ".xls");
+  }));
+  document.querySelectorAll("[data-migration-pdf]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationPdf);
+    if (!record?.auditReport) return toast("Rapport détaillé indisponible.");
+    const report = record.auditReport;
+    const rows = migrationAuditRows(report);
+    const headers = Object.keys(rows[0] || {});
+    const w = window.open("", "_blank");
+    if (!w) return toast("Autorisez les fenêtres contextuelles pour imprimer le rapport.");
+    const html = '<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Audit MIZANE</title><style>body{font:11px Arial;padding:20px}h1{font-size:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #888;padding:4px;text-align:left}th{background:#eee}.note{margin:12px 0;color:#444}@media print{button{display:none}}</style></head><body><h1>Audit de migration MIZANE</h1><p>' + esc(record.mappingLabel) + ' — ' + esc(record.sourcePlanId) + ' vers ' + esc(record.targetPlanId) + '</p><p>Statut : ' + esc(report.status) + ' · Écritures : ' + report.entryCountBefore + ' · Écarts : ' + report.differenceCount + '</p><p>Avant : débit ' + report.beforeTotals.debit + ' / crédit ' + report.beforeTotals.credit + ' — Après : débit ' + report.afterTotals.debit + ' / crédit ' + report.afterTotals.credit + '</p><p class="note">Comparaison technique des soldes selon les règles du rapprochement ; elle ne certifie pas l’équivalence juridique ou comptable des plans.</p><table><thead><tr>' + headers.map((key) => '<th>' + esc(key) + '</th>').join('') + '</tr></thead><tbody>' + rows.map((row) => '<tr>' + headers.map((key) => '<td>' + esc(row[key]) + '</td>').join('') + '</tr>').join('') + '</tbody></table><p>Généré le ' + esc(report.generatedAt) + '</p></body></html>';
+    w.document.open(); w.document.write(html); w.document.close(); w.focus(); w.print();
+  }));
+  document.querySelectorAll("[data-migration-undo]").forEach((button) => button.addEventListener("click", () => {
+    const record = migrationRecords.find((item) => item.id === button.dataset.migrationUndo);
+    if (!record || !confirm("Restaurer les écritures antérieures à la migration « " + record.mappingLabel + " » ? Le retour arrière est refusé si les écritures ont changé depuis cette migration.")) return;
+    const previousEntries = structuredClone(store.entries), previousPlan = s.plan, previousHistory = structuredClone(s.planMigrationHistory || []);
+    try {
+      const undone = undoPlanMigration(store, record.id);
+      if (!saveStore(store)) throw new Error("Sauvegarde locale impossible : le retour arrière a été annulé.");
+      refreshPlan(); toast("Retour arrière effectué : " + undone.restoredEntryCount + " écriture(s) restaurée(s)."); router.render();
+    } catch (error) {
+      store.entries = previousEntries; s.plan = previousPlan; s.planMigrationHistory = previousHistory; refreshPlan(); toast(error.message);
+    }
+  }));
   const updateVat = () => {
     const c = getCountry(document.getElementById("s-country").value);
     document.getElementById("s-vat").textContent = `Taux de TVA ${c.name} : ${c.vatRates.join("%, ")}% — Devise : ${c.currency} — Plan : ${PLANS[c.plan]?.name || c.plan}`;
   };
   updateVat();
+  const updateCountryFramework = () => {
+    const country = getCountry(document.getElementById("s-country").value);
+    const framework = getCountryAccountingFramework(country.code);
+    const target = document.getElementById("country-framework-info");
+    if (!framework) {
+      target.innerHTML = "";
+      return;
+    }
+    target.innerHTML = `<strong>Référentiel national identifié :</strong> ${esc(framework.name)}<br>
+      <span>${esc(framework.standard)}</span><br>
+      <span>Autorité : ${esc(framework.authority)} · Statut : référentiel vérifié, plan de comptes détaillé non intégré</span><br>
+      <a href="${esc(framework.sourceUrl)}" target="_blank" rel="noopener noreferrer">${esc(framework.sourceLabel)}</a>
+      <p>Ce cadre de normes ne constitue pas automatiquement un plan de comptes. Le plan actuellement sélectionné reste actif jusqu'à l'intégration d'une nomenclature officielle et testée.</p>`;
+  };
+  updateCountryFramework();
+  const updatePlanDescription = () => {
+    const selectedId = document.getElementById("s-plan").value;
+    const selectedPlan = getPlan(selectedId, s.customPlans);
+    document.getElementById("plan-description").textContent = selectedPlan?.description ||
+      (selectedPlan?.category === "sectoral-template" ? "Modèle indicatif à adapter au référentiel légal applicable." : "Référentiel comptable intégré à MIZANE.");
+  };
+  const hasPostedEntries = () => Array.isArray(store.entries) && store.entries.length > 0;
+  const showPlanSafetyNotice = (message) => {
+    const target = document.getElementById("country-framework-info");
+    target.insertAdjacentHTML("beforeend", '<p class="warn plan-safety-notice" role="alert">' + esc(message) + '</p>');
+  };
+  document.getElementById("s-plan").addEventListener("change", (event) => {
+    if (hasPostedEntries() && event.target.value !== s.plan) {
+      event.target.value = s.plan;
+      showPlanSafetyNotice("Changement de plan bloqué : cette entreprise possède déjà des écritures. Pour éviter les comptes inconnus et les états financiers incohérents, utilisez l’Assistant de conversion entre référentiels, puis appliquez une migration contrôlée avant de changer le plan.");
+      updatePlanDescription();
+      return;
+    }
+    updatePlanDescription();
+  });
   document.getElementById("s-country").addEventListener("change", (e) => {
     const c = getCountry(e.target.value);
-    document.getElementById("s-plan").value = c.plan;
+    const targetPlan = c.plan && PLANS[c.plan] ? c.plan : "";
+    if (targetPlan && targetPlan !== s.plan && hasPostedEntries()) {
+      document.getElementById("s-plan").value = s.plan;
+      showPlanSafetyNotice("Le pays a changé, mais le plan comptable actif est conservé car des écritures existent déjà. Le pays et la devise peuvent être actualisés sans convertir les écritures. Pour adopter le plan recommandé (" + esc(getPlan(targetPlan, s.customPlans).name) + "), préparez et appliquez d’abord une migration dans l’Assistant de conversion.");
+    } else if (targetPlan) {
+      document.getElementById("s-plan").value = targetPlan;
+    }
     document.getElementById("s-currency").value = c.currency;
     updateVat();
+    updatePlanDescription();
+    updateCountryFramework();
+    if (targetPlan && targetPlan !== s.plan && hasPostedEntries()) {
+      showPlanSafetyNotice("Attention : le changement de pays ne convertit ni les comptes, ni les écritures historiques. Le plan antérieur reste actif jusqu’à une migration validée.");
+    }
   });
 
   document.getElementById("s-save").addEventListener("click", () => {
     const c = getCountry(document.getElementById("s-country").value);
+    const selectedPlanId = document.getElementById("s-plan").value;
+    if (hasPostedEntries() && selectedPlanId !== s.plan) {
+      document.getElementById("s-plan").value = s.plan;
+      showPlanSafetyNotice("Enregistrement refusé : une migration comptable contrôlée est obligatoire avant de remplacer le plan actif.");
+      return;
+    }
     s.companyName = document.getElementById("s-company").value.trim() || "Ma société";
     s.country = c.code;
-    s.plan = document.getElementById("s-plan").value;
+    s.plan = selectedPlanId;
     s.currency = document.getElementById("s-currency").value.trim().toUpperCase() || c.currency;
     s.locale = c.locale;
     s.exerciceStart = document.getElementById("s-start").value || s.exerciceStart;
@@ -325,12 +792,110 @@ export function viewSettings() {
   };
   renderAISettings();
 
+
+  const makeCustomPlanId = () => "custom-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
+  const exportCustomPlan = (planToExport) => {
+    const payload = { format: "mizane-custom-plan", version: 1, plan: planToExport };
+    downloadBlob(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }), "mizane-plan-" + planToExport.id + ".json");
+  };
+  document.getElementById("cp-create").addEventListener("click", () => {
+    const name = document.getElementById("cp-new-name").value.trim();
+    if (!name) return toast("Donnez un nom au plan personnalisé.");
+    if ((s.customPlans || []).length >= 100) return toast("Limite de 100 plans personnalisés atteinte.");
+    const baseId = document.getElementById("cp-new-base").value;
+    const base = getPlan(baseId, s.customPlans);
+    const rows = base.category === "custom-plan"
+      ? base.accounts.map((a) => [...a])
+      : allAccounts(baseId).map((a) => [a.code, a.label, a.type]);
+    for (const a of s.customAccounts || []) if (!rows.some((row) => row[0] === a.code)) rows.push([a.code, a.label, a.type]);
+    try {
+      const created = createCustomPlan({ id: makeCustomPlanId(), name, basePlanId: baseId, description: "Copie personnalisable de " + base.name, accounts: rows });
+      s.customPlans.push(created); if (!hasPostedEntries()) s.plan = created.id; refreshPlan(); saveStore(store);
+      toast(hasPostedEntries() ? "Plan créé. Le plan actif est conservé pour protéger les écritures existantes ; utilisez l’assistant de conversion pour le remplacer." : "✓ Plan personnalisé créé et activé."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.querySelectorAll("[data-cp-activate]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpActivate);
+    if (!target) return;
+    if (hasPostedEntries() && target.id !== s.plan) return toast("Activation bloquée : migrez d’abord les écritures avec l’assistant de conversion.");
+    s.plan = target.id; refreshPlan(); saveStore(store); toast("Plan personnalisé activé."); router.render();
+  }));
+  document.querySelectorAll("[data-cp-export]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpExport);
+    if (target) exportCustomPlan(target);
+  }));
+  document.querySelectorAll("[data-cp-delete]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === button.dataset.cpDelete);
+    if (!target) return;
+    if (hasPostedEntries() && target.id === s.plan) return toast("Suppression bloquée : ce plan est associé aux écritures existantes. Migrez d’abord vers un autre référentiel.");
+    if (!confirm("Supprimer le plan « " + target.name + " » ? Les écritures existantes ne seront pas supprimées.")) return;
+    s.customPlans = s.customPlans.filter((p) => p.id !== target.id);
+    if (s.plan === target.id) s.plan = PLANS[target.basePlanId] ? target.basePlanId : "syscohada";
+    refreshPlan(); saveStore(store); toast("Plan personnalisé supprimé."); router.render();
+  }));
+  document.getElementById("cp-save-meta")?.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    try {
+      const updated = validateCustomPlan({ ...target, name: document.getElementById("cp-edit-name").value, description: document.getElementById("cp-edit-description").value, updatedAt: new Date().toISOString() });
+      s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      saveStore(store); toast("Métadonnées du plan mises à jour."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.getElementById("cp-add-account")?.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    const code = document.getElementById("cp-account-code").value.trim();
+    const label = document.getElementById("cp-account-label").value.trim();
+    const type = document.getElementById("cp-account-type").value;
+    try {
+      const updated = validateCustomPlan({ ...target, accounts: [...target.accounts, [code, label, type]], updatedAt: new Date().toISOString() });
+      s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      refreshPlan(); saveStore(store); toast("Compte ajouté au plan personnalisé."); router.render();
+    } catch (err) { toast(err.message); }
+  });
+  document.querySelectorAll("[data-cp-remove-account]").forEach((button) => button.addEventListener("click", () => {
+    const target = s.customPlans.find((p) => p.id === s.plan);
+    if (!target) return;
+    const code = button.dataset.cpRemoveAccount;
+    if ((store.entries || []).some((entry) => (entry.lines || []).some((line) => line.account === code))) return toast("Suppression impossible : ce compte est utilisé dans une écriture.");
+    if (!confirm("Retirer le compte " + code + " de ce plan ?")) return;
+    const updated = validateCustomPlan({ ...target, accounts: target.accounts.filter((row) => row[0] !== code), updatedAt: new Date().toISOString() });
+    s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+    refreshPlan(); saveStore(store); toast("Compte retiré."); router.render();
+  }));
+  document.getElementById("cp-import").addEventListener("click", async () => {
+    const input = document.getElementById("cp-import-file");
+    const file = input.files && input.files[0];
+    if (!file) return toast("Sélectionnez un fichier JSON de plan.");
+    try {
+      if (file.size > 2000000) throw new Error("Fichier trop volumineux (maximum 2 Mo).");
+      const raw = JSON.parse(await file.text());
+      const source = raw && raw.format === "mizane-custom-plan" ? raw.plan : raw;
+      if (raw && raw.version != null && raw.version !== 1) throw new Error("Version de fichier non prise en charge.");
+      const imported = validateCustomPlan({ ...source, id: makeCustomPlanId(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+      if ((s.customPlans || []).length >= 100) throw new Error("Limite de 100 plans personnalisés atteinte.");
+      s.customPlans.push(imported); s.plan = imported.id; refreshPlan(); saveStore(store);
+      toast("Plan importé et activé."); router.render();
+    } catch (err) { toast("Import impossible : " + err.message); }
+    finally { input.value = ""; }
+  });
+
   document.getElementById("ca-add").addEventListener("click", () => {
     const code = document.getElementById("ca-code").value.trim();
     const label = document.getElementById("ca-label").value.trim();
     if (!code || !label) return toast("Numéro et libellé obligatoires.");
     if (s.customAccounts.some((a) => a.code === code) || planAccounts.some((a) => a.code === code)) return toast("Ce compte existe déjà.");
-    s.customAccounts.push({ code, label, type: document.getElementById("ca-type").value });
+    const accountType = document.getElementById("ca-type").value;
+    const activeCustom = (s.customPlans || []).find((p) => p.id === s.plan);
+    if (activeCustom) {
+      try {
+        const updated = validateCustomPlan({ ...activeCustom, accounts: [...activeCustom.accounts, [code, label, accountType]], updatedAt: new Date().toISOString() });
+        s.customPlans = s.customPlans.map((p) => p.id === updated.id ? updated : p);
+      } catch (err) { return toast(err.message); }
+    } else {
+      s.customAccounts.push({ code, label, type: accountType });
+    }
     refreshPlan();
     saveStore(store);
     toast("✓ Compte ajouté au plan.");

@@ -122,6 +122,35 @@ Deno.serve(async (request) => {
   }
 
   if (action === "delete_company") {
+    // Supabase Storage objects are not removed by the company FK cascade.
+    // Remove private tax evidence first; keep the company row if cleanup fails.
+    const storagePaths: string[] = [];
+    let offset = 0;
+    while (true) {
+      const { data: documents, error: documentsError } = await adminClient
+        .from("company_tax_documents")
+        .select("storage_path")
+        .eq("company_id", companyId)
+        .range(offset, offset + 199);
+      if (documentsError) {
+        console.error("company tax evidence lookup:", documentsError.message);
+        return fail(500, "Impossible de préparer la suppression des justificatifs. L'entreprise n'a pas été supprimée.");
+      }
+      for (const document of documents ?? []) {
+        if (typeof document.storage_path === "string") storagePaths.push(document.storage_path);
+      }
+      if (!documents || documents.length < 200) break;
+      offset += 200;
+    }
+    for (let index = 0; index < storagePaths.length; index += 100) {
+      const { error: storageError } = await adminClient.storage
+        .from("tax-evidence")
+        .remove(storagePaths.slice(index, index + 100));
+      if (storageError) {
+        console.error("company tax evidence cleanup:", storageError.message);
+        return fail(500, "Impossible de supprimer tous les justificatifs. L'entreprise est conservée ; réessayez après vérification du coffre.");
+      }
+    }
     const { data: result, error } = await adminClient.rpc("mizane_delete_company", {
       p_company_id: companyId,
       p_actor_user_id: actor.id,

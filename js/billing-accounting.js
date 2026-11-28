@@ -1,6 +1,6 @@
 // MIZANE — Génération des écritures comptables de facturation.
 // Les propositions sont validées par le moteur comptable avant leur enregistrement.
-import { validateEntry, round2 } from "./accounting.js";
+import { validateEntry, postEntry, round2 } from "./accounting.js";
 import { calculateBillingTotals } from "./billing-core.js";
 
 const DEFAULT_CODES = {
@@ -27,6 +27,23 @@ export function suggestBillingAccounts(planId, accounts = []) {
     cash: choose(defaults.cash, "asset"),
     fxGain: defaults.fxGain.map(code => accounts.find(account => String(account.code) === code && account.type === "income")?.code).find(Boolean) || "",
     fxLoss: defaults.fxLoss.map(code => accounts.find(account => String(account.code) === code && account.type === "expense")?.code).find(Boolean) || "",
+  };
+}
+
+const STOCK_ACCOUNT_DEFAULTS = {
+  syscohada: { inventory:"31", stockVariation:"603", stockVariationType:"expense" },
+  pcg: { inventory:"37", stockVariation:"713", stockVariationType:"income" },
+  nct: { inventory:"34", stockVariation:"713", stockVariationType:"income" },
+  cgnc: { inventory:"314", stockVariation:"713", stockVariationType:"income" },
+};
+
+export function suggestStockAccounts(planId,accounts=[]) {
+  const defaults=STOCK_ACCOUNT_DEFAULTS[planId]||STOCK_ACCOUNT_DEFAULTS.syscohada;
+  const exact=(code,type)=>accounts.find(account=>String(account.code)===code&&account.type===type)?.code||"";
+  return {
+    inventory:exact(defaults.inventory,"asset"),
+    stockVariation:exact(defaults.stockVariation,defaults.stockVariationType),
+    stockVariationType:defaults.stockVariationType,
   };
 }
 
@@ -132,4 +149,169 @@ export function buildBillingJournalEntries(store, invoice, mapping = {}) {
   }
   if (errors.length) return { ok: false, errors: [...new Set(errors)], entries: [] };
   return { ok: true, errors: [], entries };
+}
+
+
+/**
+ * Publie un lot d'écritures de facturation de manière atomique.
+ * Une facture peut produire plusieurs écritures (vente et règlements) ;
+ * aucune ne doit rester enregistrée si l'une d'elles échoue.
+ */
+export function postBillingJournalEntriesAtomically(store, entries) {
+  if (!store || !Array.isArray(entries)) {
+    return { ok: false, errors: ["Lot d'écritures de facturation invalide."], created: 0 };
+  }
+  const staged = {
+    ...store,
+    entries: [...(Array.isArray(store.entries) ? store.entries : [])],
+    nextId: Number(store.nextId) || 1,
+  };
+  let created = 0;
+  for (const entry of entries) {
+    const result = postEntry(staged, entry);
+    if (!result.ok) {
+      return { ok: false, errors: result.errors || ["Écriture comptable refusée."], created: 0 };
+    }
+    created++;
+  }
+  store.entries = staged.entries;
+  store.nextId = staged.nextId;
+  return { ok: true, errors: [], created };
+}
+
+
+/**
+ * Génère l'écriture d'un avoir partiel ou total.
+ * Les montants proviennent des lignes réellement créditées, au taux de change de la facture.
+ */
+export function buildCreditNoteJournalEntry(store, invoice, creditNote, mapping = {}) {
+  const errors = [];
+  if (!invoice || invoice.type !== "invoice" || !creditNote || creditNote.type !== "credit_note" ||
+      Number(creditNote.sourceInvoiceId) !== Number(invoice.id)) {
+    return { ok:false, errors:["Facture source ou avoir invalide."], entries:[] };
+  }
+  const accounts = [
+    ...(store.__accountCache ? Object.entries(store.__accountCache).map(([code,value])=>({code,...value})) : []),
+    ...((store.settings && store.settings.customAccounts) || []),
+  ];
+  const unique = [...new Map(accounts.map(account=>[String(account.code),account])).values()];
+  const requireAccount=(key,type,label)=>{
+    const code=String(mapping[key]||"").trim();
+    if(!code || !accountExists(unique,code,type)){errors.push("Compte comptable "+label+" non configuré ou incompatible avec le plan.");return "";}
+    return code;
+  };
+  const customer=requireAccount("customer","asset","client");
+  const revenue=requireAccount("revenue","income","de produits");
+  const total=calculateBillingTotals(creditNote.lines||[]);
+  const rate=Number(invoice.exchangeRate);
+  if(!(rate>0)||!Number.isFinite(rate)) errors.push("Taux de conversion de la facture invalide.");
+  const baseTotal=round2(total.ttc*rate), baseTax=round2(total.tax*rate), baseRevenue=round2(baseTotal-baseTax);
+  let tax="";
+  if(baseTax>0) tax=requireAccount("tax","liability","de taxe collectée");
+  if(!(baseTotal>0)) errors.push("Le montant de l'avoir doit être positif.");
+  if(errors.length) return {ok:false,errors:[...new Set(errors)],entries:[]};
+  const reference="AVOIR "+String(creditNote.number||creditNote.id);
+  if((store.entries||[]).some(entry=>entry.reference===reference)) return {ok:false,errors:["L'écriture de cet avoir existe déjà."],entries:[]};
+  const lines=[{account:revenue,label:"Annulation des produits — avoir "+creditNote.number,third:"",debit:baseRevenue,credit:0}];
+  if(baseTax>0) lines.push({account:tax,label:"Annulation de la taxe — avoir "+creditNote.number,third:"",debit:baseTax,credit:0});
+  lines.push({account:customer,label:"Avoir client — "+creditNote.number,third:thirdName(store,invoice.customerName),debit:0,credit:baseTotal});
+  const entry={date:creditNote.date,journal:"VTE",reference,lines};
+  const validation=validateEntry(store,entry);
+  if(!validation.ok) return {ok:false,errors:validation.errors,entries:[]};
+  return {ok:true,errors:[],entries:[entry]};
+}
+
+/**
+ * Comptabilise un remboursement client d'un avoir déjà émis.
+ * Débit du compte client, crédit de la banque ou de la caisse.
+ */
+export function buildCreditNoteRefundJournalEntry(store, invoice, creditNote, refund, mapping = {}) {
+  const errors=[];
+  if(!invoice || invoice.type!=="invoice" || !creditNote || creditNote.type!=="credit_note" ||
+     Number(creditNote.sourceInvoiceId)!==Number(invoice.id) || !refund) {
+    return {ok:false,errors:["Facture, avoir ou remboursement invalide."],entries:[]};
+  }
+  const accounts=[
+    ...(store.__accountCache?Object.entries(store.__accountCache).map(([code,value])=>({code,...value})):[]),
+    ...((store.settings&&store.settings.customAccounts)||[]),
+  ];
+  const unique=[...new Map(accounts.map(account=>[String(account.code),account])).values()];
+  const requireAccount=(key,type,label)=>{
+    const code=String(mapping[key]||"").trim();
+    if(!code||!accountExists(unique,code,type)){errors.push("Compte "+label+" non configuré ou incompatible avec le plan.");return "";}
+    return code;
+  };
+  const customer=requireAccount("customer","asset","client");
+  const treasury=requireAccount(refund.method==="cash"?"cash":"bank","asset",refund.method==="cash"?"de caisse":"bancaire");
+  const amount=Number(refund.amount), rate=Number(refund.exchangeRate);
+  const alreadyRefunded=round2((creditNote.refunds||[]).reduce((sum,item)=>sum+Number(item.amount||0),0));
+  const creditAmount=round2(calculateBillingTotals(creditNote.lines||[]).ttc);
+  if(Number.isFinite(amount) && amount>round2(creditAmount-alreadyRefunded)+0.001) errors.push("Le remboursement dépasse le solde non remboursé de cet avoir.");
+  const match=String(refund.date||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!match) errors.push("Date de remboursement invalide.");
+  else {const date=new Date(Date.UTC(+match[1],+match[2]-1,+match[3]));if(date.getUTCFullYear()!==+match[1]||date.getUTCMonth()!==+match[2]-1||date.getUTCDate()!==+match[3])errors.push("Date de remboursement invalide.");}
+  if(!(amount>0)||!Number.isFinite(amount)) errors.push("Montant de remboursement invalide.");
+  if(!(rate>0)||!Number.isFinite(rate)) errors.push("Taux de conversion du remboursement invalide.");
+  if(!["bank","cash"].includes(refund.method)) errors.push("Le remboursement doit être effectué par banque ou caisse.");
+  const reference="REMBOURSEMENT AVOIR "+String(creditNote.number)+" #"+String(refund.id);
+  if((store.entries||[]).some(entry=>entry.reference===reference)) return {ok:false,errors:["L'écriture de ce remboursement existe déjà."],entries:[]};
+  if(errors.length) return {ok:false,errors:[...new Set(errors)],entries:[]};
+  const baseAmount=round2(amount*rate);
+  const entry={date:refund.date,journal:refund.method==="cash"?"CAI":"BAN",reference,lines:[
+    {account:customer,label:"Remboursement client — avoir "+creditNote.number,third:thirdName(store,invoice.customerName),debit:baseAmount,credit:0},
+    {account:treasury,label:"Sortie de trésorerie — avoir "+creditNote.number,third:"",debit:0,credit:baseAmount},
+  ]};
+  const validation=validateEntry(store,entry);
+  if(!validation.ok) return {ok:false,errors:validation.errors,entries:[]};
+  return {ok:true,errors:[],entries:[entry]};
+}
+
+/**
+ * Génère l'écriture d'un avoir total non remboursé.
+ * L'avoir est une nouvelle pièce comptable datée dans une période ouverte :
+ * on ne modifie ni ne contre-passe l'écriture d'origine.
+ */
+export function buildFullCreditNoteJournalEntry(store, invoice, creditNote, mapping = {}) {
+  const errors = [];
+  if (!invoice || invoice.type !== "invoice" || !creditNote || creditNote.type !== "credit_note") {
+    return { ok: false, errors: ["Facture ou avoir invalide."], entries: [] };
+  }
+  const accounts = [
+    ...(store.__accountCache ? Object.entries(store.__accountCache).map(([code, value]) => ({ code, ...value })) : []),
+    ...((store.settings && store.settings.customAccounts) || []),
+  ];
+  const uniqueAccounts = [...new Map(accounts.map(account => [String(account.code), account])).values()];
+  const requireAccount = (key, type, label) => {
+    const code = String(mapping[key] || "").trim();
+    if (!code || !accountExists(uniqueAccounts, code, type)) {
+      errors.push("Compte comptable " + label + " non configuré ou incompatible avec le plan.");
+      return "";
+    }
+    return code;
+  };
+  const customer = requireAccount("customer", "asset", "client");
+  const revenue = requireAccount("revenue", "income", "de produits");
+  const total = calculateBillingTotals(invoice.lines || []);
+  const rate = Number(invoice.exchangeRate);
+  if (!(rate > 0) || !Number.isFinite(rate)) errors.push("Taux de conversion de la facture invalide.");
+  const baseTotal = round2(total.ttc * rate);
+  const baseTax = round2(total.tax * rate);
+  const baseRevenue = round2(baseTotal - baseTax);
+  let tax = "";
+  if (baseTax > 0) tax = requireAccount("tax", "liability", "de taxe collectée");
+  if (!(baseTotal > 0)) errors.push("Le total de l'avoir doit être positif.");
+  if (errors.length) return { ok: false, errors: [...new Set(errors)], entries: [] };
+  const reference = "AVOIR " + String(creditNote.number || creditNote.id);
+  if ((store.entries || []).some(entry => entry.reference === reference)) {
+    return { ok: false, errors: ["L'écriture de cet avoir existe déjà."], entries: [] };
+  }
+  const lines = [
+    { account: revenue, label: "Annulation des produits — avoir " + creditNote.number, third: "", debit: baseRevenue, credit: 0 },
+  ];
+  if (baseTax > 0) lines.push({ account: tax, label: "Annulation de la taxe — avoir " + creditNote.number, third: "", debit: baseTax, credit: 0 });
+  lines.push({ account: customer, label: "Avoir client — " + creditNote.number, third: thirdName(store, invoice.customerName), debit: 0, credit: baseTotal });
+  const entry = { date: creditNote.date, journal: "VTE", reference, lines };
+  const validation = validateEntry(store, entry);
+  if (!validation.ok) return { ok: false, errors: validation.errors, entries: [] };
+  return { ok: true, errors: [], entries: [entry] };
 }

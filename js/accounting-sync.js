@@ -1,6 +1,9 @@
 // MIZANE — Synchronisation bidirectionnelle locale/cloud avec résolution prudente des conflits.
 import { buildAccountCache, validateEntry } from "./accounting.js";
 import { allAccounts } from "./plans.js";
+import { validateCustomPlans } from "./plans/custom.js";
+import { PLANS } from "./plans.js";
+import { validatePlanVersions, validatePlanMappings } from "./plans/mapping.js";
 const LOCAL_KEY = "mizane_v1";
 const SHADOW_PREFIX = "mizane_sync_shadow_v1:";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -58,7 +61,16 @@ function validateSyncStore(store) {
       seen.add(uid);
     }
   }
-  const planAccounts = allAccounts(store.settings.plan);
+  let customPlans = [];
+  try { customPlans = validateCustomPlans(store.settings.customPlans); }
+  catch (error) { errors.push(error.message); }
+  const catalog = { ...PLANS, ...Object.fromEntries(customPlans.map((p) => [p.id, p])) };
+  try { const versions = validatePlanVersions(store.settings.planVersions, catalog); validatePlanMappings(store.settings.planMappings, catalog, versions); }
+  catch (error) { errors.push(error.message); }
+  const activeCustomPlan = customPlans.find((plan) => plan.id === store.settings.plan);
+  const planAccounts = activeCustomPlan
+    ? activeCustomPlan.accounts.map(([code, label, type]) => ({ code, label, type }))
+    : allAccounts(store.settings.plan);
   const planCodes = new Set(planAccounts.map(account => String(account.code)));
   const customCodes = new Set();
   for (const account of store.settings.customAccounts || []) {
@@ -73,7 +85,7 @@ function validateSyncStore(store) {
     const name = String(third.name || "").trim().toLocaleLowerCase();
     if (name) thirdNames.set(name, (thirdNames.get(name) || 0) + 1);
   }
-  const accountsStore = { ...store, settings: { ...store.settings, customAccounts: store.settings.customAccounts || [] } };
+  const accountsStore = { ...store, settings: { ...store.settings, customAccounts: store.settings.customAccounts || [], customPlans } };
   buildAccountCache(accountsStore, planAccounts);
   const entryIds = new Set();
   for (const entry of store.entries || []) {
@@ -267,6 +279,19 @@ async function pushBatches(supabase,companyId,operations) {
 function getShadow(companyId) {
   try { const raw=localStorage.getItem(SHADOW_PREFIX+companyId);return raw?JSON.parse(raw):null; } catch { return null; }
 }
+export function hasAccountingSyncBaseline(companyId) {
+  if (!companyId) return false;
+  try {
+    const value = JSON.parse(localStorage.getItem(SHADOW_PREFIX + String(companyId)) || "null");
+    return !!value && typeof value === "object" && !Array.isArray(value) &&
+      ["settings", "custom_account", "third", "asset", "entry"].every(kind =>
+        value[kind] && typeof value[kind] === "object" && !Array.isArray(value[kind])
+      );
+  } catch {
+    return false;
+  }
+}
+
 function saveShadow(companyId, records) {
   const clean={};
   for(const kind of ["settings","custom_account","third","asset","entry"]) {

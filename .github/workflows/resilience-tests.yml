@@ -4,9 +4,69 @@ on:
   push:
     branches:
       - feat/resilience-load-hardening
+      - feat/stock-integrated-dev
+      - feat/boussole-editorial-governance-dev
+      - feat/boussole-editorial-admin-i18n-dev
+      - feat/boussole-editorial-admin-i18n-dev
+      - feat/boussole-document-relations-media-dev
+      - fix/boussole-editor-read-scope-dev
+      - feat/boussole-cloud-reader-dev
+      - fix/lot2-billing-integrity
+      - feat/lot3-stock-operations-accounting
+      - feat/lot4-periodic-inventory-closing
+      - feat/lot5-supplier-settlements
+      - feat/lot6-supplier-credit-notes-reconciliation
+      - feat/lot7-mixed-supplier-invoices
+      - feat/lot8-supplier-line-tax-rates
+      - feat/lot9-supplier-credit-note-line-allocation
+      - feat/lot10-supplier-auto-account-mapping
+      - feat/lot11-supplier-purchase-controls
+      - feat/lot12-supplier-payment-schedule
+      - feat/lot13-commercial-margins
+      - feat/lot14-commercial-performance
+      - feat/lot16-financial-forecast
+      - feat/lot17-budget-control
+      - feat/lot18-fixed-assets
+      - feat/lot19-asset-disposals
+      - feat/lot20-customer-receivables
+      - feat/lot21-customer-followups
+      - fix/lot21-followup-latest-event
+      - feat/lot22-international-tax
+      - feat/lot22-morocco-tax-compliance
+      - feat/lot25-senegal-ivory-coast-tax
+      - feat/lot26-benin-burkina-mali-tax
+      - feat/lot27-west-africa-tax
+      - feat/lot28-west-africa-tax-validation
+      - feat/lot30-tax-declaration-calendar
+      - feat/lot31-tax-document-traceability
+      - feat/lot32-central-tax-document-vault
+      - feat/lot33-central-africa-tax-profiles
+      - feat/lot34-drc-equatorial-guinea
+      - feat/lot35-mauritania-tax-profile
+      - fix/lot36-mauritania-vat-rate
+      - feat/lot37-niger-guinea-tax
+      - feat/lot38-ci-tax-audit-2026-11
   pull_request:
     branches:
       - main
+      - feat/boussole-editorial-governance-dev
+      - feat/stock-integrated-dev
+      - feat/boussole-cloud-reader-dev
+      - feat/boussole-guide-mvp-dev
+      - feat/lot31-tax-document-traceability
+      - feat/lot32-central-tax-document-vault
+      - feat/lot33-central-africa-tax-profiles
+      - feat/lot34-drc-equatorial-guinea
+      - feat/lot35-mauritania-tax-profile
+      - fix/lot36-mauritania-vat-rate
+      - feat/lot37-niger-guinea-tax
+      - fix/lot1-security-hardening
+      - fix/lot2-billing-integrity
+      - feat/lot4-periodic-inventory-closing
+      - feat/lot5-supplier-settlements
+      - feat/lot8-supplier-line-tax-rates
+      - feat/lot9-supplier-credit-note-line-allocation
+      - feat/lot10-supplier-auto-account-mapping
 
 permissions:
   contents: read
@@ -26,7 +86,7 @@ jobs:
         with:
           node-version: 20
       - name: Installer les dépendances
-        run: npm ci || npm install
+        run: npm install --no-audit --no-fund
       - name: Vérifier le style et les erreurs
         run: npm run lint
       - name: Exécuter les tests fonctionnels et de résilience

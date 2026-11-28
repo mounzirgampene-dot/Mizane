@@ -1,0 +1,703 @@
+// MIZANE — Interface Gestion de stock, locale hors SaaS et transactionnelle en entreprise.
+import { store, $app, saveNow, esc, money, toast } from "./state.js";
+import { reverseEntry } from "./accounting.js";
+import { getStock, addProduct, addWarehouse, postStockMovement, productBalance, stockBalance, stockValuation } from "./stock-core.js";
+import {
+  hasActiveStockCompany, readCloudStock, getCurrentCompanyRole, saveCloudStockProduct, saveCloudStockWarehouse,
+  saveCloudStockFamily, saveCloudStockType,
+  updateCloudStockSettings, postCloudStockDocument,
+  reserveCloudStock, releaseCloudStockReservation, updateCloudStockReorderThresholds,
+  readCloudStockCounts, createCloudStockCount, setCloudStockCountLine,
+  submitCloudStockCount, finalizeCloudStockCount, cancelCloudStockCount, reverseCloudStockDocument,
+} from "./cloud-sync.js";
+import { queueStockAccountingOperation, retryPendingStockAccountingOperations } from "./stock-accounting.js";
+import { buildStockReplenishmentReport, stockReplenishmentCsv } from "./stock-replenishment.js";
+import { openReplenishmentPurchaseOrder } from "./purchases.js";
+import { chartModeControls, bindChartMode, renderBarChart, renderLineChart } from "./charts.js";
+
+const fmtQty = n => Number(n || 0).toLocaleString("fr-FR", { maximumFractionDigits: 4 });
+const kinds = { goods:"Marchandise", raw:"Matière première", semi:"Semi-fini", finished:"Produit fini", consumable:"Consommable", service:"Service" };
+const movementLabels = { receipt:"Entrée", issue:"Sortie", transfer:"Transfert", adjustment:"Ajustement" };
+const trackingLabels = { none:"Aucune", lot:"Par lot", serial:"Par numéro de série" };
+const persist = () => { saveNow(); window.dispatchEvent(new Event("mizane:billing-changed")); };
+let renderSequence = 0;
+
+function mapCloudStock(data) {
+  const settings = data?.settings || {};
+  const warehouses = (data?.warehouses || []).map(w => ({ id:w.id, code:w.code, name:w.name, active:w.active !== false }));
+  const conversionsByProduct = new Map();
+  for (const c of data?.unit_conversions || []) { if (!conversionsByProduct.has(c.product_id)) conversionsByProduct.set(c.product_id,[]); conversionsByProduct.get(c.product_id).push({unit:c.unit_code,factorToBase:Number(c.factor_to_base)}); }
+  const typeById = new Map((data?.types || []).map(t => [t.id,t]));
+  const familyById = new Map((data?.families || []).map(f => [f.id,f]));
+  const products = (data?.products || []).map(p => {
+    const catalogType = typeById.get(p.product_type_id);
+    return {
+      id:p.id, sku:p.sku, name:p.name, type:catalogType?.nature === "service" ? "service" : p.product_type,
+      typeName:catalogType?.name || kinds[p.product_type] || p.product_type,
+      familyName:familyById.get(p.family_id)?.name || "",
+      purchasePriceHT:Number(p.purchase_price_ht || 0), salePriceHT:Number(p.sale_price_ht || 0),
+      purchasePriceUnit:p.purchase_price_unit || p.base_unit || "unité", salePriceUnit:p.sale_price_unit || p.base_unit || "unité",
+      unit:p.base_unit || "unité", tracking:p.tracking || "none",
+      unitConversions:conversionsByProduct.get(p.id)||[], active:p.active !== false,
+      minimumStock:Number(p.minimum_stock || 0), targetStock:Number(p.target_stock || 0),
+    };
+  });
+  const documents = new Map((data?.documents || []).map(d => [d.id,d]));
+  const grouped = new Map();
+  for (const m of data?.movements || []) {
+    const key = m.document_id + ":" + m.product_id;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(m);
+  }
+  const movements = [];
+  for (const entries of grouped.values()) {
+    const first = entries[0], doc = documents.get(first.document_id) || {};
+    const kind = doc.document_type || "issue";
+    const negative = entries.find(m => Number(m.quantity_delta) < 0);
+    const positive = entries.find(m => Number(m.quantity_delta) > 0);
+    if (kind === "transfer" && negative && positive) {
+      movements.push({
+        id:first.document_id + ":" + first.product_id, kind, productId:first.product_id,
+        warehouseId:negative.warehouse_id, destinationWarehouseId:positive.warehouse_id,
+        quantity:Math.abs(Number(negative.quantity_delta)), quantityDelta:-Math.abs(Number(negative.quantity_delta)),
+        unitCost:Number(negative.unit_cost || 0), date:negative.movement_date, createdAt:negative.created_at,
+        reference:doc.reference || "", note:doc.note || "", sourceType:doc.source_type || null, sourceId:doc.source_id || null, documentId:doc.id, documentStatus:doc.status,
+      });
+    } else {
+      for (const m of entries) movements.push({
+        id:m.id, kind, productId:m.product_id, warehouseId:m.warehouse_id,
+        destinationWarehouseId:null, quantity:Math.abs(Number(m.quantity_delta)),
+        quantityDelta:Number(m.quantity_delta), unitCost:Number(m.unit_cost || 0),
+        date:m.movement_date, createdAt:m.created_at, reference:doc.reference || "", note:doc.note || "", sourceType:doc.source_type || null, sourceId:doc.source_id || null, documentId:doc.id, documentStatus:doc.status,
+      });
+    }
+  }
+  movements.sort((a,b) => String(b.date).localeCompare(String(a.date)));
+  const layers = (data?.balances || []).filter(b => Number(b.quantity) > 0).map(b => ({
+    productId:b.product_id, warehouseId:b.warehouse_id, remaining:Number(b.quantity),
+    unitCost:Number(b.inventory_value || 0) / Number(b.quantity),
+  }));
+  return {
+    settings:{
+      valuationMethod:settings.valuation_method || "cump",
+      allowNegative:settings.allow_negative === true,
+      salesTrigger:settings.sales_trigger || "delivery",
+      purchaseTrigger:settings.purchase_trigger || "receipt",
+      accountingMode:settings.accounting_mode || "perpetual",
+    },
+    warehouses, products, movements, layers,
+    families:data?.families || [], types:data?.types || [],
+    cloudBalances:data?.balances || [],
+    reservations:data?.reservations || [], documents:data?.documents || [],
+    lots:data?.lots || [], serials:data?.serials || [],
+    balances:data?.balances || [],
+    countSessions:data?.countSessions || [],
+  };
+}
+
+function stockMigrationKey() {
+  return "mizane_stock_migration_v1:" + localStorage.getItem("mizane_active_company_v1");
+}
+function readStockMigrationProgress() {
+  try { const raw=localStorage.getItem(stockMigrationKey()); return raw ? JSON.parse(raw) : null; }
+  catch { return null; }
+}
+function saveStockMigrationProgress(progress) {
+  localStorage.setItem(stockMigrationKey(),JSON.stringify(progress));
+}
+async function stableStockOperationUid(value) {
+  if (!globalThis.crypto?.subtle) throw new Error("Le navigateur ne permet pas de créer une clé d’importation stable.");
+  const digest=await globalThis.crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
+  const bytes=Array.from(new Uint8Array(digest).slice(0,16));
+  bytes[6]=(bytes[6]&0x0f)|0x50; bytes[8]=(bytes[8]&0x3f)|0x80;
+  const hex=bytes.map(b=>b.toString(16).padStart(2,"0")).join("");
+  return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);
+}
+async function importLegacyStock(companyRole) {
+  const legacy=store.stock;
+  if (!legacy || !Array.isArray(legacy.products) || !legacy.products.length) throw new Error("Aucun ancien article local à importer.");
+  if (!["admin","accountant"].includes(companyRole)) throw new Error("Seul un administrateur ou un comptable peut lancer l’import.");
+  if (!globalThis.confirm("Importer l’ancien stock local dans l’entreprise ? Les opérations seront rejouées avec des identifiants idempotents.")) return;
+  const progress=readStockMigrationProgress() || {started:true,done:false,productMap:{},warehouseMap:{},completed:0};
+  progress.started=true; saveStockMigrationProgress(progress);
+  let remote=await readCloudStock();
+  const remoteProducts=new Map((remote.products||[]).map(p=>[String(p.sku).toLowerCase(),p]));
+  const remoteWarehouses=new Map((remote.warehouses||[]).map(w=>[String(w.name).toLowerCase(),w]));
+  for (const product of legacy.products) {
+    let saved=remoteProducts.get(String(product.sku||"").toLowerCase());
+    if (!saved) {
+      saved=await saveCloudStockProduct({
+        sku:product.sku,name:product.name,product_type:product.type||"goods",
+        base_unit:product.unit||"unité",tracking:"none",active:product.active!==false,category:"",
+      });
+      remoteProducts.set(String(saved.sku).toLowerCase(),saved);
+    }
+    progress.productMap[String(product.id)]=saved.id;
+    saveStockMigrationProgress(progress);
+  }
+  const oldWarehouses=Array.isArray(legacy.warehouses)?legacy.warehouses:[];
+  for (const warehouse of oldWarehouses) {
+    let saved=remoteWarehouses.get(String(warehouse.name||"").toLowerCase());
+    if (!saved) {
+      saved=await saveCloudStockWarehouse({
+        code:warehouseCode(warehouse.name),name:warehouse.name||"Magasin principal",active:warehouse.active!==false,
+      });
+      remoteWarehouses.set(String(saved.name).toLowerCase(),saved);
+    }
+    progress.warehouseMap[String(warehouse.id)]=saved.id;
+    saveStockMigrationProgress(progress);
+  }
+  remote=await readCloudStock();
+  if (!(remote.movements||[]).length && !progress.settingsApplied) {
+    const settings=legacy.settings||{};
+    await updateCloudStockSettings({
+      valuation_method:settings.valuationMethod==="fifo"?"fifo":"cump",
+      allow_negative:companyRole==="admin" && settings.allowNegative===true,
+      sales_trigger:settings.salesTrigger==="invoice_validation"?"invoice_validation":"delivery",
+      purchase_trigger:settings.purchaseTrigger==="supplier_invoice"?"supplier_invoice":"receipt",
+      accounting_mode:settings.accountingMode==="periodic"?"periodic":"perpetual",
+    });
+    progress.settingsApplied=true; saveStockMigrationProgress(progress);
+  }
+  progress.completed=0; saveStockMigrationProgress(progress);
+  const movements=(legacy.movements||[]).map((m,index)=>({...m,_index:index}))
+    .sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")) || String(a.createdAt||"").localeCompare(String(b.createdAt||"")) || a._index-b._index);
+  const companyId=localStorage.getItem("mizane_active_company_v1");
+  for (const movement of movements) {
+    const productId=progress.productMap[String(movement.productId)];
+    const warehouseId=progress.warehouseMap[String(movement.warehouseId)];
+    const destinationWarehouseId=progress.warehouseMap[String(movement.destinationWarehouseId)];
+    if (!productId || !warehouseId) throw new Error("Correspondance article/entrepôt introuvable pour un ancien mouvement.");
+    if (!["receipt","issue","transfer"].includes(movement.kind)) throw new Error("Type d’ancien mouvement non reconnu : "+movement.kind);
+    if (movement.kind==="transfer" && !destinationWarehouseId) throw new Error("Entrepôt destinataire introuvable pour un ancien transfert.");
+    const legacyId=String(movement.id ?? (movement.date+"-"+movement._index));
+    const operationUid=await stableStockOperationUid(companyId+":legacy-stock:"+legacyId);
+    const line={product_id:productId,warehouse_id:warehouseId,quantity:Number(movement.quantity),unit_cost:Number(movement.unitCost||0)};
+    if (movement.kind==="transfer") line.destination_warehouse_id=destinationWarehouseId;
+    await postCloudStockDocument({
+      operationUid,documentType:movement.kind,
+      documentDate:movement.date||new Date().toISOString().slice(0,10),
+      reference:movement.reference||"IMPORT-LOCAL",note:movement.note||"Import historique du stock local",
+      lines:[line],sourceType:"legacy_local_stock",sourceId:legacyId,
+    });
+    progress.completed+=1; saveStockMigrationProgress(progress);
+  }
+  progress.done=true; progress.completed=movements.length; saveStockMigrationProgress(progress);
+  toast("Import historique terminé : "+legacy.products.length+" article(s), "+movements.length+" mouvement(s).",6000);
+}
+
+export function viewStock(readOnly = false, companyRole = null) {
+  const sequence = ++renderSequence;
+  if (hasActiveStockCompany()) {
+    $app.innerHTML = '<section class="card"><p>Chargement du stock de l’entreprise…</p></section>';
+    Promise.all([readCloudStock(),readCloudStockCounts()]).then(([data,countData]) => {
+      if (sequence !== renderSequence) return;
+      data.countSessions=countData?.sessions || [];
+      renderStock(mapCloudStock(data), readOnly, companyRole, true);
+      void retryPendingStockAccountingOperations(store,{companyRole,readStock:readCloudStock,getRole:getCurrentCompanyRole,save:persist,notify:toast});
+    }).catch(error => {
+      if (sequence !== renderSequence) return;
+      $app.innerHTML = '<section class="card"><h2>Stock cloud indisponible</h2><p class="errors"></p><p class="muted">Aucune modification locale ne sera utilisée comme substitut aux données de l’entreprise.</p><button id="stock-retry">Réessayer</button></section>';
+      $app.querySelector(".errors").textContent = error?.message || "Lecture du stock impossible.";
+      document.getElementById("stock-retry")?.addEventListener("click", () => viewStock(readOnly, companyRole));
+    });
+    return;
+  }
+  renderStock(getStock(store), readOnly, companyRole, false);
+}
+
+function renderStock(stock, readOnly, companyRole, cloudMode) {
+  const physical = stock.products.filter(p => p.type !== "service");
+  const lots = cloudMode ? (stock.lots || []) : (stock.lotBalances || []);
+  const serials = stock.serials || [];
+  const totalProducts = stock.products.length;
+  const stockPositions = physical.reduce((sum,p) => sum + stock.warehouses.filter(w => stockBalance(stock,p.id,w.id) > 0).length,0);
+  const totalValue = physical.reduce((sum,p) => sum + stockValuation(stock,p.id),0);
+  const replenishmentBalances = cloudMode ? (stock.balances || []) : physical.flatMap(product => stock.warehouses.map(warehouse => ({
+    product_id:product.id, warehouse_id:warehouse.id, quantity:stockBalance(stock,product.id,warehouse.id),
+  })));
+  const replenishmentReport = buildStockReplenishmentReport({
+    products:stock.products, warehouses:stock.warehouses, balances:replenishmentBalances,
+    reservations:stock.reservations || [],
+  });
+  const canEditThresholds = !readOnly && (!cloudMode || ["admin","accountant"].includes(companyRole));
+  const replenishmentRows = replenishmentReport.alerts.map(item => {
+    const statusLabel = item.status === "reservation_conflict" ? "Disponibilité incohérente" : item.status === "out_of_stock" ? "Rupture de stock" : "Sous le seuil minimum";
+    return `<tr><td>${esc(item.sku)} — ${esc(item.name)}</td><td class="num">${fmtQty(item.onHand)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.reserved)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.available)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.minimumStock)} ${esc(item.unit)}</td><td class="num">${fmtQty(item.targetStock)} ${esc(item.unit)}</td><td class="num"><strong>${fmtQty(item.reorderQuantity)} ${esc(item.unit)}</strong></td><td>${statusLabel}</td></tr>`;
+  }).join("");
+  const recent = stock.movements.slice().sort((a,b) => String(a.date).localeCompare(String(b.date)) || String(a.createdAt||"").localeCompare(String(b.createdAt||""))).reverse().slice(0,12);
+  const stockValueRows = stock.products.filter(p => p.type !== "service").map(p => ({label:p.name || p.sku || "Article", value:stockValuation(stock,p.id)})).filter(x => x.value > 0).sort((a,b) => b.value-a.value).slice(0,10);
+  const monthlyMovements = new Map();
+  (stock.movements || []).forEach(m => { const date=new Date(String(m.date || m.createdAt || "")); if(Number.isNaN(date.getTime())) return; const key=date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0"); const row=monthlyMovements.get(key)||{label:date.toLocaleDateString("fr-FR",{month:"short",year:"2-digit"}),receipts:0,issues:0}; const qty=Math.abs(Number(m.quantityDelta ?? m.quantity ?? 0)); if(m.kind==="receipt") row.receipts+=qty; else if(m.kind==="issue") row.issues+=qty; monthlyMovements.set(key,row); });
+  const movementChartRows=[...monthlyMovements.entries()].sort((a,b)=>a[0].localeCompare(b[0])).slice(-12).map(x=>x[1]);
+  const replenishmentChartRows = replenishmentReport.alerts.filter(x=>Number(x.reorderQuantity)>0).slice(0,10).map(x=>({label:x.name || x.sku || "Article",quantity:Number(x.reorderQuantity)||0}));
+  const stockChartsHtml = renderBarChart("Valeur du stock par article",stockValueRows,[{key:"value",label:"Valeur"}],value=>money(value)) + renderLineChart("Évolution des entrées et sorties",movementChartRows,[{key:"receipts",label:"Entrées"},{key:"issues",label:"Sorties"}],value=>fmtQty(value)) + renderBarChart("Quantités à réapprovisionner",replenishmentChartRows,[{key:"quantity",label:"À commander"}],value=>fmtQty(value));
+  const legacyStock=cloudMode ? store.stock : null;
+  const migrationProgress=cloudMode ? readStockMigrationProgress() : null;
+  const remoteIsEmpty=cloudMode && !stock.products.length && !stock.movements.length && !(stock.balances||[]).length;
+  const showLegacyImport=cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) && legacyStock && Array.isArray(legacyStock.products) && legacyStock.products.length>0 && (remoteIsEmpty || (migrationProgress?.started && !migrationProgress?.done));
+  const lotRows = lots.filter(l=>Number(l.quantity)>0).map(l=>{const p=stock.products.find(x=>x.id===(l.product_id||l.productId));const w=stock.warehouses.find(x=>x.id===(l.warehouse_id||l.warehouseId));return `<tr><td>${esc(p?.sku||"")} — ${esc(p?.name||"Article")}</td><td>${esc(l.lot_code||l.lotCode||"")}</td><td>${esc(w?.name||"—")}</td><td class="num">${fmtQty(l.quantity)}</td></tr>`;}).join("");
+  const serialRows = serials.map(s=>{const p=stock.products.find(x=>x.id===(s.product_id||s.productId));const w=stock.warehouses.find(x=>x.id===(s.warehouse_id||s.warehouseId));const status=s.status==="in_stock"?"En stock":s.status==="in_transit"?"En transit":"Sorti";return `<tr><td>${esc(s.serial_number||s.serialNumber||"")}</td><td>${esc(p?.sku||"")} — ${esc(p?.name||"Article")}</td><td>${esc(w?.name||"—")}</td><td>${status}</td></tr>`;}).join("");
+  const traceabilityHtml = (lotRows || serialRows) ? `<section class="card"><h2>Traçabilité</h2>${lotRows ? `<h3>Lots disponibles</h3><div class="table-wrap"><table><thead><tr><th>Article</th><th>Lot</th><th>Entrepôt</th><th class="num">Quantité</th></tr></thead><tbody>${lotRows}</tbody></table></div>` : ""}${serialRows ? `<h3>Numéros de série</h3><div class="table-wrap"><table><thead><tr><th>Numéro</th><th>Article</th><th>Entrepôt</th><th>État</th></tr></thead><tbody>${serialRows}</tbody></table></div>` : ""}</section>` : "";
+  $app.innerHTML = `
+    <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div><h1>Gestion de stock</h1><p class="muted">${cloudMode ? "Données transactionnelles de l’entreprise" : "Mode local — données non synchronisées dans une entreprise."}</p></div>
+      <div class="actions">${readOnly ? "" : '<button id="stock-add-product">Nouvel article</button><button class="secondary" id="stock-add-warehouse">Nouvel entrepôt</button><button class="secondary" id="stock-new-movement">Nouveau mouvement</button>'}${cloudMode && !readOnly ? '<button class="secondary" id="stock-new-reservation">Réserver du stock</button>' : ""}</div>
+    </div>
+    ${chartModeControls("stock")}
+    <div id="stock-table-view">
+    <div class="grid cols-3">
+      <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
+      <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
+      <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
+    </div>
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div><h2>Réapprovisionnement et alertes</h2><p class="muted">Les seuils sont globaux par article et les quantités réservées sont déduites du disponible, sans mélanger les unités des articles.</p></div>
+        <div class="actions">
+          <button class="secondary" id="stock-replenishment-export">Exporter le rapport CSV</button>
+          ${cloudMode && canEditThresholds && replenishmentReport.alerts.some(item => item.reorderQuantity > 0) ? '<button id="stock-replenishment-draft">Préparer un brouillon d’achat</button>' : ""}
+        </div>
+      </div>
+      <div class="grid cols-3">
+        <div class="kpi"><div class="label">Articles surveillés</div><div class="value">${replenishmentReport.summary.monitored}</div></div>
+        <div class="kpi"><div class="label">Ruptures</div><div class="value">${replenishmentReport.summary.outOfStock}</div></div>
+        <div class="kpi"><div class="label">Sous le seuil</div><div class="value">${replenishmentReport.summary.belowMinimum + replenishmentReport.summary.reservationConflicts}</div></div>
+      </div>
+      ${replenishmentReport.errors.length ? `<p class="errors">${replenishmentReport.errors.map(esc).join(" ")}</p>` : ""}
+      <div class="table-wrap"><table><thead><tr><th>Article</th><th class="num">Stock physique</th><th class="num">Réservé</th><th class="num">Disponible</th><th class="num">Seuil min.</th><th class="num">Stock cible</th><th class="num">À réapprovisionner</th><th>État</th></tr></thead><tbody>
+        ${replenishmentRows || '<tr><td colspan="8" class="muted">Aucune alerte. Définissez un seuil minimum pour surveiller les articles concernés.</td></tr>'}
+      </tbody></table></div>
+    </section>
+    ${showLegacyImport ? '<section class="card"><h2>Reprise de l’ancien stock</h2><p class="muted">Ancien stock local détecté : '+legacyStock.products.length+' article(s) et '+(legacyStock.movements||[]).length+' mouvement(s). Import explicite, chronologique et idempotent.</p><button id="stock-import-legacy">'+(migrationProgress?.started ? 'Reprendre l’import' : 'Importer l’ancien stock local')+'</button><p class="muted">'+(migrationProgress?.started ? 'Progression : '+(migrationProgress.completed||0)+' mouvement(s).' : 'Aucune donnée locale ne sera supprimée.')+'</p></section>' : ""}
+    <section class="card">
+      <div class="row" style="justify-content:space-between;align-items:center"><h2>Articles</h2><span class="muted">Méthode : ${stock.settings.valuationMethod.toUpperCase()}</span></div>
+      <div class="table-wrap"><table><thead><tr><th>Référence</th><th>Désignation</th><th>Type</th><th>Unité</th><th>Traçabilité</th><th class="num">Achat HT</th><th class="num">Vente HT</th><th class="num">Stock total</th><th class="num">Valeur</th><th>Seuil min. / cible</th>${canEditThresholds ? "<th>Action</th>" : ""}</tr></thead>
+      <tbody>${stock.products.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.name)}</td><td>${esc(p.typeName || kinds[p.type] || p.type)}</td><td>${esc(p.unit)}</td><td>${trackingLabels[p.tracking] || "Aucune"}</td><td class="num">${money(p.purchasePriceHT||0)} / ${esc(p.purchasePriceUnit||p.unit)}</td><td class="num">${money(p.salePriceHT||0)} / ${esc(p.salePriceUnit||p.unit)}</td><td class="num">${p.type === "service" ? "—" : fmtQty(productBalance(stock,p.id))}</td><td class="num">${p.type === "service" ? "—" : money(stockValuation(stock,p.id))}</td><td>${p.type === "service" ? "—" : (Number(p.minimumStock||0)>0 || Number(p.targetStock||0)>0 ? fmtQty(p.minimumStock||0)+" / "+fmtQty(p.targetStock||0) : "Non défini")}</td>${canEditThresholds ? `<td>${p.type === "service" ? "—" : `<button class="secondary small" data-stock-threshold="${esc(p.id)}">Définir</button>`}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${canEditThresholds ? "11" : "10"}" class="muted">Aucun article. Ajoutez votre premier article.</td></tr>`}</tbody></table></div>
+    </section>
+    <section class="card">
+      <h2>Stocks par entrepôt</h2>
+      <div class="table-wrap"><table><thead><tr><th>Article</th>${stock.warehouses.map(w => `<th class="num">${esc(w.name)}</th>`).join("")}</tr></thead><tbody>
+      ${physical.map(p => `<tr><td>${esc(p.sku)} — ${esc(p.name)}</td>${stock.warehouses.map(w => `<td class="num">${fmtQty(stockBalance(stock,p.id,w.id))}</td>`).join("")}</tr>`).join("") || '<tr><td class="muted">Aucun article physique.</td></tr>'}
+      </tbody></table></div>
+    </section>
+    ${traceabilityHtml}
+    ${cloudMode && !readOnly ? `<section class="card"><h2>Inventaire physique</h2><p class="muted">Le comptage intégral gèle les mouvements de l’entrepôt jusqu’à validation ou annulation.</p><button id="stock-count-start">Démarrer un inventaire</button>${(stock.countSessions||[]).filter(s=>["counting","submitted"].includes(s.status)).map(s=>`<p><strong>${esc(s.reference)}</strong> — ${esc(s.warehouse_name)} — ${s.status==="counting"?"Comptage en cours":"En attente d’approbation"}</p><button class="secondary" data-count-open="${esc(s.id)}">Ouvrir le comptage</button>`).join("")}</section>` : ""}
+    <section class="card">
+      <h2>Derniers mouvements</h2>
+      <div class="table-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th><th>Origine</th>${cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) ? "<th>Action</th>" : ""}</tr></thead><tbody>
+      ${recent.map(m => { const p=stock.products.find(x=>x.id===m.productId); const w=stock.warehouses.find(x=>x.id===m.warehouseId); const dest=stock.warehouses.find(x=>x.id===m.destinationWarehouseId); const canReverse=cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) && m.documentId && m.documentStatus==="posted" && m.sourceType!=="reversal"; return `<tr><td>${esc(m.date)}</td><td>${movementLabels[m.kind] || m.kind}</td><td>${esc(p?.name || "Article introuvable")}</td><td>${esc(w?.name || "—")}${dest ? " → "+esc(dest.name) : ""}</td><td class="num">${Number(m.quantityDelta ?? (m.kind==="receipt" ? m.quantity : -m.quantity))>=0?"+":"−"}${fmtQty(m.quantity)}</td><td>${esc(m.reference || "—")}</td><td>${m.sourceType === "sales_invoice" ? "Facture client" : m.sourceType === "sales_delivery" ? "Livraison client" : m.sourceType === "supplier_receipt" ? "Réception fournisseur" : m.sourceType === "reversal" ? "Contrepassation" : "Mouvement manuel"}</td>${cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) ? `<td>${canReverse ? `<button class="secondary" data-stock-reverse="${esc(m.documentId)}">Contrepasser</button>` : "—"}</td>` : ""}</tr>`; }).join("") || '<tr><td colspan="${cloudMode && !readOnly && ["admin","accountant"].includes(companyRole) ? "8" : "7"}" class="muted">Aucun mouvement enregistré.</td></tr>'}
+      </tbody></table></div>
+    </section>
+    ${cloudMode && stock.reservations.length ? `<section class="card"><h2>Réservations actives</h2><p class="muted">Les sorties liées aux factures et livraisons clients consomment automatiquement les réservations les plus anciennes ; le reliquat reste protégé et visible ici.</p><div class="table-wrap"><table><thead><tr><th>Article</th><th>Entrepôt</th><th class="num">Quantité</th><th>Référence</th>${readOnly ? "" : "<th>Action</th>"}</tr></thead><tbody>${stock.reservations.map(r => { const p=stock.products.find(x=>x.id===r.product_id); const w=stock.warehouses.find(x=>x.id===r.warehouse_id); return `<tr><td>${esc(p?.name || "Article")}</td><td>${esc(w?.name || "Entrepôt")}</td><td class="num">${fmtQty(r.quantity)}</td><td>${esc(r.reference || "—")}</td>${readOnly ? "" : `<td><button class="secondary" data-stock-release="${esc(r.id)}">Libérer</button></td>`}</tr>`; }).join("")}</tbody></table></div></section>` : ""}
+    <section class="card">
+      <h2>Paramètres</h2>
+      <div class="row" style="align-items:end;flex-wrap:wrap">
+        <div><label>Méthode de valorisation</label><select id="stock-valuation" ${readOnly?"disabled":""}><option value="cump" ${stock.settings.valuationMethod==="cump"?"selected":""}>CUMP</option><option value="fifo" ${stock.settings.valuationMethod==="fifo"?"selected":""}>FIFO</option></select></div>
+        <div><label><input type="checkbox" id="stock-negative" ${stock.settings.allowNegative?"checked":""} ${(readOnly || (companyRole && companyRole !== "admin"))?"disabled":""}> Autoriser les stocks négatifs</label></div>
+        <div><label>Déclenchement des sorties de ventes</label><select id="stock-sales-trigger" ${readOnly?"disabled":""}><option value="delivery" ${stock.settings.salesTrigger==="delivery"?"selected":""}>À la livraison</option><option value="invoice_validation" ${stock.settings.salesTrigger==="invoice_validation"?"selected":""}>À la validation de facture</option></select></div>
+        <div><label>Déclenchement des entrées d'achats</label><select id="stock-purchase-trigger" ${readOnly?"disabled":""}><option value="receipt" ${stock.settings.purchaseTrigger==="receipt"?"selected":""}>À la réception physique</option><option value="supplier_invoice" ${stock.settings.purchaseTrigger==="supplier_invoice"?"selected":""}>À la validation facture fournisseur</option></select></div>
+        <div><label>Mode de comptabilisation</label><select id="stock-accounting-mode" ${readOnly?"disabled":""}><option value="perpetual" ${stock.settings.accountingMode==="perpetual"?"selected":""}>Inventaire permanent</option><option value="periodic" ${stock.settings.accountingMode==="periodic"?"selected":""}>Inventaire intermittent</option></select></div>
+      </div>
+      <p class="muted">L'autorisation des stocks négatifs est désactivée par défaut. Toute activation est réservée à l'administrateur et auditée côté serveur.</p>
+      ${cloudMode ? `<p class="muted">Réservations actives : ${stock.reservations.length}</p>` : ""}
+    </section>
+    </div>
+    <div id="stock-chart-view" hidden>
+      <div class="grid cols-3">
+        <section class="card kpi"><div class="label">Articles référencés</div><div class="value">${totalProducts}</div></section>
+        <section class="card kpi"><div class="label">Références en stock</div><div class="value">${stockPositions}</div></section>
+        <section class="card kpi"><div class="label">Valeur estimée du stock</div><div class="value">${money(totalValue)}</div></section>
+      </div>
+      ${stockChartsHtml}
+      <p class="muted">Les quantités sont présentées par article et par unité ; elles ne sont pas additionnées entre unités différentes. Les valorisations utilisent la méthode ${esc(stock.settings.valuationMethod.toUpperCase())} configurée pour l'entreprise.</p>
+    </div>`;
+  bindChartMode("stock");
+  document.getElementById("stock-replenishment-export")?.addEventListener("click", () => {
+    const blob = new Blob([stockReplenishmentCsv(replenishmentReport)], { type:"text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "mizane-reapprovisionnement-" + new Date().toISOString().slice(0,10) + ".csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  });
+  if (readOnly) return;
+  document.getElementById("stock-replenishment-draft")?.addEventListener("click", async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try { await openReplenishmentPurchaseOrder(replenishmentReport.alerts); }
+    finally { button.disabled = false; }
+  });
+  document.getElementById("stock-add-product").addEventListener("click", () => productDialog(cloudMode, companyRole));
+  document.querySelectorAll("[data-stock-threshold]").forEach(button => {
+    const product = stock.products.find(item => String(item.id) === String(button.dataset.stockThreshold));
+    if (product) button.addEventListener("click", () => openStockReorderThresholdDialog(product, cloudMode, companyRole));
+  });
+  document.getElementById("stock-import-legacy")?.addEventListener("click", async e => { e.currentTarget.disabled=true; try { await importLegacyStock(companyRole); viewStock(false,companyRole); } catch(error) { toast(error?.message||"Import impossible.",6000); e.currentTarget.disabled=false; } });
+  document.getElementById("stock-add-warehouse").addEventListener("click", () => warehouseDialog(cloudMode, companyRole));
+  document.getElementById("stock-new-movement").addEventListener("click", () => movementDialog(cloudMode, companyRole));
+  document.getElementById("stock-count-start")?.addEventListener("click", () => inventoryCreateDialog(stock,companyRole));
+  document.querySelectorAll("[data-count-open]").forEach(b=>b.addEventListener("click",()=>inventoryOpenDialog(stock.countSessions.find(x=>x.id===b.dataset.countOpen),stock,companyRole)));
+  document.getElementById("stock-new-reservation")?.addEventListener("click", () => reservationDialog(companyRole));
+  document.querySelectorAll("[data-stock-release]").forEach(button => button.addEventListener("click", () => releaseReservation(button.dataset.stockRelease, companyRole)));
+  document.querySelectorAll("[data-stock-reverse]").forEach(button => button.addEventListener("click", () => reverseStockDocument(button.dataset.stockReverse, companyRole)));
+  document.getElementById("stock-valuation").addEventListener("change", e => changeSettings({valuation_method:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-negative").addEventListener("change", e => changeSettings({allow_negative:e.target.checked}, cloudMode, companyRole));
+  document.getElementById("stock-sales-trigger").addEventListener("change", e => changeSettings({sales_trigger:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-purchase-trigger").addEventListener("change", e => changeSettings({purchase_trigger:e.target.value}, cloudMode, companyRole));
+  document.getElementById("stock-accounting-mode").addEventListener("change", e => changeSettings({accounting_mode:e.target.value}, cloudMode, companyRole));
+}
+
+async function changeSettings(changes, cloudMode, companyRole) {
+  try {
+    if (cloudMode) await updateCloudStockSettings(changes);
+    else {
+      const stock = getStock(store);
+      if ("valuation_method" in changes) stock.settings.valuationMethod=changes.valuation_method;
+      if ("allow_negative" in changes) stock.settings.allowNegative=changes.allow_negative;
+      if ("sales_trigger" in changes) stock.settings.salesTrigger=changes.sales_trigger;
+      if ("purchase_trigger" in changes) stock.settings.purchaseTrigger=changes.purchase_trigger;
+      if ("accounting_mode" in changes) stock.settings.accountingMode=changes.accounting_mode;
+      persist();
+    }
+    toast("Paramètres de stock enregistrés.");
+    viewStock(false, companyRole);
+  } catch(error) {
+    toast(error?.message || "Enregistrement du paramètre impossible.", 5000);
+    viewStock(false, companyRole);
+  }
+}
+
+function productDialog(cloudMode = false, companyRole = null) {
+  if (cloudMode) {
+    readCloudStock().then(data => openProductDialog(data, true, companyRole))
+      .catch(error => toast(error?.message || "Lecture du catalogue impossible.",5000));
+    return;
+  }
+  openProductDialog(null, false, companyRole);
+}
+
+const STOCK_BASE_UNITS = [
+  {group:"Unités générales",units:[["unité","Unité"],["pièce","Pièce"],["paire","Paire"],["douzaine","Douzaine"]]},
+  {group:"Masse",units:[["kg","Kilogramme (kg)"],["g","Gramme (g)"],["t","Tonne (t)"]]},
+  {group:"Volume",units:[["L","Litre (L)"],["mL","Millilitre (mL)"],["m³","Mètre cube (m³)"]]},
+  {group:"Longueur et surface",units:[["m","Mètre (m)"],["cm","Centimètre (cm)"],["m²","Mètre carré (m²)"]]},
+  {group:"Conditionnement",units:[["carton","Carton"],["paquet","Paquet"],["sac","Sac"],["boîte","Boîte"],["rouleau","Rouleau"],["palette","Palette"]]},
+];
+const STOCK_BASE_UNIT_OPTIONS = STOCK_BASE_UNITS.map(group =>
+  `<optgroup label="${esc(group.group)}">${group.units.map(([value,label])=>`<option value="${esc(value)}">${esc(label)}</option>`).join("")}</optgroup>`
+).join("");
+
+function openProductDialog(catalogData, cloudMode, companyRole) {
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  const families=catalogData?.families || [];
+  const types=catalogData?.types || [];
+  const defaultType=types.find(t=>t.code==="goods") || types[0];
+  const familyOptions=families.map(f=>`<option value="${esc(f.id)}" ${f.id===defaultType?.family_id?"selected":""}>${esc(f.name)}</option>`).join("");
+  const typeOptions=(familyId)=>types.filter(t=>t.family_id===familyId).map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+  box.innerHTML=`<h2>Créer un article</h2><div class="grid cols-2">
+    <div><label>Référence / SKU</label><input id="sp-sku" maxlength="64"></div><div><label>Désignation</label><input id="sp-name" maxlength="180"></div>
+    ${cloudMode ? `<div><label>Famille</label><div class="row"><select id="sp-family">${familyOptions}</select><button type="button" class="secondary" id="sp-add-family">+</button></div></div>
+    <div><label>Type d’article</label><div class="row"><select id="sp-type">${defaultType?typeOptions(defaultType.family_id):""}</select><button type="button" class="secondary" id="sp-add-type">+</button></div></div>` : `<div><label>Type</label><select id="sp-type">${Object.entries(kinds).map(([k,v])=>`<option value="${k}">${v}</option>`).join("")}</select></div>`}
+    <div><label>Prix d’achat HT (${esc(store.settings.currency)})</label><input id="sp-purchase" type="number" min="0" step="0.0001" placeholder="Saisir le prix d’achat"><label class="muted" for="sp-purchase-unit">Unitaire</label><select id="sp-purchase-unit"></select></div>
+    <div><label>Prix de vente HT (${esc(store.settings.currency)})</label><input id="sp-sale" type="number" min="0" step="0.0001" placeholder="Saisir le prix de vente"><label class="muted" for="sp-sale-unit">Unitaire</label><select id="sp-sale-unit"></select></div>
+    <div><label>Unité de base</label><select id="sp-unit">${STOCK_BASE_UNIT_OPTIONS}<option value="__custom__">Autre unité personnalisée…</option></select></div>
+    <div><label>Traçabilité</label><select id="sp-tracking"><option value="none">Aucune</option><option value="lot">Par lot</option><option value="serial">Par numéro de série</option></select></div>
+    <div><label>Conversions d’unités (unité=équivalence)</label><input id="sp-conversions" maxlength="600" placeholder="carton=12 ; palette=120"><button type="button" class="secondary" id="sp-custom-units">Ajouter une unité d’achat/vente</button></div>
+  </div><p class="muted">Choisissez l’unité de base parmi les unités courantes. Les unités d’achat et de vente proposent l’unité de base et les conversions ajoutées ci-dessus. Exemple : carton=12 signifie qu’un carton contient 12 unités de base. Les prix sont saisis hors taxes ; les services ne génèrent aucun mouvement physique.</p><div id="sp-error" class="errors"></div><div class="actions"><button id="sp-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
+  const baseUnitInput=box.querySelector("#sp-unit");
+  const conversionsInput=box.querySelector("#sp-conversions");
+  baseUnitInput.value="unité";
+  const purchaseUnitSelect=box.querySelector("#sp-purchase-unit");
+  const saleUnitSelect=box.querySelector("#sp-sale-unit");
+  const parseUnitConversions=()=>conversionsInput.value.split(/[;\n]/).map(part=>part.trim()).filter(Boolean).map(part=>{
+    const [unit,factor]=part.split("=");
+    return {unit:String(unit||"").trim(),factorToBase:Number(factor)};
+  });
+  const refreshPriceUnits=()=>{
+    const base=baseUnitInput.value.trim()||"unité";
+    const conversions=parseUnitConversions().filter(c=>c.unit && c.unit.length<=24 && Number.isFinite(c.factorToBase) && c.factorToBase>0);
+    const units=[base,...conversions.map(c=>c.unit)].filter((unit,index,list)=>list.findIndex(x=>x.toLowerCase()===unit.toLowerCase())===index);
+    for(const select of [purchaseUnitSelect,saleUnitSelect]){
+      const previous=select.value;
+      select.innerHTML=units.map(unit=>`<option value="${esc(unit)}">${esc(unit)}</option>`).join("");
+      select.value=units.some(unit=>unit.toLowerCase()===previous.toLowerCase())?units.find(unit=>unit.toLowerCase()===previous.toLowerCase()):base;
+    }
+  };
+  baseUnitInput.addEventListener("change",()=>{
+    if(baseUnitInput.value==="__custom__"){
+      const custom=prompt("Nom de l’unité de base personnalisée :");
+      const clean=String(custom||"").trim();
+      if(!clean||clean.length>24){baseUnitInput.value="unité";box.querySelector("#sp-error").textContent="Le nom de l’unité doit contenir de 1 à 24 caractères.";return;}
+      const option=document.createElement("option");option.value=clean;option.textContent=clean;
+      baseUnitInput.insertBefore(option,baseUnitInput.lastElementChild);baseUnitInput.value=clean;
+    }
+    refreshPriceUnits();
+  });
+  conversionsInput.addEventListener("input",refreshPriceUnits);
+  box.querySelector("#sp-custom-units").onclick=()=>{
+    const unit=prompt("Nom de l’unité d’achat/vente à ajouter (ex. carton, palette, douzaine) :");
+    if(unit===null)return;
+    const clean=unit.trim();
+    if(!clean||clean.length>24){box.querySelector("#sp-error").textContent="Le nom de l’unité doit contenir de 1 à 24 caractères.";return;}
+    const base=(baseUnitInput.value.trim()||"unité");
+    const existing=parseUnitConversions();
+    if(clean.toLowerCase()===base.toLowerCase()||existing.some(c=>c.unit.toLowerCase()===clean.toLowerCase())){box.querySelector("#sp-error").textContent="Cette unité existe déjà pour cet article.";return;}
+    const factorText=prompt("Combien de « "+base+" » contient une unité « "+clean+" » ? (ex. 12)");
+    if(factorText===null)return;
+    const factor=Number(factorText);
+    if(!Number.isFinite(factor)||factor<=0||factor>1e9){box.querySelector("#sp-error").textContent="L’équivalence doit être un nombre supérieur à zéro.";return;}
+    conversionsInput.value=[conversionsInput.value.trim(),clean+"="+factor].filter(Boolean).join(" ; ");
+    refreshPriceUnits();
+    purchaseUnitSelect.value=clean;
+    saleUnitSelect.value=clean;
+    box.querySelector("#sp-error").textContent="";
+  };
+  refreshPriceUnits();
+  const familySelect=box.querySelector("#sp-family"), typeSelect=box.querySelector("#sp-type");
+  if (cloudMode) {
+    const refreshTypes=(preferredId=null)=>{
+      const available=types.filter(t=>t.family_id===familySelect.value&&t.active!==false);
+      typeSelect.innerHTML=available.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+      if(preferredId && available.some(t=>t.id===preferredId)) typeSelect.value=preferredId;
+    };
+    familySelect.onchange=()=>refreshTypes();
+    const trackingSelect=box.querySelector("#sp-tracking");
+    const syncTrackingNature=()=>{
+      const selected=types.find(t=>t.id===typeSelect.value);
+      const isService=selected?.nature==="service";
+      if(isService) trackingSelect.value="none";
+      for(const option of trackingSelect.options) option.disabled=isService&&option.value!=="none";
+    };
+    typeSelect.onchange=syncTrackingNature;
+    syncTrackingNature();
+    box.querySelector("#sp-add-family").onclick=async()=>{
+      const name=prompt("Nom de la nouvelle famille :"); if(name===null)return;
+      try { const family=await saveCloudStockFamily({name:name.trim()}); families.push(family);
+        familySelect.insertAdjacentHTML("beforeend",`<option value="${esc(family.id)}">${esc(family.name)}</option>`);
+        familySelect.value=family.id;refreshTypes();toast("Famille créée.");
+      } catch(e){box.querySelector("#sp-error").textContent=e.message||"Création de la famille impossible.";}
+    };
+    box.querySelector("#sp-add-type").onclick=async()=>{
+      if(!familySelect.value){box.querySelector("#sp-error").textContent="Créez ou sélectionnez d’abord une famille.";return;}
+      const name=prompt("Nom du nouveau type d’article :"); if(name===null)return;
+      const natureAnswer=prompt("Nature : saisissez « physique » ou « service ».","physique");
+      if(natureAnswer===null)return;
+      const nature=natureAnswer.trim().toLowerCase()==="service"?"service":"physical";
+      if(!["service","physique","physical"].includes(natureAnswer.trim().toLowerCase())){box.querySelector("#sp-error").textContent="Nature invalide. Saisissez physique ou service.";return;}
+      try { const type=await saveCloudStockType({name:name.trim(),family_id:familySelect.value,nature});types.push(type);refreshTypes(type.id);syncTrackingNature();toast("Type d’article créé.");}
+      catch(e){box.querySelector("#sp-error").textContent=e.message||"Création du type impossible.";}
+    };
+  }
+  box.querySelector("#sp-save").onclick=async()=>{
+    const unitConversions=parseUnitConversions();
+    const purchasePrice=Number(box.querySelector("#sp-purchase").value||0), salePrice=Number(box.querySelector("#sp-sale").value||0);
+    if(!Number.isFinite(purchasePrice)||purchasePrice<0||!Number.isFinite(salePrice)||salePrice<0){box.querySelector("#sp-error").textContent="Les prix HT doivent être des nombres positifs ou nuls.";return;}
+    const selectedType=cloudMode?types.find(t=>t.id===typeSelect.value):null;
+    if(cloudMode&&!selectedType){box.querySelector("#sp-error").textContent="Sélectionnez un type d’article.";return;}
+    const input={sku:box.querySelector("#sp-sku").value,name:box.querySelector("#sp-name").value,type:cloudMode?(selectedType.nature==="service"?"service":selectedType.legacy_kind):box.querySelector("#sp-type").value,unit:box.querySelector("#sp-unit").value,tracking:box.querySelector("#sp-tracking").value,unitConversions,purchasePriceHT:purchasePrice,salePriceHT:salePrice,purchasePriceUnit:purchaseUnitSelect.value,salePriceUnit:saleUnitSelect.value};
+    try {
+      if (cloudMode) await saveCloudStockProduct({sku:input.sku,name:input.name,product_type:input.type,product_type_id:selectedType.id,family_id:familySelect.value,base_unit:input.unit,tracking:input.tracking,unit_conversions:input.unitConversions.map(c=>({unit_code:c.unit,factor_to_base:c.factorToBase})),purchase_price_ht:purchasePrice,sale_price_ht:salePrice,purchase_price_unit:input.purchasePriceUnit,sale_price_unit:input.salePriceUnit,category:families.find(f=>f.id===familySelect.value)?.name||""});
+      else { const result=addProduct(store,input); if(!result.ok){box.querySelector("#sp-error").textContent=result.errors.join(" ");return;} persist(); }
+      modal.close();viewStock(false,companyRole);toast("Article créé.");
+    } catch(error) { box.querySelector("#sp-error").textContent=error?.message || "Création impossible."; }
+  };
+}
+function warehouseCode(name) {
+  const base=String(name||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"").slice(0,32) || "MAGASIN";
+  return base + "-" + (globalThis.crypto?.randomUUID?.().slice(0,6).toUpperCase() || String(Date.now()).slice(-6));
+}
+function openStockReorderThresholdDialog(product, cloudMode, companyRole) {
+  if (cloudMode && !["admin","accountant"].includes(companyRole)) return;
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  box.innerHTML=`<h2>Seuils de réapprovisionnement</h2>
+    <p class="muted">${esc(product.sku)} — ${esc(product.name)} · ${esc(product.unit)}</p>
+    <div class="grid cols-2">
+      <div><label for="srt-minimum">Seuil minimum</label><input id="srt-minimum" type="number" min="0" max="999999999999" step="0.0001" value="${Number(product.minimumStock||0)}"></div>
+      <div><label for="srt-target">Stock cible</label><input id="srt-target" type="number" min="0" max="999999999999" step="0.0001" value="${Number(product.targetStock||0)}"></div>
+    </div>
+    <p class="muted">Le seuil déclenche l’alerte lorsque le disponible, après déduction des réservations, atteint ou passe sous ce niveau. La quantité suggérée ramène le disponible au stock cible. Ces seuils sont globaux à l’article, tous entrepôts confondus.</p>
+    <div id="srt-error" class="errors"></div>
+    <div class="actions"><button id="srt-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  modal.showModal();
+  box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#srt-save").onclick=async()=>{
+    const minimumStock=Number(box.querySelector("#srt-minimum").value);
+    const targetStock=Number(box.querySelector("#srt-target").value);
+    if(!Number.isFinite(minimumStock)||!Number.isFinite(targetStock)||minimumStock<0||targetStock<minimumStock||targetStock>=1000000000000){
+      box.querySelector("#srt-error").textContent="Saisissez des quantités valides : la cible doit être supérieure ou égale au seuil minimum.";
+      return;
+    }
+    try{
+      if(cloudMode){
+        await updateCloudStockReorderThresholds({productId:product.id,minimumStock,targetStock});
+      }else{
+        product.minimumStock=minimumStock;
+        product.targetStock=targetStock;
+        persist();
+      }
+      modal.close();
+      viewStock(false,companyRole);
+      toast("Seuils de réapprovisionnement enregistrés.");
+    }catch(error){
+      box.querySelector("#srt-error").textContent=error?.message||"Enregistrement des seuils impossible.";
+    }
+  };
+}
+
+function warehouseDialog(cloudMode = false, companyRole = null) {
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  box.innerHTML=`<h2>Créer un entrepôt</h2><label>Nom</label><input id="sw-name" maxlength="100"><div id="sw-error" class="errors"></div><div class="actions"><button id="sw-save">Enregistrer</button><button class="secondary" data-close>Annuler</button></div>`;
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#sw-save").onclick=async()=>{
+    const name=box.querySelector("#sw-name").value;
+    try {
+      if (cloudMode) await saveCloudStockWarehouse({code:warehouseCode(name),name});
+      else {const r=addWarehouse(store,name);if(!r.ok){box.querySelector("#sw-error").textContent=r.error;return;}persist();}
+      modal.close();viewStock(false,companyRole);toast("Entrepôt créé.");
+    } catch(error) { box.querySelector("#sw-error").textContent=error?.message || "Création impossible."; }
+  };
+}
+
+
+async function reverseStockDocument(documentId, companyRole) {
+  if (!["admin","accountant"].includes(companyRole)) {
+    toast("Droit de contrepassation réservé aux administrateurs et comptables.",5000);
+    return;
+  }
+  if (!globalThis.confirm("Créer une contrepassation exacte de ce document ? Le document initial restera dans le journal avec le statut contrepassé.")) return;
+  const reason=globalThis.prompt("Motif obligatoire de la contrepassation (5 à 500 caractères) :");
+  if (reason===null) return;
+  if (reason.trim().length<5 || reason.trim().length>500) {
+    toast("Le motif doit contenir entre 5 et 500 caractères.",5000);
+    return;
+  }
+  try {
+    const stockState=await readCloudStock();
+    const originalDocument=(stockState.documents||[]).find(item=>String(item.id)===String(documentId));
+    if(originalDocument && ["sales_invoice","sales_delivery"].includes(originalDocument.source_type)){
+      const costReference="COUT STOCK VENTE "+String(originalDocument.operation_uid);
+      const costEntry=(store.entries||[]).find(entry=>entry.reference===costReference);
+      if(costEntry && !costEntry.reversed){
+        const accountingReversal=reverseEntry(store,costEntry.id,new Date().toISOString().slice(0,10));
+        if(!accountingReversal.ok) throw new Error("La contrepassation comptable du coût des ventes a échoué ; le mouvement de stock n'a pas été contrepassé : "+accountingReversal.errors.join(" "));
+        saveNow();
+      }
+    }
+    const operationUid=globalThis.crypto?.randomUUID?.();
+    if (!operationUid) throw new Error("Génération sécurisée de l'identifiant d'opération indisponible.");
+    await reverseCloudStockDocument(documentId,operationUid,reason.trim());
+    toast("Contrepassation enregistrée. Le coût des ventes correspondant a également été contrepassé lorsqu'il existait ; les quantités, valeurs, lots et numéros de série ont été restaurés.");
+    viewStock(false,companyRole);
+  } catch(error) {
+    toast(error?.message||"Contrepassation impossible.",6000);
+  }
+}
+async function releaseReservation(reservationId, companyRole) {
+  try {
+    await releaseCloudStockReservation(reservationId);
+    toast("Réservation libérée.");
+    viewStock(false,companyRole);
+  } catch(error) { toast(error?.message||"Libération impossible.",5000); }
+}
+function reservationDialog(companyRole) {
+  readCloudStock().then(data => {
+    const stock=mapCloudStock(data), modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+    const products=stock.products.filter(p=>p.active&&p.type!=="service");
+    const warehouses=stock.warehouses.filter(w=>w.active);
+    if(!products.length||!warehouses.length){toast("Créez d'abord un article physique et un entrepôt.");return;}
+    box.innerHTML='<h2>Réserver du stock</h2><label>Article</label><select id="sr-product">'+products.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.sku)+' — '+esc(p.name)+'</option>').join("")+'</select><label>Entrepôt</label><select id="sr-warehouse">'+warehouses.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join("")+'</select><label>Quantité</label><input id="sr-quantity" type="number" min="0.0001" step="0.0001"><label>Référence</label><input id="sr-reference" maxlength="120"><div id="sr-error" class="errors"></div><div class="actions"><button id="sr-save">Réserver</button><button class="secondary" data-close>Annuler</button></div>';
+    modal.showModal(); box.querySelector("[data-close]").onclick=()=>modal.close();
+    box.querySelector("#sr-save").onclick=async()=>{
+      try {
+        await reserveCloudStock({operationUid:globalThis.crypto.randomUUID(),productId:box.querySelector("#sr-product").value,warehouseId:box.querySelector("#sr-warehouse").value,quantity:Number(box.querySelector("#sr-quantity").value),reference:box.querySelector("#sr-reference").value});
+        modal.close();toast("Stock réservé.");viewStock(false,companyRole);
+      } catch(error) { box.querySelector("#sr-error").textContent=error?.message||"Réservation impossible."; }
+    };
+  }).catch(error=>toast(error?.message||"Lecture du stock impossible.",5000));
+}
+
+function movementDialog(cloudMode = false, companyRole = null) {
+  const stock=cloudMode ? null : getStock(store);
+  if (cloudMode) {
+    readCloudStock().then(data => openMovementDialog(mapCloudStock(data),true,companyRole)).catch(error => toast(error?.message || "Lecture du stock impossible.",5000));
+    return;
+  }
+  openMovementDialog(stock,false,companyRole);
+}
+function openMovementDialog(stock, cloudMode, companyRole = null) {
+  const modal=document.getElementById("modal"), box=document.getElementById("modal-content");
+  const physical=stock.products.filter(p=>p.type!=="service"&&p.active);
+  const warehouses=stock.warehouses.filter(w=>w.active);
+  if(!physical.length){toast("Créez d'abord un article physique.");return;}
+  if(!warehouses.length){toast("Créez d'abord un entrepôt.");return;}
+  box.innerHTML=`<h2>Nouveau mouvement de stock</h2><div class="grid cols-2">
+    <div><label>Opération</label><select id="sm-kind"><option value="receipt">Entrée</option><option value="issue">Sortie</option><option value="transfer">Transfert</option><option value="adjustment" ${cloudMode ? "" : "disabled"}>Ajustement</option></select></div>
+    <div><label>Article</label><select id="sm-product">${physical.map(p=>`<option value="${p.id}">${esc(p.sku)} — ${esc(p.name)}</option>`).join("")}</select></div>
+    <div><label>Entrepôt source</label><select id="sm-warehouse">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
+    <div id="sm-direction-wrap" hidden><label>Sens de l’ajustement</label><select id="sm-direction"><option value="increase">Augmentation</option><option value="decrease">Diminution</option></select></div>
+    <div id="sm-reason-wrap" hidden><label>Motif de la sortie</label><select id="sm-reason"><option value="">— Choisir un motif —</option><option value="internal_consumption">Consommation interne</option><option value="damage">Casse / détérioration</option><option value="loss">Perte</option><option value="theft">Vol</option><option value="expiry">Péremption</option><option value="other">Autre motif</option></select></div>
+    <div id="sm-dest-wrap" hidden><label>Entrepôt destination</label><select id="sm-dest">${warehouses.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join("")}</select></div>
+    <div><label>Quantité</label><input id="sm-qty" type="number" min="0.0001" step="0.0001"></div>
+    <div><label>Unité de saisie</label><select id="sm-unit"></select></div>
+    <div id="sm-lot-wrap" hidden><label>Code du lot</label><input id="sm-lot" maxlength="80"></div>
+    <div id="sm-serial-wrap" hidden><label>Numéros de série (un par ligne ou séparés par virgule)</label><textarea id="sm-serials" rows="2"></textarea></div>
+    <div id="sm-cost-wrap"><label>Coût unitaire (${esc(store.settings.currency)})</label><input id="sm-cost" type="number" min="0" step="0.0001" value="0"></div>
+    <div><label>Date</label><input id="sm-date" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+    <div><label>Référence</label><input id="sm-ref" maxlength="120" placeholder="BL / facture fournisseur"></div><div id="sm-supplier-wrap" hidden><label>Fournisseur</label><input id="sm-supplier" maxlength="180"></div>
+  </div><label>Note</label><textarea id="sm-note" rows="2"></textarea><div id="sm-error" class="errors"></div><div class="actions"><button id="sm-save">Valider le mouvement</button><button class="secondary" data-close>Annuler</button></div>
+  <p class="muted">Le serveur valide les quantités disponibles, la valorisation et les périodes comptables. Les entrées peuvent être référencées par un bon de livraison ou une pièce fournisseur ; le journal conserve leur origine.</p>`;
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  const kind=box.querySelector("#sm-kind"), productSelect=box.querySelector("#sm-product"), dest=box.querySelector("#sm-dest-wrap"), cost=box.querySelector("#sm-cost-wrap"), directionWrap=box.querySelector("#sm-direction-wrap"), direction=box.querySelector("#sm-direction");
+  const supplierWrap=box.querySelector("#sm-supplier-wrap");const reasonWrap=box.querySelector("#sm-reason-wrap");const update=()=>{const product=physical.find(p=>String(p.id)===productSelect.value);dest.hidden=kind.value!=="transfer";directionWrap.hidden=kind.value!=="adjustment";reasonWrap.hidden=kind.value!=="issue";supplierWrap.hidden=kind.value!=="receipt";cost.hidden=!(kind.value==="receipt" || (kind.value==="adjustment" && direction.value==="increase"));
+    const units=[product?.unit||"unité",...(product?.unitConversions||[]).map(c=>c.unit)];box.querySelector("#sm-unit").innerHTML=units.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join("");
+    box.querySelector("#sm-lot-wrap").hidden=product?.tracking!=="lot";box.querySelector("#sm-serial-wrap").hidden=product?.tracking!=="serial";
+  };kind.onchange=update;direction.onchange=update;productSelect.onchange=update;update();
+  box.querySelector("#sm-save").onclick=async()=>{
+    const serialNumbers=box.querySelector("#sm-serials").value.split(/[\r\n,;]/).map(v=>v.trim()).filter(Boolean);
+    const reasonCode=box.querySelector("#sm-reason").value;
+    if(kind.value==="issue"&&!reasonCode){box.querySelector("#sm-error").textContent="Sélectionnez le motif de la sortie.";return;}
+    const input={kind:kind.value,productId:box.querySelector("#sm-product").value,warehouseId:box.querySelector("#sm-warehouse").value,destinationWarehouseId:box.querySelector("#sm-dest").value,quantity:box.querySelector("#sm-qty").value,unit:box.querySelector("#sm-unit").value,unitCost:box.querySelector("#sm-cost").value,lotCode:box.querySelector("#sm-lot").value,serialNumbers,date:box.querySelector("#sm-date").value,reference:box.querySelector("#sm-ref").value,note:[box.querySelector("#sm-supplier").value.trim()?"Fournisseur : "+box.querySelector("#sm-supplier").value.trim():"",box.querySelector("#sm-note").value].filter(Boolean).join(" — "),direction:box.querySelector("#sm-direction")?.value};
+    try {
+      if (cloudMode) {
+        const operationUid=globalThis.crypto?.randomUUID?.();
+        if (!operationUid) throw new Error("Navigateur incompatible : génération sécurisée de clé d’opération indisponible.");
+        const line={product_id:input.productId,warehouse_id:input.warehouseId,quantity:Number(input.quantity),unit:input.unit,unit_cost:Number(input.unitCost||0)};
+        if(input.lotCode) line.lot_code=input.lotCode;
+        if(input.serialNumbers.length) line.serial_numbers=input.serialNumbers;
+        if(input.kind==="transfer") line.destination_warehouse_id=input.destinationWarehouseId;
+        if(input.kind==="adjustment") line.direction=box.querySelector("#sm-direction").value;
+        const sourceType=input.kind==="receipt"?"supplier_receipt":"manual_stock";
+        const result=await postCloudStockDocument({operationUid,documentType:input.kind,documentDate:input.date,reference:input.reference,note:input.note,lines:[line],sourceType,sourceId:input.kind==="receipt"?(input.reference||operationUid):operationUid});
+        if(["issue","adjustment"].includes(input.kind)&&result?.document_id){queueStockAccountingOperation(store,{documentId:result.document_id,operationUid,sourceType,documentType:input.kind,reasonCode});persist();await retryPendingStockAccountingOperations(companyRole);}
+      } else {
+        const r=postStockMovement(store,input);if(!r.ok){box.querySelector("#sm-error").textContent=r.error;return;}persist();
+      }
+      modal.close();viewStock(false,companyRole);toast("Mouvement de stock enregistré.");
+    } catch(error) { box.querySelector("#sm-error").textContent=error?.message || "Validation impossible."; }
+  };
+}
+
+
+function inventoryCreateDialog(stock,companyRole) {
+  const warehouses=stock.warehouses.filter(w=>w.active); if(!warehouses.length){toast("Créez d’abord un entrepôt actif.");return;}
+  const modal=document.getElementById("modal"),box=document.getElementById("modal-content");
+  box.innerHTML='<h2>Démarrer un inventaire</h2><label>Entrepôt</label><select id="sic-warehouse">'+warehouses.map(w=>'<option value="'+esc(w.id)+'">'+esc(w.name)+'</option>').join("")+'</select><label>Référence</label><input id="sic-reference" maxlength="120" value="INV-'+new Date().toISOString().slice(0,10)+'"><p class="muted">Tous les mouvements de cet entrepôt seront gelés jusqu’à validation ou annulation.</p><div id="sic-error" class="errors"></div><div class="actions"><button id="sic-create">Démarrer</button><button class="secondary" data-close>Annuler</button></div>';
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#sic-create").onclick=async()=>{try{await createCloudStockCount({warehouseId:box.querySelector("#sic-warehouse").value,reference:box.querySelector("#sic-reference").value.trim()});modal.close();toast("Inventaire démarré. Entrepôt gelé.");viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Démarrage impossible."; }};
+}
+function inventoryOpenDialog(session,stock,companyRole) {
+  if(!session)return; const modal=document.getElementById("modal"),box=document.getElementById("modal-content");
+  const products=new Map(stock.products.map(p=>[p.id,p]));
+  const rows=session.lines.map(l=>{const p=products.get(l.product_id);return '<tr><td>'+esc(p?.sku||"")+' — '+esc(p?.name||"Article")+'</td><td>'+fmtQty(l.snapshot_quantity)+'</td><td>'+(session.status==="counting"?'<input type="number" min="0" step="0.0001" data-count-line="'+esc(l.id)+'" value="'+(l.counted_quantity??"")+'">':fmtQty(l.counted_quantity))+'</td><td>'+(l.counted_quantity==null?"—":fmtQty(Number(l.counted_quantity)-Number(l.snapshot_quantity)))+'</td></tr>';}).join("");
+  box.innerHTML='<h2>Inventaire — '+esc(session.reference)+'</h2><p>'+esc(session.warehouse_name)+'</p><div class="table-wrap"><table><thead><tr><th>Article</th><th>Théorique</th><th>Compté</th><th>Écart</th></tr></thead><tbody>'+rows+'</tbody></table></div>'+(session.status==="counting"?'<div class="actions"><button id="sic-save">Enregistrer les quantités</button><button class="secondary" id="sic-submit">Soumettre</button>':'<p class="muted">Inventaire soumis : validation finale réservée à un administrateur.</p>'+(companyRole==="admin"?'<button id="sic-finalize">Approuver et comptabiliser</button>':""))+'<button class="secondary" id="sic-cancel">Annuler l’inventaire</button><button class="secondary" data-close>Fermer</button><div id="sic-error" class="errors"></div>';
+  modal.showModal();box.querySelector("[data-close]").onclick=()=>modal.close();
+  box.querySelector("#sic-save")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-save");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}toast("Comptages enregistrés.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Enregistrement impossible.";btn.disabled=false;}});
+  box.querySelector("#sic-submit")?.addEventListener("click",async()=>{const btn=box.querySelector("#sic-submit");btn.disabled=true;try{for(const input of box.querySelectorAll("[data-count-line]")){if(input.value.trim()==="")continue;const n=Number(input.value);if(!Number.isFinite(n)||n<0)throw new Error("Quantité comptée invalide.");await setCloudStockCountLine({sessionId:session.id,lineId:input.dataset.countLine,countedQuantity:n});}await submitCloudStockCount(session.id);toast("Inventaire soumis pour approbation.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Soumission impossible.";btn.disabled=false;}});
+  box.querySelector("#sic-finalize")?.addEventListener("click",async()=>{try{const operationUid=globalThis.crypto.randomUUID();const result=await finalizeCloudStockCount({sessionId:session.id,operationUid,documentDate:new Date().toISOString().slice(0,10)});if(result?.document_id)queueStockAccountingOperation(store,{documentId:result.document_id,operationUid,sourceType:"inventory_count",documentType:"adjustment",reasonCode:"other"});persist();await retryPendingStockAccountingOperations(companyRole);toast("Inventaire approuvé et comptabilisé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Validation impossible."; }});
+  box.querySelector("#sic-cancel")?.addEventListener("click",async()=>{if(!confirm("Annuler l’inventaire et libérer l’entrepôt ?"))return;try{await cancelCloudStockCount(session.id);toast("Inventaire annulé.");modal.close();viewStock(false,companyRole);}catch(e){box.querySelector("#sic-error").textContent=e.message||"Annulation impossible."; }});
+}

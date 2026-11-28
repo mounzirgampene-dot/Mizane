@@ -1,0 +1,19 @@
+import { strict as assert } from "node:assert";
+import { createTaxEvidenceMetadata, getTaxEvidenceReadiness, canMoveTaxDeclarationToReview } from "../js/tax-documents-core.js";
+const declaration={id:"vat-2026-01",requiredDocuments:["Journal des ventes","Factures et avoirs"]};
+const file={name:"factures.pdf",size:2048,type:"application/pdf"};
+const pending=createTaxEvidenceMetadata({id:"e1",declarationId:declaration.id,category:"Journal des ventes",file});
+assert.equal(pending.ok,true);
+assert.equal(pending.document.status,"pending_review");
+assert.equal(canMoveTaxDeclarationToReview(declaration,[pending.document]).ok,false);
+const verified=[{...pending.document,status:"verified"},{...pending.document,id:"e2",category:"Factures et avoirs",status:"verified"}];
+assert.equal(getTaxEvidenceReadiness(declaration,verified).ready,true);
+assert.equal(canMoveTaxDeclarationToReview(declaration,verified).ok,true);
+assert.equal(createTaxEvidenceMetadata({id:"e3",declarationId:"d",category:"x",file:{name:"empty",size:0}}).ok,false);
+assert.equal(createTaxEvidenceMetadata({id:"e4",declarationId:"d",category:"x",file:{name:"large",size:16*1024*1024}}).ok,false);
+assert.equal(createTaxEvidenceMetadata({id:"e5",declarationId:"d",category:"x",file:{name:"a",size:1},referenceDate:"2026-99-99"}).ok,false);
+
+assert.equal(createTaxEvidenceMetadata({id:"e6",declarationId:"d",category:"x",file:{name:"scan.png",size:10,type:"image/png"}}).ok,true);
+assert.equal(createTaxEvidenceMetadata({id:"e7",declarationId:"d",category:"x",file:{name:"archive.exe",size:10,type:"application/octet-stream"}}).ok,false);
+assert.equal(createTaxEvidenceMetadata({id:"e8",declarationId:"d",category:"x",file:{name:"scan.pdf",size:10,type:""}}).document.mimeType,"application/pdf");
+console.log("Lot 31/32 — justificatifs fiscaux : OK");

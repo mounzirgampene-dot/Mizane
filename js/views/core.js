@@ -320,7 +320,7 @@ export function viewEntries(readOnly = false) {
       <div id="accounting-document-results"><p class="muted">Chargement du coffre documentaire…</p></div>
     </section>
     <div class="card table-wrap">
-      ${rows.length === 0 ? `<p class="muted">Aucune écriture. <button class="small" data-act="demo">Charger la démo</button></p>` : `
+      ${rows.length === 0 ? `<p class="muted">Aucune écriture.${readOnly ? "" : ' <button class="small" data-act="demo">Charger la démo</button>'}</p>` : `
       <table>
         <thead><tr><th>#</th><th>Date</th><th>Journal</th><th>Référence</th><th>Détail</th><th class="num">Débit</th><th class="num">Crédit</th><th></th></tr></thead>
         <tbody>

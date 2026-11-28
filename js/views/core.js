@@ -3,6 +3,7 @@ import { JOURNALS, postEntry, reverseEntry, trialBalance, ledger, incomeStatemen
 import { aiConfigured, suggestEntry, parseEntryFromTextLocal, imageFileToDataUrl } from "../ai.js";
 import { printHTML, invoiceHTML } from "../print.js";
 import { saveStore, downloadBlob, exportXLS } from "../db.js";
+import { hasAccountingSyncBaseline } from "../accounting-sync.js";
 import { notifyDetectedAnomalies } from "../notifications.js";
 import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
 import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
@@ -413,7 +414,11 @@ export function viewEntries() {
       const entry=store.entries.find(item=>Number(item.id)===id);
       if(!entry)return;
       if(entry.reversed||entry.reverseOf)return toast("Suppression bloquée : cette écriture est liée à une contrepassation. Utilisez la procédure comptable appropriée.");
-      const confirmed=confirm("Supprimer définitivement l’écriture #"+id+" du journal local ? Cette action sera répercutée dans le cloud lors de la prochaine synchronisation si la synchronisation de cette entreprise est déjà initialisée. Vérifiez les pièces justificatives associées avant de continuer.");
+      const activeCompanyId=localStorage.getItem("mizane_active_company_v1");
+      if(activeCompanyId&&!hasAccountingSyncBaseline(activeCompanyId)){
+        return toast("Suppression suspendue : synchronisez d’abord cette entreprise pour établir la référence cloud. Cela évite que des écritures supprimées localement réapparaissent lors de la première synchronisation.");
+      }
+      const confirmed=confirm("Supprimer définitivement l’écriture #"+id+" du journal local ? La suppression sera transmise au cloud lors de la prochaine synchronisation. Vérifiez les pièces justificatives associées avant de continuer.");
       if(!confirmed)return;
       const index=store.entries.findIndex(item=>Number(item.id)===id);
       if(index<0)return;

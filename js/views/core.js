@@ -6,8 +6,8 @@ import { saveStore, downloadBlob, exportXLS } from "../db.js";
 import { notifyDetectedAnomalies } from "../notifications.js";
 import { buildStrategicDashboardSnapshot } from "../strategic-dashboard-core.js";
 import { buildAccountingControlReport, accountingControlRows } from "../accounting-controls.js";
-import { listLocalAccountingDocuments, getLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
-import { listCloudAccountingDocumentsForEntry, listCloudAccountingDocuments, downloadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
+import { listLocalAccountingDocuments, getLocalAccountingDocument, putLocalAccountingDocument, deleteLocalAccountingDocument } from "../accounting-documents.js";
+import { listCloudAccountingDocumentsForEntry, listCloudAccountingDocuments, downloadCloudAccountingDocument, uploadCloudAccountingDocument, deleteCloudAccountingDocument } from "../accounting-documents-cloud.js";
 import {
   store, planAccounts, $app, router, toast, esc, money, planLabel,
   getDraftLines, setDraftLines, getDraftHeader, setDraftHeader, resetDraft, openModal, closeModal,
@@ -361,22 +361,50 @@ export function viewEntries() {
     button.addEventListener("click", async () => {
       const entryId=Number(button.dataset.accountingDocuments),entry=store.entries.find(item=>Number(item.id)===entryId);
       if(!entry)return;
-      let localDocuments=[],cloudDocuments=[],warning="";
-      try{localDocuments=await listLocalAccountingDocuments(entryId);}catch(error){warning="Lecture locale indisponible : "+(error?.message||"erreur")+". ";}
-      try{cloudDocuments=await listCloudAccountingDocumentsForEntry(entryId)||[];}catch(error){warning+="Coffre partagé : "+(error?.message||"indisponible")+". ";}
-      const rows=[...cloudDocuments.map(doc=>({...doc,kind:"cloud"})),...localDocuments.map(doc=>({...doc,kind:"local"}))];
-      openModal('<h2>Pièces justificatives — écriture #'+entryId+'</h2>'+(warning?'<p class="warn">'+esc(warning)+'</p>':'')+
-       (rows.length?'<div class="table-wrap"><table><thead><tr><th>Fichier</th><th>Stockage</th><th>Taille</th><th>Ajouté le</th><th>Actions</th></tr></thead><tbody>'+
-       rows.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+(doc.kind==="cloud"?'Coffre privé entreprise':'Cet appareil uniquement')+'</td><td>'+(Number(doc.size)/1024/1024).toFixed(2)+' Mo</td><td>'+esc(String(doc.uploadedAt||"").slice(0,10)||"—")+'</td><td><button class="small secondary" data-accounting-doc-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-accounting-doc-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+
-       '</tbody></table></div>':'<p class="muted">Aucune pièce justificative associée à cette écriture.</p>')+'<div class="actions"><button class="secondary" data-close>Fermer</button></div>');
-      document.querySelectorAll("[data-accounting-doc-download]").forEach(action=>action.addEventListener("click",async()=>{
-       try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.accountingDocDownload):await getLocalAccountingDocument(action.dataset.accountingDocDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}
-       catch(error){toast(error?.message||"Téléchargement impossible.");}
-      }));
-      document.querySelectorAll("[data-accounting-doc-delete]").forEach(action=>action.addEventListener("click",async()=>{
-       try{const id=action.dataset.accountingDocDelete;if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(id);else await deleteLocalAccountingDocument(id);toast("Pièce justificative supprimée.");closeModal();button.click();}
-       catch(error){toast(error?.message||"Suppression impossible.");}
-      }));
+      const openDocuments=async()=>{
+        let localDocuments=[],cloudDocuments=[],warning="";
+        try{localDocuments=await listLocalAccountingDocuments(entryId);}catch(error){warning="Lecture locale indisponible : "+(error?.message||"erreur")+". ";}
+        try{cloudDocuments=await listCloudAccountingDocumentsForEntry(entryId)||[];}catch(error){warning+="Coffre partagé : "+(error?.message||"indisponible")+". ";}
+        const rows=[...cloudDocuments.map(doc=>({...doc,kind:"cloud"})),...localDocuments.map(doc=>({...doc,kind:"local"}))];
+        openModal('<h2>Pièces justificatives — écriture #'+entryId+'</h2>'+
+         '<section class="card"><h3>Ajouter un justificatif</h3><p class="muted">Formats acceptés : PDF, JPEG, PNG ou WebP. Taille maximale : 20 Mo (15 Mo pour les images).</p>'+
+         '<label for="accounting-doc-file">Fichier</label><input id="accounting-doc-file" type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp">'+
+         '<div class="row"><div><label for="accounting-doc-type">Type de document</label><select id="accounting-doc-type"><option value="supplier_invoice">Facture fournisseur</option><option value="customer_invoice">Facture client</option><option value="receipt">Reçu / quittance</option><option value="bank_statement">Relevé bancaire</option><option value="tax_document">Document fiscal</option><option value="contract">Contrat</option><option value="other">Autre</option></select></div>'+
+         '<div><label for="accounting-doc-date">Date du document</label><input id="accounting-doc-date" type="date"></div></div>'+
+         '<div class="row"><div><label for="accounting-doc-counterparty">Tiers / fournisseur / client</label><input id="accounting-doc-counterparty" maxlength="160" placeholder="Nom du tiers"></div><div><label for="accounting-doc-reference">Référence du document</label><input id="accounting-doc-reference" maxlength="120" placeholder="N° de facture ou reçu"></div></div>'+
+         '<label for="accounting-doc-notes">Note (facultatif)</label><input id="accounting-doc-notes" maxlength="500" placeholder="Précision utile">'+
+         '<label for="accounting-doc-storage">Emplacement de stockage</label><select id="accounting-doc-storage"><option value="device">Sur cet appareil uniquement</option><option value="cloud">Coffre privé de l’entreprise (nécessite connexion et synchronisation de l’écriture)</option></select>'+
+         '<div class="actions"><button id="accounting-doc-upload">Joindre le justificatif</button></div><div id="accounting-doc-upload-status" class="muted" aria-live="polite"></div></section>'+
+         (warning?'<p class="warn">'+esc(warning)+'</p>':'')+
+         (rows.length?'<h3>Documents déjà associés</h3><div class="table-wrap"><table><thead><tr><th>Fichier</th><th>Stockage</th><th>Taille</th><th>Ajouté le</th><th>Actions</th></tr></thead><tbody>'+
+         rows.map(doc=>'<tr><td>'+esc(doc.fileName)+'</td><td>'+(doc.kind==="cloud"?'Coffre privé entreprise':'Cet appareil uniquement')+'</td><td>'+(Number(doc.size)/1024/1024).toFixed(2)+' Mo</td><td>'+esc(String(doc.uploadedAt||"").slice(0,10)||"—")+'</td><td><button class="small secondary" data-accounting-doc-download="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Télécharger</button> <button class="small danger" data-accounting-doc-delete="'+esc(doc.id)+'" data-kind="'+doc.kind+'">Supprimer</button></td></tr>').join("")+
+         '</tbody></table></div>':'<p class="muted">Aucune pièce justificative associée à cette écriture.</p>')+'<div class="actions"><button class="secondary" data-close>Fermer</button></div>');
+        document.getElementById("accounting-doc-upload")?.addEventListener("click",async()=>{
+          const file=document.getElementById("accounting-doc-file")?.files?.[0],status=document.getElementById("accounting-doc-upload-status"),action=document.getElementById("accounting-doc-upload");
+          if(!file){toast("Sélectionnez d’abord un fichier.");return;}
+          const metadata={type:document.getElementById("accounting-doc-type").value,documentDate:document.getElementById("accounting-doc-date").value,counterparty:document.getElementById("accounting-doc-counterparty").value,reference:document.getElementById("accounting-doc-reference").value,journal:entry.journal,notes:document.getElementById("accounting-doc-notes").value};
+          const storage=document.getElementById("accounting-doc-storage").value;
+          action.disabled=true;status.textContent="Enregistrement du justificatif…";
+          try{
+            if(storage==="cloud"){
+              await uploadCloudAccountingDocument({file,entryLocalIds:[entryId],metadata});
+            }else{
+              const id=globalThis.crypto?.randomUUID?.()||("doc-"+Date.now()+"-"+Math.random().toString(36).slice(2));
+              await putLocalAccountingDocument({id,file,entryIds:[entryId],metadata});
+            }
+            toast("Pièce justificative ajoutée.");await openDocuments();
+          }catch(error){status.textContent=error?.message||"Ajout impossible.";action.disabled=false;}
+        });
+        document.querySelectorAll("[data-accounting-doc-download]").forEach(action=>action.addEventListener("click",async()=>{
+         try{const result=action.dataset.kind==="cloud"?await downloadCloudAccountingDocument(action.dataset.accountingDocDownload):await getLocalAccountingDocument(action.dataset.accountingDocDownload);if(!result?.blob)throw new Error("Fichier introuvable.");downloadBlob(result.blob,result.fileName||"justificatif");}
+         catch(error){toast(error?.message||"Téléchargement impossible.");}
+        }));
+        document.querySelectorAll("[data-accounting-doc-delete]").forEach(action=>action.addEventListener("click",async()=>{
+         try{const id=action.dataset.accountingDocDelete;if(!confirm("Supprimer définitivement cette pièce justificative ?"))return;if(action.dataset.kind==="cloud")await deleteCloudAccountingDocument(id);else await deleteLocalAccountingDocument(id);toast("Pièce justificative supprimée.");await openDocuments();}
+         catch(error){toast(error?.message||"Suppression impossible.");}
+        }));
+      };
+      await openDocuments();
     });
   });
   $app.querySelectorAll("[data-delete-entry]").forEach((button) => {

@@ -279,6 +279,19 @@ async function pushBatches(supabase,companyId,operations) {
 function getShadow(companyId) {
   try { const raw=localStorage.getItem(SHADOW_PREFIX+companyId);return raw?JSON.parse(raw):null; } catch { return null; }
 }
+export function hasAccountingSyncBaseline(companyId) {
+  if (!companyId) return false;
+  try {
+    const value = JSON.parse(localStorage.getItem(SHADOW_PREFIX + String(companyId)) || "null");
+    return !!value && typeof value === "object" && !Array.isArray(value) &&
+      ["settings", "custom_account", "third", "asset", "entry"].every(kind =>
+        value[kind] && typeof value[kind] === "object" && !Array.isArray(value[kind])
+      );
+  } catch {
+    return false;
+  }
+}
+
 function saveShadow(companyId, records) {
   const clean={};
   for(const kind of ["settings","custom_account","third","asset","entry"]) {

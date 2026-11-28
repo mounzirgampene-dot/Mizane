@@ -422,9 +422,12 @@ export function viewEntries() {
       if(!confirmed)return;
       const index=store.entries.findIndex(item=>Number(item.id)===id);
       if(index<0)return;
-      store.entries.splice(index,1);
-      saveStore(store);
-      toast("Écriture #"+id+" supprimée du journal local. Synchronisez la comptabilité pour répercuter la suppression dans le cloud.");
+      const [removedEntry]=store.entries.splice(index,1);
+      if(!saveStore(store)){
+        store.entries.splice(index,0,removedEntry);
+        return toast("Suppression annulée : la sauvegarde locale a échoué. Libérez de l’espace ou exportez une sauvegarde avant de réessayer.");
+      }
+      toast("Écriture #"+id+" supprimée du journal local. La suppression sera répercutée dans le cloud lors de la prochaine synchronisation.");
       router.render();
     });
   });
